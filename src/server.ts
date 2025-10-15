@@ -23,7 +23,6 @@ app.get("/api/hello", (req: Request, res: Response) => {
   res.json({ message: "Hello from TypeScript backend!" });
 });
 
-
 // Login route
 app.post("/api/login", async (req: Request, res: Response) => {
   const { username, password } = req.body;

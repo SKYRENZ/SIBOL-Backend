@@ -1,9 +1,12 @@
+
 import { pool } from '../config/db.js';
 import { Router } from 'express';
 import type { Request, Response } from "express";
 
 // Create router instance
 const router = Router();
+
+import bcrypt from 'bcrypt';
 
 //register
 // 🔐 Default password
@@ -58,12 +61,14 @@ router.post("/register", async (req: Request, res: Response) => {
 //login
 export async function validateUser(username: string, password: string) {
   const query = "SELECT Account_id, Username, Password, Roles FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1";
-  const [rows] = await pool.execute(query, [username]);
+  const [rows] = await pool.execute(query, [username]); // Prepared statement
   if (Array.isArray(rows) && rows.length > 0) {
     const user = rows[0] as any;
-    // For demo: plain text comparison. Use bcrypt in production!
-    if (user.Password === password) {
-      return { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
+    const match = await bcrypt.compare(password, user.Password);
+    if (match) {
+      // Flush sensitive data before returning
+      const { Password, ...safeUser } = user;
+      return safeUser;
     }
   }
   return null;
