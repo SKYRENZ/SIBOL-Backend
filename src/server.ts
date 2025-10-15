@@ -2,7 +2,8 @@ import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import {db} from "./config/db.js";
+import {pool} from "./config/db.js";
+import authRouter from "./services/authService.js";
 
 // Load environment variables
 dotenv.config();
@@ -18,6 +19,9 @@ app.use(express.json());
 app.get("/api/hello", (req: Request, res: Response) => {
   res.json({ message: "Hello from TypeScript backend!" });
 });
+
+// Mount the auth router
+app.use('/auth', authRouter); // This makes routes available at /auth/*
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
