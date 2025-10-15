@@ -1,4 +1,4 @@
-import { db } from '../config/db';
+import  db  from '../config/db';
 import bcrypt from 'bcrypt';
 import { validateUser } from '../services/authService';
 
