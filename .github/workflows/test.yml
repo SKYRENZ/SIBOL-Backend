@@ -37,6 +37,18 @@ jobs:
             sleep 1
           done
 
+      - name: Create accounts_tbl table
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            CREATE TABLE IF NOT EXISTS accounts_tbl (
+              Account_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Username VARCHAR(100) NOT NULL,
+              Password VARCHAR(255) NOT NULL,
+              Roles INT(11) DEFAULT NULL,
+              IsActive TINYINT(1) DEFAULT 1,
+              Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+          "
 
       - name: Run tests
         env:
