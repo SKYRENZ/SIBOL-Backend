@@ -2,8 +2,11 @@ import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { db } from "./config/db.js";
+import {pool} from "./config/db.js";
+import authRouter from "./services/authService.js";
+
 import { validateUser } from "./services/authService.js"; // Import your login function
+
 
 // Load environment variables
 dotenv.config();
@@ -14,6 +17,8 @@ const PORT = process.env.PORT || 5000;
 // ✅ Allow your frontend
 app.use(cors({ origin: process.env.FRONT_END_PORT }));
 app.use(express.json());
+
+app.use('/auth', authRouter); 
 
 // Example route
 app.get("/api/hello", (req: Request, res: Response) => {
