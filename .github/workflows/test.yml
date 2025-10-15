@@ -1,0 +1,59 @@
+name: Run Backend Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sibol_draft
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..30}; do
+            nc -z localhost 3306 && break
+            sleep 1
+          done
+
+      - name: Create accounts_tbl table
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            CREATE TABLE IF NOT EXISTS accounts_tbl (
+              Account_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Username VARCHAR(100) NOT NULL,
+              Password VARCHAR(255) NOT NULL,
+              Roles INT(11) DEFAULT NULL,
+              IsActive TINYINT(1) DEFAULT 1,
+              Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+          "
+
+      - name: Run tests
+        env:
+          DB_HOST: localhost
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_NAME: sibol_draft
+        run: npm test
