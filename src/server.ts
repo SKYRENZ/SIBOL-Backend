@@ -18,6 +18,8 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({ origin: process.env.FRONT_END_PORT }));
 app.use(express.json());
 
+app.use('/auth', authRouter); 
+
 // Example route
 app.get("/api/hello", (req: Request, res: Response) => {
   res.json({ message: "Hello from TypeScript backend!" });

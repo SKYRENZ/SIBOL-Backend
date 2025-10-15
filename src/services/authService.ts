@@ -1,12 +1,11 @@
-
 import { pool } from '../config/db.js';
 import { Router } from 'express';
 import type { Request, Response } from "express";
 
+import bcrypt from 'bcrypt';
+
 // Create router instance
 const router = Router();
-
-import bcrypt from 'bcrypt';
 
 //register
 // 🔐 Default password
@@ -31,26 +30,36 @@ router.post("/register", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Username already exists" });
     }
 
-    // ✅ 3. Insert into accounts_tbl first (flush to get Account_id)
+    // ✅ 3. Hash the password before storing
+    const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+
+    // ✅ 4. Insert into accounts_tbl first
     const [accountResult]: any = await pool.execute(
       "INSERT INTO accounts_tbl (Username, Password, Roles, isActive, Account_Created) VALUES (?, ?, ?, 1, NOW())",
-      [username, DEFAULT_PASSWORD, roleId]
+      [username, hashedPassword, roleId]
     );
 
     const accountId = accountResult.insertId; // 🔑 Get generated Account_id
 
-    // ✅ 4. Insert into profile_tbl (using Account_id)
+    // ✅ 5. Insert into profile_tbl
     await pool.execute(
       "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Contact, Email) VALUES (?, ?, ?, ?, ?, ?)",
       [accountId, firstName, lastName, areaId, contact, email]
     );
 
-    // ✅ 5. Response
+    // ✅ 6. Fetch the created user data (without password)
+    const [newUserRows]: any = await pool.execute(
+      "SELECT Account_id, Username, Roles FROM accounts_tbl WHERE Account_id = ?",
+      [accountId]
+    );
+
+    const newUser = newUserRows[0];
+
+    // ✅ 7. Response with user data (password already excluded from query)
     res.status(201).json({
       message: "Registration successful",
-      username,
-      accountId,
-      defaultPassword: DEFAULT_PASSWORD,
+      user: newUser,
+      note: "Default password has been set"
     });
   } catch (error) {
     console.error("❌ Registration Error:", error);
