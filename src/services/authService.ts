@@ -1,5 +1,8 @@
-import { pool } from './db';
 
+import { pool } from './db.js';
+
+
+//login
 export async function validateUser(username: string, password: string) {
   const query = "SELECT Account_id, Username, Password, Roles FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1";
   const [rows] = await pool.execute(query, [username]);
