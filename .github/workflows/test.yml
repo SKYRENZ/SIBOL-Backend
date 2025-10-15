@@ -37,8 +37,6 @@ jobs:
             sleep 1
           done
 
-      - name: Run migrations (optional: create tables)
-        run: npx ts-node src/config/db-init.ts
 
       - name: Run tests
         env:
