@@ -32,8 +32,8 @@ jobs:
 
       - name: Wait for MySQL to be ready
         run: |
-          for i in {1..30}; do
-            nc -z localhost 3306 && break
+          for i in {1..60}; do
+            mysqladmin -h 127.0.0.1 -u root -proot ping && break
             sleep 1
           done
 
