@@ -16,14 +16,14 @@ let TEST_MACHINE_ID: number;
 beforeAll(async () => {
   // Create test area
   const [areaResult]: any = await pool.execute(
-    'INSERT INTO Area_tbl (Area_Name) VALUES (?)', // Fixed column name
+    'INSERT INTO area_tbl (Area_Name) VALUES (?)',
     ['Test Area ' + Date.now()]
   );
   TEST_AREA_ID = areaResult.insertId;
 
   // Create test status
   const [statusResult]: any = await pool.execute(
-    'INSERT INTO Machine_status_tbl (Status) VALUES (?)',
+    'INSERT INTO machine_status_tbl (Status) VALUES (?)',
     ['Test Status ' + Date.now()]
   );
   TEST_STATUS_ID = statusResult.insertId;
@@ -31,9 +31,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Clean up test data
-  await pool.execute('DELETE FROM Machine_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
-  await pool.execute('DELETE FROM Area_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
-  await pool.execute('DELETE FROM Machine_status_tbl WHERE Mach_status_id = ?', [TEST_STATUS_ID]);
+  await pool.execute('DELETE FROM machine_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
+  await pool.execute('DELETE FROM area_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
+  await pool.execute('DELETE FROM machine_status_tbl WHERE Mach_status_id = ?', [TEST_STATUS_ID]);
   await pool.end();
 });
 
@@ -46,7 +46,7 @@ describe('Machine Service', () => {
       expect(result.success).toBe(true);
       expect(result.message).toBe('Machine created successfully');
       expect(result.machineId).toBeDefined();
-      expect(result.machine.name).toMatch(/SIBOL_MACHINE_\d+_\d{4}-\d{2}-\d{2}/); // Updated regex pattern
+      expect(result.machine.name).toMatch(/SIBOL_MACHINE_\d+_\d{4}-\d{2}-\d{2}/);
       expect(result.machine.areaId).toBe(TEST_AREA_ID);
       expect(result.machine.status).toBe(TEST_STATUS_ID);
       
@@ -67,7 +67,6 @@ describe('Machine Service', () => {
       expect(result.message).toBe('Machines fetched successfully');
       expect(Array.isArray(result.data)).toBe(true);
       
-      // Type-safe check for array length
       if (Array.isArray(result.data)) {
         expect(result.data.length).toBeGreaterThanOrEqual(0);
       }
@@ -119,7 +118,6 @@ describe('Machine Service', () => {
       expect(result.message).toBe('Machine statuses fetched successfully');
       expect(Array.isArray(result.data)).toBe(true);
       
-      // Type-safe check
       if (Array.isArray(result.data)) {
         expect(result.data.length).toBeGreaterThanOrEqual(0);
       }
@@ -134,25 +132,10 @@ describe('Machine Service', () => {
       expect(result.message).toBe('Areas fetched successfully');
       expect(Array.isArray(result.data)).toBe(true);
       
-      // Type-safe check
       if (Array.isArray(result.data)) {
         expect(result.data.length).toBeGreaterThanOrEqual(0);
       }
     });
   });
 
-  // Commented out delete tests since delete function is removed
-  // describe('deleteMachine', () => {
-  //   it('should delete machine successfully', async () => {
-  //     const result = await deleteMachine(TEST_MACHINE_ID);
-  //     
-  //     expect(result.success).toBe(true);
-  //     expect(result.message).toBe('Machine deleted successfully');
-  //     expect(result.machineId).toBe(TEST_MACHINE_ID);
-  //   });
-
-  //   it('should throw error if machine not found', async () => {
-  //     await expect(deleteMachine(99999)).rejects.toThrow('Machine not found');
-  //   });
-  // });
 });

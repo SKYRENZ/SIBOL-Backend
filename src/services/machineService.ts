@@ -108,7 +108,7 @@ export async function getMachineById(id: number) {
       data: machines[0]
     };
   } catch (error) {
-    console.error("❌ Fetch machine error:", error);
+    // console.error("❌ Fetch machine error:", error); // Remove or comment this line
     throw new Error(`Failed to fetch machine: ${error}`);
   }
 }
@@ -137,7 +137,7 @@ export async function updateMachine(id: number, name: string, areaId: number, st
       machine: { name, areaId, status }
     };
   } catch (error) {
-    console.error("❌ Update machine error:", error);
+    // console.error("❌ Update machine error:", error); // Remove or comment this line
     throw new Error(`Failed to update machine: ${error}`);
   }
 }
