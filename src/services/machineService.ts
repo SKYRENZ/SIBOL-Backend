@@ -46,7 +46,7 @@ export async function getAllMachines() {
         m.Machine_id,
         m.Name,
         m.Area_id,
-        a.Area_name,
+        a.Area_Name,
         m.Status as status_id,
         ms.Status as status_name
       FROM Machine_tbl m
@@ -68,13 +68,17 @@ export async function getAllMachines() {
 
 // READ - Function to get single machine by ID
 export async function getMachineById(id: number) {
+  if (!id || id === undefined || id === null) {
+    throw new Error("Machine ID is required");
+  }
+
   try {
     const [machines]: any = await pool.execute(`
       SELECT 
         m.Machine_id,
         m.Name,
         m.Area_id,
-        a.Area_name,
+        a.Area_Name,
         m.Status as status_id,
         ms.Status as status_name
       FROM Machine_tbl m
@@ -171,9 +175,11 @@ export async function getMachineStatuses() {
 // Function to get all areas
 export async function getAreas() {
   try {
-    const [areas] = await pool.execute(
-      "SELECT Area_id, Area_name FROM Area_tbl ORDER BY Area_id"
-    );
+    const [areas] = await pool.execute(`
+      SELECT Area_id, Area_Name 
+      FROM Area_tbl 
+      ORDER BY Area_Name
+    `);
 
     return {
       success: true,
