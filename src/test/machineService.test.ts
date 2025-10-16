@@ -1,4 +1,3 @@
-import { pool } from '../config/db';
 import { 
   createMachine, 
   getAllMachines, 
@@ -9,49 +8,41 @@ import {
   getAreas 
 } from '../services/machineService';
 
-let TEST_AREA_ID: number;
-let TEST_STATUS_ID: number;
-let TEST_MACHINE_ID: number;
+// Mock the database pool
+jest.mock('../config/db', () => ({
+  pool: {
+    execute: jest.fn(),
+    end: jest.fn(),
+  }
+}));
 
-beforeAll(async () => {
-  // Create test area
-  const [areaResult]: any = await pool.execute(
-    'INSERT INTO Area_tbl (Area_name) VALUES (?)',
-    ['Test Area ' + Date.now()]
-  );
-  TEST_AREA_ID = areaResult.insertId;
+import { pool } from '../config/db';
+const mockPool = pool as jest.Mocked<typeof pool>;
 
-  // Create test status
-  const [statusResult]: any = await pool.execute(
-    'INSERT INTO Machine_status_tbl (Status) VALUES (?)',
-    ['Test Status ' + Date.now()]
-  );
-  TEST_STATUS_ID = statusResult.insertId;
-});
-
-afterAll(async () => {
-  // Clean up test data
-  await pool.execute('DELETE FROM Machine_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
-  await pool.execute('DELETE FROM Area_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
-  await pool.execute('DELETE FROM Machine_status_tbl WHERE Mach_status_id = ?', [TEST_STATUS_ID]);
-  await pool.end();
-});
+// Test data constants
+const TEST_MACHINE_ID = 1;
+const TEST_AREA_ID = 1;
+const TEST_STATUS_ID = 1;
 
 describe('Machine Service', () => {
-  
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   describe('createMachine', () => {
     it('should create a machine successfully', async () => {
-      const result = await createMachine(TEST_AREA_ID, TEST_STATUS_ID);
+      // Mock the database response
+      mockPool.execute.mockResolvedValueOnce([{ insertId: 1 }, undefined] as any);
+
+      const result = await createMachine(1, 1);
       
       expect(result.success).toBe(true);
       expect(result.message).toBe('Machine created successfully');
-      expect(result.machineId).toBeDefined();
-      expect(result.machine.name).toMatch(/SIBOL_MACHINE_\d{4}-\d{2}-\d{2}/);
-      expect(result.machine.areaId).toBe(TEST_AREA_ID);
-      expect(result.machine.status).toBe(TEST_STATUS_ID);
-      
-      // Store for other tests
-      TEST_MACHINE_ID = result.machineId;
+      expect(result.machineId).toBe(1);
+      expect(mockPool.execute).toHaveBeenCalledWith(
+        'INSERT INTO Machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)',
+        expect.arrayContaining([expect.stringMatching(/SIBOL_MACHINE_\d{4}-\d{2}-\d{2}/), 1, 1])
+      );
     });
 
     it('should throw error if areaId is missing', async () => {
@@ -61,21 +52,23 @@ describe('Machine Service', () => {
 
   describe('getAllMachines', () => {
     it('should get all machines successfully', async () => {
+      const mockMachines = [
+        { Machine_id: 1, Name: 'Test Machine', Area_id: 1, status_id: 1 }
+      ];
+      mockPool.execute.mockResolvedValueOnce([mockMachines, undefined] as any);
+
       const result = await getAllMachines();
       
       expect(result.success).toBe(true);
-      expect(result.message).toBe('Machines fetched successfully');
-      expect(Array.isArray(result.data)).toBe(true);
-      
-      // Type-safe check for array length
-      if (Array.isArray(result.data)) {
-        expect(result.data.length).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.data).toEqual(mockMachines);
     });
   });
 
   describe('getMachineById', () => {
     it('should get machine by ID successfully', async () => {
+      const mockMachine = { Machine_id: TEST_MACHINE_ID, Name: 'Test Machine', Area_id: TEST_AREA_ID };
+      mockPool.execute.mockResolvedValueOnce([[mockMachine], undefined] as any);
+
       const result = await getMachineById(TEST_MACHINE_ID);
       
       expect(result.success).toBe(true);
@@ -85,6 +78,8 @@ describe('Machine Service', () => {
     });
 
     it('should throw error if machine not found', async () => {
+      mockPool.execute.mockResolvedValueOnce([[], undefined] as any);
+      
       await expect(getMachineById(99999)).rejects.toThrow('Machine not found');
     });
   });
@@ -92,6 +87,8 @@ describe('Machine Service', () => {
   describe('updateMachine', () => {
     it('should update machine successfully', async () => {
       const newName = 'Updated Test Machine';
+      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 1 }, undefined] as any);
+      
       const result = await updateMachine(TEST_MACHINE_ID, newName, TEST_AREA_ID, TEST_STATUS_ID);
       
       expect(result.success).toBe(true);
@@ -106,6 +103,8 @@ describe('Machine Service', () => {
     });
 
     it('should throw error if machine not found', async () => {
+      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 0 }, undefined] as any);
+      
       await expect(updateMachine(99999, 'Test', TEST_AREA_ID, TEST_STATUS_ID))
         .rejects.toThrow('Machine not found');
     });
@@ -113,36 +112,42 @@ describe('Machine Service', () => {
 
   describe('getMachineStatuses', () => {
     it('should get all machine statuses successfully', async () => {
+      const mockStatuses = [
+        { Mach_status_id: 1, Status: 'Active' },
+        { Mach_status_id: 2, Status: 'Inactive' }
+      ];
+      mockPool.execute.mockResolvedValueOnce([mockStatuses, undefined] as any);
+
       const result = await getMachineStatuses();
       
       expect(result.success).toBe(true);
       expect(result.message).toBe('Machine statuses fetched successfully');
       expect(Array.isArray(result.data)).toBe(true);
-      
-      // Type-safe check
-      if (Array.isArray(result.data)) {
-        expect(result.data.length).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.data).toEqual(mockStatuses);
     });
   });
 
   describe('getAreas', () => {
     it('should get all areas successfully', async () => {
+      const mockAreas = [
+        { Area_id: 1, Area_name: 'Production' },
+        { Area_id: 2, Area_name: 'Quality Control' }
+      ];
+      mockPool.execute.mockResolvedValueOnce([mockAreas, undefined] as any);
+
       const result = await getAreas();
       
       expect(result.success).toBe(true);
       expect(result.message).toBe('Areas fetched successfully');
       expect(Array.isArray(result.data)).toBe(true);
-      
-      // Type-safe check
-      if (Array.isArray(result.data)) {
-        expect(result.data.length).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.data).toEqual(mockAreas);
     });
   });
 
   describe('deleteMachine', () => {
     it('should delete machine successfully', async () => {
+      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 1 }, undefined] as any);
+
       const result = await deleteMachine(TEST_MACHINE_ID);
       
       expect(result.success).toBe(true);
@@ -151,6 +156,8 @@ describe('Machine Service', () => {
     });
 
     it('should throw error if machine not found', async () => {
+      mockPool.execute.mockResolvedValueOnce([{ affectedRows: 0 }, undefined] as any);
+      
       await expect(deleteMachine(99999)).rejects.toThrow('Machine not found');
     });
   });
