@@ -37,7 +37,7 @@ jobs:
             sleep 1
           done
 
-      - name: Create accounts_tbl table
+      - name: Create all required tables
         run: |
           mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
             CREATE TABLE IF NOT EXISTS accounts_tbl (
@@ -47,6 +47,45 @@ jobs:
               Roles INT(11) DEFAULT NULL,
               IsActive TINYINT(1) DEFAULT 1,
               Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS area_tbl (
+              Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Area_Name VARCHAR(150) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS user_roles_tbl (
+              Roles_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Roles VARCHAR(100) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS profile_tbl (
+              Profile_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Account_id INT(11) DEFAULT NULL,
+              FirstName VARCHAR(100) NOT NULL,
+              LastName VARCHAR(100) NOT NULL,
+              Area_id INT(11) DEFAULT NULL,
+              Contact BIGINT(20) DEFAULT NULL,
+              Email VARCHAR(150) UNIQUE,
+              QR_code VARCHAR(255) DEFAULT NULL,
+              FOREIGN KEY (Account_id) REFERENCES accounts_tbl(Account_id),
+              FOREIGN KEY (Area_id) REFERENCES area_tbl(Area_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS waste_type_tbl (
+              Waste_type_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Waste_type VARCHAR(100) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS schedule_tbl (
+              Schedule_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Account_id INT(11) NOT NULL,
+              Collector VARCHAR(100),
+              Contact BIGINT(20),
+              Area INT(11),
+              sched_stat_id INT(11),
+              Date_of_collection DATETIME,
+              FOREIGN KEY (Account_id) REFERENCES accounts_tbl(Account_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
           "
 
