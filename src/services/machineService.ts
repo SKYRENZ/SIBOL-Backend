@@ -61,7 +61,7 @@ export async function getAllMachines() {
         m.Status as status_id,
         ms.Status as status_name
       FROM Machine_tbl m
-      LEFT JOIN Area_tbl a ON m.Area_id = a.Area_id
+      LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
       LEFT JOIN Machine_status_tbl ms ON m.Status = ms.Mach_status_id
       ORDER BY m.Machine_id
     `);
@@ -93,7 +93,7 @@ export async function getMachineById(id: number) {
         m.Status as status_id,
         ms.Status as status_name
       FROM Machine_tbl m
-      LEFT JOIN Area_tbl a ON m.Area_id = a.Area_id
+      LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
       LEFT JOIN Machine_status_tbl ms ON m.Status = ms.Mach_status_id
       WHERE m.Machine_id = ?
     `, [id]);
@@ -188,7 +188,7 @@ export async function getAreas() {
   try {
     const [areas] = await pool.execute(`
       SELECT Area_id, Area_Name 
-      FROM Area_tbl 
+      FROM area_tbl 
       ORDER BY Area_Name
     `);
 
