@@ -51,7 +51,7 @@ jobs:
 
             CREATE TABLE IF NOT EXISTS area_tbl (
               Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-              Area_Name VARCHAR(255) NOT NULL
+              Area_Name VARCHAR(150) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             CREATE TABLE IF NOT EXISTS user_roles_tbl (
