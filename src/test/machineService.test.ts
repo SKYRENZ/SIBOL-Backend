@@ -4,7 +4,7 @@ import {
   getAllMachines, 
   getMachineById, 
   updateMachine, 
-  deleteMachine,
+  // deleteMachine, // Commented out since function is removed
   getMachineStatuses,
   getAreas 
 } from '../services/machineService';
@@ -16,7 +16,7 @@ let TEST_MACHINE_ID: number;
 beforeAll(async () => {
   // Create test area
   const [areaResult]: any = await pool.execute(
-    'INSERT INTO Area_tbl (Area_name) VALUES (?)',
+    'INSERT INTO Area_tbl (Area_Name) VALUES (?)', // Fixed column name
     ['Test Area ' + Date.now()]
   );
   TEST_AREA_ID = areaResult.insertId;
@@ -46,7 +46,7 @@ describe('Machine Service', () => {
       expect(result.success).toBe(true);
       expect(result.message).toBe('Machine created successfully');
       expect(result.machineId).toBeDefined();
-      expect(result.machine.name).toMatch(/SIBOL_MACHINE_\d{4}-\d{2}-\d{2}/);
+      expect(result.machine.name).toMatch(/SIBOL_MACHINE_\d+_\d{4}-\d{2}-\d{2}/); // Updated regex pattern
       expect(result.machine.areaId).toBe(TEST_AREA_ID);
       expect(result.machine.status).toBe(TEST_STATUS_ID);
       
@@ -141,17 +141,18 @@ describe('Machine Service', () => {
     });
   });
 
-  describe('deleteMachine', () => {
-    it('should delete machine successfully', async () => {
-      const result = await deleteMachine(TEST_MACHINE_ID);
-      
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Machine deleted successfully');
-      expect(result.machineId).toBe(TEST_MACHINE_ID);
-    });
+  // Commented out delete tests since delete function is removed
+  // describe('deleteMachine', () => {
+  //   it('should delete machine successfully', async () => {
+  //     const result = await deleteMachine(TEST_MACHINE_ID);
+  //     
+  //     expect(result.success).toBe(true);
+  //     expect(result.message).toBe('Machine deleted successfully');
+  //     expect(result.machineId).toBe(TEST_MACHINE_ID);
+  //   });
 
-    it('should throw error if machine not found', async () => {
-      await expect(deleteMachine(99999)).rejects.toThrow('Machine not found');
-    });
-  });
+  //   it('should throw error if machine not found', async () => {
+  //     await expect(deleteMachine(99999)).rejects.toThrow('Machine not found');
+  //   });
+  // });
 });

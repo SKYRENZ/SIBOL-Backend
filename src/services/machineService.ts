@@ -12,24 +12,35 @@ export async function createMachine(areaId: number, status?: number) {
   }
 
   try {
-    // Generate automated machine name with current date
-    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const machineName = `SIBOL_MACHINE_${currentDate}`;
-
+    // First insert with a temporary name to get the actual auto-increment ID
     const [result]: any = await pool.execute(
       "INSERT INTO Machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)",
-      [machineName, areaId, status || null]
+      ["TEMP_NAME", areaId, status || null]
+    );
+
+    // Get the actual inserted ID
+    const actualId = result.insertId;
+    
+    // Generate machine name with the actual ID and current date
+    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const machineName = `SIBOL_MACHINE_${actualId}_${currentDate}`;
+
+    // Update the record with the proper name
+    await pool.execute(
+      "UPDATE Machine_tbl SET Name = ? WHERE Machine_id = ?",
+      [machineName, actualId]
     );
 
     return {
       success: true,
       message: "Machine created successfully",
-      machineId: result.insertId,
+      machineId: actualId,
       machine: { 
         name: machineName, 
         areaId, 
         status,
-        createdDate: currentDate
+        createdDate: currentDate,
+        actualId: actualId
       }
     };
   } catch (error) {
@@ -131,7 +142,7 @@ export async function updateMachine(id: number, name: string, areaId: number, st
   }
 }
 
-// DELETE - Function to delete machine
+/* // DELETE - Function to delete machine
 export async function deleteMachine(id: number) {
   try {
     const [result]: any = await pool.execute(
@@ -152,7 +163,7 @@ export async function deleteMachine(id: number) {
     console.error("❌ Delete machine error:", error);
     throw new Error(`Failed to delete machine: ${error}`);
   }
-}
+} */
 
 // Function to get all machine statuses
 export async function getMachineStatuses() {
@@ -198,15 +209,52 @@ export async function getAreas() {
 /* router.post("/machines", async (req: Request, res: Response) => {
   const { areaId, status } = req.body;
 
+  // Add validation
+  if (!areaId) {
+    return res.status(400).json({ message: "Area ID is required" });
+  }
+
   try {
-    const result = await createMachine(areaId, status);
-    res.status(201).json(result);
+    // First insert with a temporary name to get the actual auto-increment ID
+    const [result]: any = await pool.execute(
+      "INSERT INTO Machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)",
+      ["TEMP_NAME", areaId, status || null]
+    );
+
+    // Get the actual inserted ID
+    const actualId = result.insertId;
+    
+    // Generate machine name with the actual ID and current date
+    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const machineName = `SIBOL_MACHINE_${actualId}_${currentDate}`;
+
+    // Update the record with the proper name
+    await pool.execute(
+      "UPDATE Machine_tbl SET Name = ? WHERE Machine_id = ?",
+      [machineName, actualId]
+    );
+
+    const response = {
+      success: true,
+      message: "Machine created successfully",
+      machineId: actualId,
+      machine: { 
+        name: machineName, 
+        areaId, 
+        status,
+        createdDate: currentDate,
+        actualId: actualId
+      }
+    };
+
+    res.status(201).json(response);
   } catch (error) {
+    console.error("❌ Create machine error:", error);
     res.status(400).json({ 
       message: error instanceof Error ? error.message : 'Failed to create machine' 
     });
   }
-});
+}); 
 
 // READ all route
 router.get("/machines", async (req: Request, res: Response) => {
@@ -224,15 +272,16 @@ router.get("/machines", async (req: Request, res: Response) => {
 router.get("/machines/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  if (!id) {
-    return res.status(400).json({ message: "Machine ID is required" });
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: "Valid Machine ID is required" });
   }
 
   try {
     const result = await getMachineById(parseInt(id));
     res.json(result);
   } catch (error) {
-    res.status(404).json({ 
+    const statusCode = error instanceof Error && error.message.includes('not found') ? 404 : 500;
+    res.status(statusCode).json({ 
       message: error instanceof Error ? error.message : 'Failed to fetch machine' 
     });
   }
@@ -243,15 +292,20 @@ router.put("/machines/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
   const { name, areaId, status } = req.body;
 
-  if (!id) {
-    return res.status(400).json({ message: "Machine ID is required" });
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: "Valid Machine ID is required" });
+  }
+
+  if (!name || !areaId) {
+    return res.status(400).json({ message: "Name and Area ID are required" });
   }
 
   try {
     const result = await updateMachine(parseInt(id), name, areaId, status);
     res.json(result);
   } catch (error) {
-    res.status(400).json({ 
+    const statusCode = error instanceof Error && error.message.includes('not found') ? 404 : 400;
+    res.status(statusCode).json({ 
       message: error instanceof Error ? error.message : 'Failed to update machine' 
     });
   }
@@ -261,15 +315,16 @@ router.put("/machines/:id", async (req: Request, res: Response) => {
 router.delete("/machines/:id", async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  if (!id) {
-    return res.status(400).json({ message: "Machine ID is required" });
+  if (!id || isNaN(parseInt(id))) {
+    return res.status(400).json({ message: "Valid Machine ID is required" });
   }
 
   try {
     const result = await deleteMachine(parseInt(id));
     res.json(result);
   } catch (error) {
-    res.status(404).json({ 
+    const statusCode = error instanceof Error && error.message.includes('not found') ? 404 : 500;
+    res.status(statusCode).json({ 
       message: error instanceof Error ? error.message : 'Failed to delete machine' 
     });
   }
