@@ -73,6 +73,13 @@ jobs:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
           "
 
+      - name: Insert test area for AuthService
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            INSERT INTO area_tbl (Area_id, Area_Name) VALUES (1, 'Test Area') 
+            ON DUPLICATE KEY UPDATE Area_Name='Test Area';
+          "
+
       - name: Run AuthService tests only
         env:
           DB_HOST: localhost
