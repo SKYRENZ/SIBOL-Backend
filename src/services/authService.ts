@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 
 // 🔐 Default password
 const DEFAULT_PASSWORD = "SIBOL12345";
+const ADMIN_ROLE = 1; // <-- adjust to match your roles table
 
 //register function
 export async function registerUser(firstName: string, lastName: string, areaId: number, contact: string, email: string, roleId: number) {
@@ -74,3 +75,6 @@ export async function validateUser(username: string, password: string) {
   }
   return null;
 }
+
+// NOTE: admin-specific functions (updateAccountAndProfile, setAccountActive, etc.)
+// were moved to src/services/adminService.ts to follow SRP.
