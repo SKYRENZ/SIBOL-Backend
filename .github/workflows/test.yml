@@ -37,7 +37,7 @@ jobs:
             sleep 1
           done
 
-      - name: Create all required tables
+      - name: Create database tables
         run: |
           mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
             CREATE TABLE IF NOT EXISTS accounts_tbl (
@@ -51,7 +51,7 @@ jobs:
 
             CREATE TABLE IF NOT EXISTS area_tbl (
               Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-              Area_Name VARCHAR(150) NOT NULL
+              Area_Name VARCHAR(255) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             CREATE TABLE IF NOT EXISTS user_roles_tbl (
@@ -86,6 +86,20 @@ jobs:
               sched_stat_id INT(11),
               Date_of_collection DATETIME,
               FOREIGN KEY (Account_id) REFERENCES accounts_tbl(Account_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS machine_status_tbl (
+              Mach_status_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Status VARCHAR(255) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS machine_tbl (
+              Machine_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Name VARCHAR(255) NOT NULL,
+              Area_id INT(11),
+              Status INT(11),
+              FOREIGN KEY (Area_id) REFERENCES area_tbl(Area_id),
+              FOREIGN KEY (Status) REFERENCES machine_status_tbl(Mach_status_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
           "
 
