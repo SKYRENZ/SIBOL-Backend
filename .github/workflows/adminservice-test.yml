@@ -19,7 +19,7 @@ jobs:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_ROOT_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: sibol_draft
         ports:
           - 3306:3306
@@ -38,13 +38,13 @@ jobs:
       - name: Wait for MySQL to be ready
         run: |
           for i in {1..60}; do
-            mysqladmin -h 127.0.0.1 -u root -p${{ secrets.DB_ROOT_PASSWORD }} ping && break
+            mysqladmin -h 127.0.0.1 -u root -proot ping && break
             sleep 1
           done
 
       - name: Create database schema
         run: |
-          mysql -h 127.0.0.1 -u root -p${{ secrets.DB_ROOT_PASSWORD }} sibol_draft -e "
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
             CREATE TABLE IF NOT EXISTS accounts_tbl (
               Account_id INT AUTO_INCREMENT PRIMARY KEY,
               Username VARCHAR(100) NOT NULL,
@@ -68,6 +68,6 @@ jobs:
         env:
           DB_HOST: localhost
           DB_USER: root
-          DB_PASS: ${{ secrets.DB_ROOT_PASSWORD }}
+          DB_PASS: root
           DB_NAME: sibol_draft
         run: npx jest src/test/adminService.test.ts --runInBand
