@@ -51,7 +51,7 @@ jobs:
 
             CREATE TABLE IF NOT EXISTS Area_tbl (
               Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-              Area_name VARCHAR(255) NOT NULL
+              Area_Name VARCHAR(255) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             CREATE TABLE IF NOT EXISTS Machine_status_tbl (
@@ -61,11 +61,11 @@ jobs:
 
             CREATE TABLE IF NOT EXISTS Machine_tbl (
               Machine_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-              Machine_name VARCHAR(255) NOT NULL,
+              Name VARCHAR(255) NOT NULL,
               Area_id INT(11),
-              Mach_status_id INT(11),
+              Status INT(11),
               FOREIGN KEY (Area_id) REFERENCES Area_tbl(Area_id),
-              FOREIGN KEY (Mach_status_id) REFERENCES Machine_status_tbl(Mach_status_id)
+              FOREIGN KEY (Status) REFERENCES Machine_status_tbl(Mach_status_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
           "
 
