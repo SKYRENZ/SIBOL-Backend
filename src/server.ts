@@ -3,9 +3,10 @@ import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
-import authRouter from "./services/authService.js";
 
 import { validateUser } from "./services/authService.js"; // Import your login function
+import authRouter from "./services/authService.js";
+import machineRouter from './services/machineService.js';
 
 
 // Load environment variables
@@ -19,6 +20,7 @@ app.use(cors({ origin: process.env.FRONT_END_PORT }));
 app.use(express.json());
 
 app.use('/auth', authRouter); 
+app.use('/api', machineRouter);
 
 // Example route
 app.get("/api/hello", (req: Request, res: Response) => {
