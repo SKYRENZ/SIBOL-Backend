@@ -14,7 +14,7 @@ export async function createMachine(areaId: number, status?: number) {
   try {
     // First insert with a temporary name to get the actual auto-increment ID
     const [result]: any = await pool.execute(
-      "INSERT INTO Machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)",
+      "INSERT INTO machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)",
       ["TEMP_NAME", areaId, status || null]
     );
 
@@ -27,7 +27,7 @@ export async function createMachine(areaId: number, status?: number) {
 
     // Update the record with the proper name
     await pool.execute(
-      "UPDATE Machine_tbl SET Name = ? WHERE Machine_id = ?",
+      "UPDATE machine_tbl SET Name = ? WHERE Machine_id = ?",
       [machineName, actualId]
     );
 
@@ -54,15 +54,15 @@ export async function getAllMachines() {
   try {
     const [machines] = await pool.execute(`
       SELECT 
-        m.Machine_id,
+        m.machine_id,
         m.Name,
         m.Area_id,
         a.Area_Name,
         m.Status as status_id,
         ms.Status as status_name
-      FROM Machine_tbl m
-      LEFT JOIN Area_tbl a ON m.Area_id = a.Area_id
-      LEFT JOIN Machine_status_tbl ms ON m.Status = ms.Mach_status_id
+      FROM machine_tbl m
+      LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
+      LEFT JOIN machine_status_tbl ms ON m.Status = ms.Mach_status_id
       ORDER BY m.Machine_id
     `);
 
@@ -92,9 +92,9 @@ export async function getMachineById(id: number) {
         a.Area_Name,
         m.Status as status_id,
         ms.Status as status_name
-      FROM Machine_tbl m
-      LEFT JOIN Area_tbl a ON m.Area_id = a.Area_id
-      LEFT JOIN Machine_status_tbl ms ON m.Status = ms.Mach_status_id
+      FROM machine_tbl m
+      LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
+      LEFT JOIN machine_status_tbl ms ON m.Status = ms.Mach_status_id
       WHERE m.Machine_id = ?
     `, [id]);
 
@@ -108,7 +108,7 @@ export async function getMachineById(id: number) {
       data: machines[0]
     };
   } catch (error) {
-    console.error("❌ Fetch machine error:", error);
+    // console.error("❌ Fetch machine error:", error); // Remove or comment this line
     throw new Error(`Failed to fetch machine: ${error}`);
   }
 }
@@ -122,7 +122,7 @@ export async function updateMachine(id: number, name: string, areaId: number, st
 
   try {
     const [result]: any = await pool.execute(
-      "UPDATE Machine_tbl SET Name = ?, Area_id = ?, Status = ? WHERE Machine_id = ?",
+      "UPDATE machine_tbl SET Name = ?, Area_id = ?, Status = ? WHERE Machine_id = ?",
       [name, areaId, status || null, id]
     );
 
@@ -137,7 +137,7 @@ export async function updateMachine(id: number, name: string, areaId: number, st
       machine: { name, areaId, status }
     };
   } catch (error) {
-    console.error("❌ Update machine error:", error);
+    // console.error("❌ Update machine error:", error); // Remove or comment this line
     throw new Error(`Failed to update machine: ${error}`);
   }
 }
@@ -169,7 +169,7 @@ export async function deleteMachine(id: number) {
 export async function getMachineStatuses() {
   try {
     const [statuses] = await pool.execute(
-      "SELECT Mach_status_id, Status FROM Machine_status_tbl ORDER BY Mach_status_id"
+      "SELECT Mach_status_id, Status FROM machine_status_tbl ORDER BY Mach_status_id"
     );
 
     return {
@@ -188,7 +188,7 @@ export async function getAreas() {
   try {
     const [areas] = await pool.execute(`
       SELECT Area_id, Area_Name 
-      FROM Area_tbl 
+      FROM area_tbl 
       ORDER BY Area_Name
     `);
 

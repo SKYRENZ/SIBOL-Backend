@@ -3,8 +3,8 @@ import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
-
-import { validateUser } from "./services/authService.js"; // Import your login function
+import scheduleRoutes from "./Router/scheduleRoutes.js";
+import { validateUser } from "./services/authService.js";
 import authRouter from "./services/authService.js";
 import machineRouter from './services/machineService.js';
 
@@ -43,6 +43,8 @@ app.post("/api/login", async (req: Request, res: Response) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
+app.use("/api/schedules", scheduleRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
