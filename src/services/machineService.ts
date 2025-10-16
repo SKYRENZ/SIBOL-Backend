@@ -1,8 +1,4 @@
 import { pool } from '../config/db';
-import { Router } from 'express';
-import type { Request, Response } from "express";
-
-const router = Router();
 
 // CREATE - Function to add new machine
 export async function createMachine(areaId: number, status?: number) {
@@ -352,5 +348,3 @@ router.get("/areas", async (req: Request, res: Response) => {
     });
   }
 }); */
-
-export default router;

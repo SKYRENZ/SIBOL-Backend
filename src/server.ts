@@ -3,10 +3,10 @@ import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
-import scheduleRoutes from "./Router/scheduleRoutes.js";
-import { validateUser } from "./services/authService.js";
-import authRouter from "./services/authService.js";
-import machineRouter from './services/machineService.js';
+import scheduleRoutes from "./Routes/scheduleRoutes.js";
+// replace incorrect imports that import services as routers:
+import authRoutes from "./Routes/authRoutes.js";
+import machineRoutes from './Routes/machineRoutes.js';
 
 
 // Load environment variables
@@ -19,31 +19,9 @@ const PORT = process.env.PORT || 5000;
 app.use(cors({ origin: process.env.FRONT_END_PORT }));
 app.use(express.json());
 
-app.use('/auth', authRouter); 
-app.use('/api', machineRouter);
-
-// Example route
-app.get("/api/hello", (req: Request, res: Response) => {
-  res.json({ message: "Hello from TypeScript backend!" });
-});
-
-// Login route
-app.post("/api/login", async (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: "Username and password required" });
-  }
-  try {
-    const user = await validateUser(username, password);
-    if (user) {
-      return res.json({ success: true, user });
-    }
-    return res.status(401).json({ success: false, message: "Invalid credentials" });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
-});
-
+// mount feature routers
+app.use('/api/auth', authRoutes);
+app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
 
 app.listen(PORT, () => {
