@@ -1,10 +1,5 @@
 import { pool } from '../config/db';
-import { Router } from 'express';
-import type { Request, Response } from "express";
 import bcrypt from 'bcrypt';
-
-// Create router instance
-const router = Router();
 
 // 🔐 Default password
 const DEFAULT_PASSWORD = "SIBOL12345";
@@ -65,24 +60,10 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
   }
 }
 
-// Router endpoint that uses the function
-router.post("/register", async (req: Request, res: Response) => {
-  const { firstName, lastName, areaId, contact, email, roleId } = req.body;
-
-  try {
-    const result = await registerUser(firstName, lastName, areaId, contact, email, roleId);
-    res.status(201).json(result);
-  } catch (error) {
-    res.status(400).json({ 
-      message: error instanceof Error ? error.message : 'Registration failed' 
-    });
-  }
-});
-
 //login
 export async function validateUser(username: string, password: string) {
   const query = "SELECT Account_id, Username, Password, Roles FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1";
-  const [rows] = await pool.execute(query, [username]);
+  const [rows]: any = await pool.execute(query, [username]);
   if (Array.isArray(rows) && rows.length > 0) {
     const user = rows[0] as any;
     const match = await bcrypt.compare(password, user.Password);
@@ -93,6 +74,3 @@ export async function validateUser(username: string, password: string) {
   }
   return null;
 }
-
-// Export the router
-export default router;
