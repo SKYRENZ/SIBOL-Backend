@@ -1,0 +1,117 @@
+name: Run Maintenance Service Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  maintenanceservice-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sibol_draft
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..60}; do
+            mysqladmin -h 127.0.0.1 -u root -proot ping && break
+            sleep 1
+          done
+
+      - name: Create database tables for Maintenance Service
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            CREATE TABLE IF NOT EXISTS accounts_tbl (
+              Account_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Username VARCHAR(100) NOT NULL,
+              Password VARCHAR(255) NOT NULL,
+              Roles INT(11) DEFAULT NULL,
+              IsActive TINYINT(1) DEFAULT 1,
+              Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS area_tbl (
+              Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Area_Name VARCHAR(150) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS maintenance_status_tbl (
+              Main_stat_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Status VARCHAR(50) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS maintenance_priority_tbl (
+              Priority_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Priority VARCHAR(100) NOT NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS maintenance_tbl (
+              Request_Id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Title VARCHAR(255) NOT NULL,
+              Details TEXT,
+              Priority_Id INT(11) DEFAULT NULL,
+              Created_by INT(11) DEFAULT NULL,
+              Due_date DATETIME DEFAULT NULL,
+              Attachment VARCHAR(255) DEFAULT NULL,
+              Main_stat_id INT(11) DEFAULT NULL,
+              Assigned_to INT(11) DEFAULT NULL,
+              FOREIGN KEY (Priority_Id) REFERENCES maintenance_priority_tbl(Priority_id),
+              FOREIGN KEY (Created_by) REFERENCES accounts_tbl(Account_id),
+              FOREIGN KEY (Main_stat_id) REFERENCES maintenance_status_tbl(Main_stat_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+          "
+
+      - name: Insert test data for Maintenance Service
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            INSERT INTO area_tbl (Area_id, Area_Name) VALUES (1, 'Test Area') 
+            ON DUPLICATE KEY UPDATE Area_Name='Test Area';
+
+            INSERT INTO accounts_tbl (Account_id, Username, Password, Roles, IsActive) VALUES 
+            (1, 'john.doe', 'SIBOL12345', 3, 1),
+            (2, 'ej.benig', 'SIBOL12345', 2, 1),
+            (3, 'laurenz.listangco', 'SIBOL12345', 1, 1)
+            ON DUPLICATE KEY UPDATE Username='john.doe';
+
+            INSERT INTO maintenance_status_tbl (Main_stat_id, Status) VALUES 
+            (10, 'Requested'),
+            (11, 'Pending'),
+            (12, 'On-going'),
+            (13, 'For Verification'),
+            (14, 'Completed'),
+            (15, 'Cancelled')
+            ON DUPLICATE KEY UPDATE Status='Requested';
+
+            INSERT INTO maintenance_priority_tbl (Priority_id, Priority) VALUES 
+            (1, 'Critical'),
+            (2, 'Urgent'),
+            (3, 'Mild')
+            ON DUPLICATE KEY UPDATE Priority='Critical';
+          "
+
+      - name: Run Maintenance Service tests
+        env:
+          DB_HOST: localhost
+          DB_USER: root
+          DB_PASS: root
+          DB_NAME: sibol_draft
+        run: npx jest src/test/maintenanceService.test.ts

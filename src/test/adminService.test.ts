@@ -1,30 +1,50 @@
 import * as adminService from '../services/adminService';
 import { pool } from '../config/db';
 import * as authService from '../services/authService';
+import { createSqlLogger } from "./sqlLogger";
+const SQL_LOGGER = createSqlLogger("adminService");
+const LOG_SQL = process.env.MOCK_SQL_LOG === "true";
 
-jest.mock('../config/db', () => ({
+// mock the module first
+jest.mock("../config/db", () => ({
   pool: {
     execute: jest.fn(),
     getConnection: jest.fn(),
   },
 }));
 
-jest.mock('../services/authService', () => ({
-  registerUser: jest.fn(),
-}));
-
-const mockedPool = pool as unknown as {
+// require the mocked module and obtain the pool mock
+const dbMock = require("../config/db");
+const mockedPool = dbMock.pool as {
   execute: jest.Mock;
   getConnection: jest.Mock;
 };
 
-const mockedAuth = authService as unknown as {
+jest.mock("../services/authService", () => ({
+  registerUser: jest.fn(),
+}));
+
+const mockedAuth = require("../services/authService") as {
   registerUser: jest.Mock;
 };
 
 describe('adminService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // DO NOT reassign mockedPool.execute/getConnection here — keep them as jest mocks
+  });
+
+  afterEach(() => {
+    // write execute calls into the SQL log
+    if (SQL_LOGGER.filePath && mockedPool.execute && Array.isArray(mockedPool.execute.mock?.calls)) {
+      for (const call of mockedPool.execute.mock.calls) {
+        SQL_LOGGER.log(String(call[0]).replace(/\s+/g, " ").trim(), call[1]);
+      }
+    }
+  });
+
+  afterAll(() => {
+    // unified directory print handled by sqlLogger
   });
 
   test('createUserAsAdmin calls authService.registerUser and returns result', async () => {

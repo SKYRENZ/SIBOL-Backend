@@ -3,12 +3,12 @@ import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
-import scheduleRoutes from "./Routes/scheduleRoutes.js";
+
 // replace incorrect imports that import services as routers:
 import authRoutes from "./Routes/authRoutes.js";
 import machineRoutes from './Routes/machineRoutes.js';
-
-
+import maintenanceRoutes from "./Routes/maintenanceRoutes.js";
+import scheduleRoutes from "./Routes/scheduleRoutes.js";
 // Load environment variables
 dotenv.config();
 
@@ -23,6 +23,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
