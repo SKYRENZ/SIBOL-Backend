@@ -64,7 +64,10 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
       note: "Verification email sent. Check your inbox."
     };
   } catch (error) {
-    console.error("❌ Registration Error:", error);
+    // ✅ Only log in non-test environments
+    if (process.env.NODE_ENV !== 'test') {
+      console.error("❌ Registration Error:", error);
+    }
     throw new Error(`Registration failed: ${error}`);
   }
 }
@@ -98,7 +101,10 @@ export async function verifyEmail(token: string) {
       email: pendingAccount.Email
     };
   } catch (error) {
-    console.error("❌ Email Verification Error:", error);
+    // ✅ Only log in non-test environments
+    if (process.env.NODE_ENV !== 'test') {
+      console.error("❌ Email Verification Error:", error);
+    }
     throw new Error(`Email verification failed: ${error}`);
   }
 }
