@@ -18,4 +18,7 @@ router.get('/check-status/:username', authController.checkStatus);
 // POST /api/auth/login
 router.post('/login', authController.login);
 
+// NEW: Check if email is eligible for SSO
+router.post('/check-sso-eligibility', authController.checkSSOEligibility);
+
 export default router;
