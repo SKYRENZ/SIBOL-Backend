@@ -11,7 +11,7 @@ const ADMIN_ROLE = 1;
 const TOKEN_EXPIRATION_HOURS = 24;
 
 //register function - now stores in pending_accounts_tbl with email verification (NO CONTACT)
-export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number) {
+export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, isSSO: boolean = false) {
   // ✅ 1. Validation - removed contact
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
@@ -38,30 +38,48 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
     // ✅ 4. Hash the password before storing
     const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
-    // ✅ 5. Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const tokenExpiration = new Date();
-    tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
+    // ✅ 5. Generate verification token (only for non-SSO users)
+    let verificationToken = null;
+    let tokenExpiration = null;
+    let isEmailVerified = isSSO ? 1 : 0; // SSO users have pre-verified emails
 
-    // ✅ 6. Insert into pending_accounts_tbl with verification token (NO CONTACT)
+    if (!isSSO) {
+      verificationToken = crypto.randomBytes(32).toString('hex');
+      tokenExpiration = new Date();
+      tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
+    }
+
+    // ✅ 6. Insert into pending_accounts_tbl
     const [pendingResult]: any = await pool.execute(
       `INSERT INTO pending_accounts_tbl 
-       (Username, Password, FirstName, LastName, Email, Area_id, Roles, Verification_token, Token_expiration) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, hashedPassword, firstName, lastName, email, areaId, roleId, verificationToken, tokenExpiration]
+       (Username, Password, FirstName, LastName, Email, Area_id, Roles, Verification_token, Token_expiration, IsEmailVerified) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, hashedPassword, firstName, lastName, email, areaId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
-    // ✅ 7. Send verification email
-    await emailService.sendVerificationEmail(email, verificationToken, firstName);
+    // ✅ 7. Send verification email (only for non-SSO users)
+    if (!isSSO) {
+      await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+    }
 
-    // ✅ 8. Return registration data (without exposing token in response)
+    // ✅ 8. Return registration data
+    const responseMessage = isSSO 
+      ? "Registration successful. Your account is pending admin approval."
+      : "Registration successful. Please check your email to verify your account.";
+
+    const responseNote = isSSO 
+      ? "Email already verified via Google. Waiting for admin approval."
+      : "Verification email sent. Check your inbox.";
+
     return {
       success: true,
-      message: "Registration successful. Please check your email to verify your account.",
+      message: responseMessage,
       pendingId: pendingResult.insertId,
       username: username,
       email: email,
-      note: "Verification email sent. Check your inbox."
+      isSSO: isSSO,
+      emailVerified: isSSO,
+      note: responseNote
     };
   } catch (error) {
     // ✅ Only log in non-test environments

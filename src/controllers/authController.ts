@@ -6,11 +6,11 @@ export async function register(req: Request, res: Response) {
   try {
     console.log('📝 Registration request received:', req.body);
     
-    // Removed contact from destructuring
-    const { firstName, lastName, areaId, email, roleId } = req.body;
+    // Add isSSO to destructuring
+    const { firstName, lastName, areaId, email, roleId, isSSO } = req.body;
     
-    // Removed contact parameter
-    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId);
+    // Pass isSSO flag to the service
+    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId, isSSO || false);
     
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
