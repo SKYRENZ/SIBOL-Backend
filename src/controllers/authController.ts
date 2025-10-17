@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService';
+import { pool } from '../config/db'; // Add this import
 
 export async function register(req: Request, res: Response) {
   try {
@@ -121,5 +122,42 @@ export async function login(req: Request, res: Response) {
       success: false, 
       error: error.message 
     });
+  }
+}
+
+export async function checkSSOEligibility(req: Request, res: Response) {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const [userRows]: any = await pool.execute(`
+      SELECT p.Email_verified, p.Admin_verified 
+      FROM profile_tbl p 
+      JOIN accounts_tbl a ON p.Account_id = a.Account_id 
+      WHERE p.Email = ? AND a.IsActive = 1
+    `, [email]);
+
+    if (userRows.length === 0) {
+      return res.status(404).json({ 
+        message: 'Email not found in system',
+        canSSO: false 
+      });
+    }
+
+    const user = userRows[0];
+    const canSSO = user.Email_verified && user.Admin_verified;
+
+    return res.json({
+      canSSO,
+      emailVerified: user.Email_verified,
+      adminVerified: user.Admin_verified,
+      message: canSSO ? 'Eligible for SSO' : 'Account not fully verified'
+    });
+
+  } catch (error) {
+    return res.status(500).json({ message: 'Server error' });
   }
 }
