@@ -102,10 +102,9 @@ jobs:
 
       - name: Run AuthService tests only
         env:
+          NODE_ENV: test
           DB_HOST: localhost
           DB_USER: root
           DB_PASS: root
           DB_NAME: sibol_draft
-          EMAIL_USER: test@example.com
-          EMAIL_PASS: testpass
         run: npx jest src/test/authService.test.ts

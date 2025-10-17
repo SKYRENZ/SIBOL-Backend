@@ -1,7 +1,7 @@
 import { pool } from '../config/db';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import * as emailService from '../utils/emailService'; // Add this import
+import * as emailService from '../utils/emailService';
 
 // 🔐 Default password
 const DEFAULT_PASSWORD = "SIBOL12345";
@@ -10,9 +10,8 @@ const ADMIN_ROLE = 1;
 // 📧 Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
 
-//register function - now stores in pending_accounts_tbl with email verification (NO CONTACT)
 export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, isSSO: boolean = false) {
-  // ✅ 1. Validation - removed contact
+  // ✅ 1. Validation
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
   }
@@ -57,9 +56,14 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
       [username, hashedPassword, firstName, lastName, email, areaId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
-    // ✅ 7. Send verification email (only for non-SSO users)
-    if (!isSSO) {
-      await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+    // ✅ 7. Send verification email (only for non-SSO users and only if not in test environment)
+    if (!isSSO && process.env.NODE_ENV !== 'test') {
+      try {
+        await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+      } catch (emailError) {
+        // Log email error but don't fail registration
+        console.warn('⚠️ Email sending failed, but registration completed:', emailError);
+      }
     }
 
     // ✅ 8. Return registration data

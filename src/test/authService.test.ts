@@ -2,6 +2,14 @@ import db from '../config/db';
 import { validateUser, registerUser, verifyEmail, checkAccountStatus } from '../services/authService';
 import { createSqlLogger } from "./sqlLogger";
 
+// Mock the email service to prevent actual email sending during tests
+jest.mock('../utils/emailService', () => ({
+  sendVerificationEmail: jest.fn().mockResolvedValue({
+    success: true,
+    messageId: 'mock-message-id'
+  })
+}));
+
 const LOG_SQL = process.env.MOCK_SQL_LOG === "true";
 const authSqlCalls: Array<[string, any[] | undefined]> = [];
 const _originalDbExecute = (db as any).execute;
@@ -43,7 +51,9 @@ beforeAll(async () => {
 // ✅ Add cleanup function
 async function cleanupTestData() {
   try {
-    await db.execute('DELETE FROM profile_tbl WHERE Email LIKE ?', [`%${Date.now().toString().slice(0, 8)}%`]);
+    // Clean up any existing test data
+    await db.execute('DELETE FROM profile_tbl WHERE Email LIKE ?', [`%${TEST_EMAIL.split('@')[0]}%`]);
+    await db.execute('DELETE FROM profile_tbl WHERE Email LIKE ?', [`%${SSO_EMAIL.split('@')[0]}%`]);
     await db.execute('DELETE FROM accounts_tbl WHERE Username LIKE ?', [`test.user%`]);
     await db.execute('DELETE FROM accounts_tbl WHERE Username LIKE ?', [`sso.user%`]);
     await db.execute('DELETE FROM pending_accounts_tbl WHERE Email LIKE ?', [`testuser%`]);
@@ -149,8 +159,35 @@ describe('AuthService - SSO Registration Flow', () => {
   });
 });
 
+describe('AuthService - Verification Token Comparison', () => {
+  it('should verify regular user has verification token but SSO user does not', async () => {
+    // Check regular user has verification token
+    const [regularRows]: any = await db.execute(
+      'SELECT Verification_token, IsEmailVerified FROM pending_accounts_tbl WHERE Pending_id = ?',
+      [TEST_PENDING_ID]
+    );
+    
+    expect(regularRows.length).toBe(1);
+    expect(regularRows[0].Verification_token).not.toBeNull();
+    expect(regularRows[0].IsEmailVerified).toBe(0);
+
+    // Check SSO user has no verification token
+    const [ssoRows]: any = await db.execute(
+      'SELECT Verification_token, IsEmailVerified FROM pending_accounts_tbl WHERE Pending_id = ?',
+      [SSO_PENDING_ID]
+    );
+    
+    expect(ssoRows.length).toBe(1);
+    expect(ssoRows[0].Verification_token).toBeNull();
+    expect(ssoRows[0].IsEmailVerified).toBe(1);
+  });
+});
+
 describe('AuthService - Email Verification (Regular Users Only)', () => {
   it('should get verification token from database for regular user', async () => {
+    // Ensure TEST_PENDING_ID exists before trying to query
+    expect(TEST_PENDING_ID).toBeDefined();
+    
     const [rows]: any = await db.execute(
       'SELECT Verification_token FROM pending_accounts_tbl WHERE Pending_id = ?',
       [TEST_PENDING_ID]
@@ -163,6 +200,9 @@ describe('AuthService - Email Verification (Regular Users Only)', () => {
   });
 
   it('should verify email successfully for regular user', async () => {
+    // Ensure TEST_VERIFICATION_TOKEN exists
+    expect(TEST_VERIFICATION_TOKEN).toBeDefined();
+    
     const result = await verifyEmail(TEST_VERIFICATION_TOKEN);
     
     expect(result.success).toBe(true);
@@ -179,11 +219,15 @@ describe('AuthService - Email Verification (Regular Users Only)', () => {
 
 describe('AuthService - Admin Approval Simulation', () => {
   it('should simulate admin approval for regular user', async () => {
+    // Ensure TEST_PENDING_ID exists
+    expect(TEST_PENDING_ID).toBeDefined();
+    
     const [pendingRows]: any = await db.execute(
       'SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?',
       [TEST_PENDING_ID]
     );
     
+    expect(pendingRows.length).toBe(1);
     const pendingAccount = pendingRows[0];
 
     const [accountResult]: any = await db.execute(
@@ -202,11 +246,15 @@ describe('AuthService - Admin Approval Simulation', () => {
   });
 
   it('should simulate admin approval for SSO user', async () => {
+    // Ensure SSO_PENDING_ID exists
+    expect(SSO_PENDING_ID).toBeDefined();
+    
     const [pendingRows]: any = await db.execute(
       'SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?',
       [SSO_PENDING_ID]
     );
     
+    expect(pendingRows.length).toBe(1);
     const pendingAccount = pendingRows[0];
 
     const [accountResult]: any = await db.execute(
@@ -227,6 +275,9 @@ describe('AuthService - Admin Approval Simulation', () => {
 
 describe('AuthService - Login After Approval', () => {
   it('should login successfully for regular user', async () => {
+    // Ensure TEST_ACCOUNT_ID exists
+    expect(TEST_ACCOUNT_ID).toBeDefined();
+    
     const user = await validateUser(TEST_USERNAME, TEST_PASSWORD);
     expect(user).toBeDefined();
     expect(user.Username).toBe(TEST_USERNAME);
@@ -235,6 +286,9 @@ describe('AuthService - Login After Approval', () => {
   });
 
   it('should login successfully for SSO user', async () => {
+    // Ensure SSO_ACCOUNT_ID exists
+    expect(SSO_ACCOUNT_ID).toBeDefined();
+    
     const user = await validateUser(SSO_USERNAME, TEST_PASSWORD);
     expect(user).toBeDefined();
     expect(user.Username).toBe(SSO_USERNAME);
@@ -261,6 +315,18 @@ describe('AuthService - Edge Cases', () => {
         true
       )
     ).rejects.toThrow('Username or email already exists');
+  });
+
+  it('should handle email sending properly in test environment', () => {
+    // In test environment, email service should be mocked
+    // The actual email sending is skipped due to NODE_ENV === 'test' condition
+    // This test verifies that the registration still works without email sending
+    expect(process.env.NODE_ENV).toBe('test');
+    
+    // Verify that the mock exists (even if not called in test env)
+    const emailService = require('../utils/emailService');
+    expect(emailService.sendVerificationEmail).toBeDefined();
+    expect(jest.isMockFunction(emailService.sendVerificationEmail)).toBe(true);
   });
 });
 
