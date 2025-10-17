@@ -15,7 +15,8 @@
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "helmet": "^7.0.0",
-    "mysql2": "^3.15.2"
+    "mysql2": "^3.15.2",
+    "nodemailer": "^7.0.9"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
@@ -24,6 +25,7 @@
     "@types/helmet": "^4.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.19.19",
+    "@types/nodemailer": "^7.0.2",
     "cross-env": "^10.1.0",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.5",
