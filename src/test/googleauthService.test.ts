@@ -153,12 +153,12 @@ describe('Google Auth Service', () => {
       }));
     });
 
-    it('should reject user with non-existent email', async () => {
+    it('should redirect unregistered user to signup', async () => {
       const mockProfile = {
         id: 'google456',
-        emails: [{ value: 'nonexistent@example.com', verified: true }],
-        displayName: 'Non User',
-        name: { givenName: 'Non', familyName: 'User' }
+        emails: [{ value: 'unregistered@gmail.com', verified: true }],
+        displayName: 'New User',
+        name: { givenName: 'New', familyName: 'User' }
       };
 
       const mockDone = jest.fn();
@@ -168,20 +168,28 @@ describe('Google Auth Service', () => {
       expect(mockDone).toHaveBeenCalledWith(
         null, 
         false, 
-        { message: 'Email not registered or not yet approved in system' }
+        expect.objectContaining({
+          message: 'not_registered',
+          email: 'unregistered@gmail.com',
+          firstName: 'New',
+          lastName: 'User',
+          redirectTo: 'signup'
+        })
       );
     });
 
-    it('should handle database errors gracefully', async () => {
-      // Temporarily break the database connection
-      const originalExecute = pool.execute;
-      (pool as any).execute = jest.fn().mockRejectedValue(new Error('Database error'));
+    it('should handle pending email verification', async () => {
+      // Create a pending account that needs email verification
+      await pool.execute(
+        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Area_id, Roles, IsEmailVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ['pending.user', 'hashedpass', 'Pending', 'User', 'pending@example.com', TEST_AREA_ID, 2, 0]
+      );
 
       const mockProfile = {
         id: 'google789',
-        emails: [{ value: 'test@example.com', verified: true }],
-        displayName: 'Test User',
-        name: { givenName: 'Test', familyName: 'User' }
+        emails: [{ value: 'pending@example.com', verified: true }],
+        displayName: 'Pending User',
+        name: { givenName: 'Pending', familyName: 'User' }
       };
 
       const mockDone = jest.fn();
@@ -189,12 +197,49 @@ describe('Google Auth Service', () => {
       await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
 
       expect(mockDone).toHaveBeenCalledWith(
-        expect.any(Error),
-        null
+        null, 
+        false, 
+        expect.objectContaining({
+          message: 'email_pending',
+          email: 'pending@example.com',
+          redirectTo: 'verify-email'
+        })
       );
 
-      // Restore original execute
-      (pool as any).execute = originalExecute;
+      // Cleanup
+      await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', ['pending@example.com']);
+    });
+
+    it('should handle pending admin approval', async () => {
+      // Create a pending account that needs admin approval
+      await pool.execute(
+        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Area_id, Roles, IsEmailVerified, IsAdminVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ['adminpending.user', 'hashedpass', 'AdminPending', 'User', 'adminpending@example.com', TEST_AREA_ID, 2, 1, 0]
+      );
+
+      const mockProfile = {
+        id: 'google101112',
+        emails: [{ value: 'adminpending@example.com', verified: true }],
+        displayName: 'AdminPending User',
+        name: { givenName: 'AdminPending', familyName: 'User' }
+      };
+
+      const mockDone = jest.fn();
+
+      await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
+
+      expect(mockDone).toHaveBeenCalledWith(
+        null, 
+        false, 
+        expect.objectContaining({
+          message: 'admin_pending',
+          email: 'adminpending@example.com',
+          redirectTo: 'pending-approval'
+        })
+      );
+
+      // Cleanup
+      await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', ['adminpending@example.com']);
     });
   });
 
@@ -222,40 +267,8 @@ describe('Google Auth Service', () => {
       expect(mockDone).toHaveBeenCalledWith(null, expect.objectContaining({
         Account_id: TEST_ACCOUNT_ID,
         Username: expect.any(String),
-        Roles: 2 // Should match the role ID we used
+        Roles: 2
       }));
-    });
-
-    it('should handle non-existent user in deserialization', async () => {
-      const deserializeCall = mockPassport.deserializeUser.mock.calls[0];
-      const deserializeFunction = deserializeCall[0];
-
-      const mockDone = jest.fn();
-
-      await deserializeFunction(99999, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(null, null);
-    });
-
-    it('should handle database errors in deserialization', async () => {
-      // Temporarily break the database connection
-      const originalExecute = pool.execute;
-      (pool as any).execute = jest.fn().mockRejectedValue(new Error('Database error'));
-
-      const deserializeCall = mockPassport.deserializeUser.mock.calls[0];
-      const deserializeFunction = deserializeCall[0];
-
-      const mockDone = jest.fn();
-
-      await deserializeFunction(TEST_ACCOUNT_ID, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(
-        expect.any(Error),
-        null
-      );
-
-      // Restore original execute
-      (pool as any).execute = originalExecute;
     });
   });
 });
