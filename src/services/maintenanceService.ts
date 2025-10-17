@@ -1,4 +1,5 @@
 import pool from "../config/db";
+import type { MaintenanceTicket } from "../models/types";
 
 type Row = any;
 
@@ -22,7 +23,7 @@ export async function createTicket(data: {
   created_by: number;         // account id of creator (operator)
   due_date?: string | null;
   attachment?: string | null;
-}) {
+}): Promise<MaintenanceTicket> {
   // ensure creator is Operator
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [data.created_by]);
   if (!acctRows.length) throw { status: 404, message: "Creator account not found" };
@@ -51,7 +52,7 @@ export async function createTicket(data: {
   return rows[0];
 }
 
-export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null) {
+export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null): Promise<MaintenanceTicket> {
   // Only Barangay_staff (role 2) can accept and assign
   const [staffRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
   if (!staffRows.length) throw { status: 404, message: "Staff account not found" };
@@ -74,7 +75,7 @@ export async function acceptAndAssign(requestId: number, staffAccountId: number,
   return rows[0];
 }
 
-export async function markOnGoingByOperator(requestId: number, operatorAccountId: number) {
+export async function markOnGoingByOperator(requestId: number, operatorAccountId: number): Promise<MaintenanceTicket> {
   // ensure operator is assigned to this ticket
   const [rows] = await pool.query<Row[]>("SELECT Assigned_to FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   if (!rows.length) throw { status: 404, message: "Request not found" };
@@ -87,7 +88,7 @@ export async function markOnGoingByOperator(requestId: number, operatorAccountId
   return updated[0];
 }
 
-export async function operatorMarkForVerification(requestId: number, operatorAccountId: number) {
+export async function operatorMarkForVerification(requestId: number, operatorAccountId: number): Promise<MaintenanceTicket> {
   // ensure operator is assigned
   const [rows] = await pool.query<Row[]>("SELECT Assigned_to FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   if (!rows.length) throw { status: 404, message: "Request not found" };
@@ -100,7 +101,7 @@ export async function operatorMarkForVerification(requestId: number, operatorAcc
   return updated[0];
 }
 
-export async function staffVerifyCompletion(requestId: number, staffAccountId: number) {
+export async function staffVerifyCompletion(requestId: number, staffAccountId: number): Promise<MaintenanceTicket> {
   // only staff can finalize to Completed
   const [staffRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
   if (!staffRows.length) throw { status: 404, message: "Staff account not found" };
@@ -112,7 +113,7 @@ export async function staffVerifyCompletion(requestId: number, staffAccountId: n
   return updated[0];
 }
 
-export async function cancelTicket(requestId: number, actorAccountId: number) {
+export async function cancelTicket(requestId: number, actorAccountId: number): Promise<MaintenanceTicket> {
   // allow either creator (operator) or staff to cancel
   const [rows] = await pool.query<Row[]>("SELECT Created_by FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   if (!rows.length) throw { status: 404, message: "Request not found" };
@@ -129,13 +130,13 @@ export async function cancelTicket(requestId: number, actorAccountId: number) {
   return updated[0];
 }
 
-export async function getTicketById(requestId: number) {
+export async function getTicketById(requestId: number): Promise<MaintenanceTicket> {
   const [rows] = await pool.query<Row[]>("SELECT m.*, s.Status as StatusName, p.Priority as PriorityName FROM maintenance_tbl m LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id WHERE Request_Id = ?", [requestId]);
   if (!rows.length) throw { status: 404, message: "Request not found" };
   return rows[0];
 }
 
-export async function listTickets(filters: { status?: string | undefined; assigned_to?: number | undefined; created_by?: number | undefined } = {}) {
+export async function listTickets(filters: { status?: string | undefined; assigned_to?: number | undefined; created_by?: number | undefined } = {}): Promise<MaintenanceTicket[]> {
   const conditions: string[] = [];
   const params: any[] = [];
   if (filters.status) { conditions.push("s.Status = ?"); params.push(filters.status); }

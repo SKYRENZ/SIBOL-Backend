@@ -1,0 +1,91 @@
+name: Run RewardService Tests
+
+on:
+  push:
+    paths:
+      - 'src/services/rewardService.ts'
+      - 'src/test/rewardService.test.ts'
+      - '.github/workflows/rewardservice-test.yml'
+  pull_request:
+    paths:
+      - 'src/services/rewardService.ts'
+      - 'src/test/rewardService.test.ts'
+
+jobs:
+  rewardservice-test:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: sibol_draft
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MySQL to be ready
+        run: |
+          for i in {1..60}; do
+            mysqladmin -h 127.0.0.1 -u root -proot ping && break
+            sleep 1
+          done
+
+      - name: Create database tables for RewardService
+        run: |
+          mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
+            CREATE TABLE IF NOT EXISTS accounts_tbl (
+              Account_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Username VARCHAR(100) NOT NULL,
+              Password VARCHAR(255) DEFAULT NULL,
+              Roles INT(11) DEFAULT NULL,
+              IsActive TINYINT(1) DEFAULT 1,
+              Points INT(11) NOT NULL DEFAULT 0,
+              Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS rewards_tbl (
+              Reward_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Item VARCHAR(255) NOT NULL,
+              Description TEXT DEFAULT NULL,
+              Points_cost INT(11) NOT NULL DEFAULT 0,
+              Quantity INT(11) NOT NULL DEFAULT 0,
+              IsArchived TINYINT(1) NOT NULL DEFAULT 0,
+              Created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+              Updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP() ON UPDATE CURRENT_TIMESTAMP()
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            CREATE TABLE IF NOT EXISTS reward_transactions_tbl (
+              Reward_transaction_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Reward_id INT(11) NOT NULL,
+              Account_id INT(11) NOT NULL,
+              Quantity INT(11) NOT NULL DEFAULT 1,
+              Total_points INT(11) NOT NULL,
+              Redemption_code VARCHAR(100) NOT NULL,
+              Status VARCHAR(50) NOT NULL DEFAULT 'Pending',
+              Created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP(),
+              Redeemed_at DATETIME DEFAULT NULL,
+              UNIQUE KEY (Redemption_code),
+              KEY (Reward_id),
+              KEY (Account_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+          "
+
+      - name: Run RewardService tests
+        env:
+          DB_HOST: localhost
+          DB_USER: root
+          DB_PASS: root
+          DB_NAME: sibol_draft
+        run: npx jest src/test/rewardService.test.ts --runInBand
