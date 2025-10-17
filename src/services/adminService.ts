@@ -56,3 +56,14 @@ export async function setAccountActive(accountId: number, isActive: 0 | 1) {
   const [rows]: any = await pool.execute("SELECT Account_id, Username, Roles, IsActive FROM accounts_tbl WHERE Account_id = ?", [accountId]);
   return rows[0];
 }
+
+export async function getAllAccounts() {
+  const [rows]: any = await pool.execute(
+    `SELECT a.Account_id, a.Username, a.Roles, a.IsActive,
+            p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+     FROM accounts_tbl a
+     LEFT JOIN profile_tbl p USING (Account_id)
+     ORDER BY a.Account_id DESC`
+  );
+  return rows;
+}

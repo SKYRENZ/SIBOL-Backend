@@ -1,5 +1,8 @@
 import type { Request, Response } from 'express';
 import * as authService from '../services/authService';
+import jwt from 'jsonwebtoken';
+
+const SECRET = process.env.JWT_SECRET || 'changeme';
 
 export async function register(req: Request, res: Response) {
     try {
@@ -22,7 +25,12 @@ export async function login(req: Request, res: Response) {
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
-        return res.status(200).json({ user });
+
+        // sign JWT and return token + user
+        const payload = { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
+        const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
+
+        return res.status(200).json({ user: { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles }, token });
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Login failed';
         return res.status(500).json({ message });
