@@ -75,3 +75,13 @@ export interface MaintenanceTicket {
   StatusName?: string | null;
   PriorityName?: string | null;
 }
+
+export type ProfileUpdate = {
+  username?: string;
+  password?: string;
+  firstName?: string;
+  lastName?: string;
+  area?: number;
+  contact?: string | number;
+  email?: string;
+};

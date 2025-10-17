@@ -10,6 +10,7 @@ import machineRoutes from './Routes/machineRoutes.js';
 import maintenanceRoutes from "./Routes/maintenanceRoutes.js";
 import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import rewardRoutes from "./Routes/rewardRoutes.js";
+import profileRoutes from './Routes/profileRoutes.js';
 // Load environment variables
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use('/api/rewards', rewardRoutes);
+app.use('/api/profile', profileRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
