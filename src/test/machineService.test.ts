@@ -8,12 +8,26 @@ import {
   getMachineStatuses,
   getAreas 
 } from '../services/machineService';
+import { createSqlLogger } from "./sqlLogger";
+
+const LOG_SQL = process.env.MOCK_SQL_LOG === "true";
+const machineSqlCalls: Array<[string, any[] | undefined]> = [];
+const _originalPoolExecute = (pool as any).execute;
 
 let TEST_AREA_ID: number;
 let TEST_STATUS_ID: number;
 let TEST_MACHINE_ID: number;
 
+const SQL_LOGGER = createSqlLogger("machineService");
+
 beforeAll(async () => {
+  // wrap pool.execute to capture SQL calls when logging is enabled
+  (pool as any).execute = async (sql: any, params?: any[]) => {
+    SQL_LOGGER.log(String(sql).replace(/\s+/g, " ").trim(), params);
+    if (LOG_SQL) machineSqlCalls.push([String(sql).replace(/\s+/g, " ").trim(), params]);
+    return _originalPoolExecute.call(pool, sql, params);
+  };
+
   // Create test area
   const [areaResult]: any = await pool.execute(
     'INSERT INTO area_tbl (Area_Name) VALUES (?)',
@@ -29,12 +43,29 @@ beforeAll(async () => {
   TEST_STATUS_ID = statusResult.insertId;
 });
 
+// clear after each test into the SQL log file
+afterEach(() => {
+  if (SQL_LOGGER.filePath) {
+    for (const c of machineSqlCalls) {
+      SQL_LOGGER.log(String(c[0]).replace(/\s+/g, " ").trim(), c[1]);
+    }
+  }
+  machineSqlCalls.length = 0;
+});
+
 afterAll(async () => {
+  // restore original execute and perform cleanup executed in existing afterAll
+  (pool as any).execute = _originalPoolExecute;
+
   // Clean up test data
   await pool.execute('DELETE FROM machine_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
   await pool.execute('DELETE FROM area_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
   await pool.execute('DELETE FROM machine_status_tbl WHERE Mach_status_id = ?', [TEST_STATUS_ID]);
   await pool.end();
+
+  if (SQL_LOGGER.filePath) {
+    // unified directory print handled by sqlLogger
+  }
 });
 
 describe('Machine Service', () => {

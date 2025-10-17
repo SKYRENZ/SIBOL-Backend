@@ -49,3 +49,8 @@ Thumbs.db
 *.pid.lock
 .sass-cache/
 .env.backup
+
+# ignore per-run test log artifacts
+test-logs/
+# if you want to keep the directory tracked but ignore only the marker:
+# test-logs/.printed
