@@ -2,12 +2,12 @@ import { pool } from '../config/db';
 import * as authService from './authService';
 import * as emailService from '../utils/emailService';
 
-// create user via existing registerUser (keeps creation logic centralized)
-export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, contact: string, email: string, roleId: number) {
-  return authService.registerUser(firstName, lastName, areaId, contact, email, roleId);
+// create user via existing registerUser (keeps creation logic centralized) - removed contact parameter
+export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, email: string, roleId: number) {
+  return authService.registerUser(firstName, lastName, areaId, email, roleId);
 }
 
-// ✅ NEW: Get all pending accounts for admin review (only email verified users)
+// ✅ UPDATED: Get all pending accounts for admin review (removed Contact field)
 export async function getPendingAccounts() {
   try {
     const [rows]: any = await pool.execute(`
@@ -17,7 +17,6 @@ export async function getPendingAccounts() {
         p.FirstName,
         p.LastName,
         p.Email,
-        p.Contact,
         p.Area_id,
         p.Roles,
         p.IsEmailVerified,
@@ -43,7 +42,7 @@ export async function getPendingAccounts() {
   }
 }
 
-// ✅ NEW: Get pending account details by ID
+// ✅ UPDATED: Get pending account details by ID (removed Contact field)
 export async function getPendingAccountById(pendingId: number) {
   try {
     const [rows]: any = await pool.execute(`
@@ -73,7 +72,7 @@ export async function getPendingAccountById(pendingId: number) {
   }
 }
 
-// ✅ UPDATED: Admin approve account (transfer to main tables and DELETE pending record)
+// ✅ UPDATED: Admin approve account (removed contact field from transfer)
 export async function approveAccount(pendingId: number) {
   const conn = await (pool as any).getConnection();
   
@@ -100,10 +99,10 @@ export async function approveAccount(pendingId: number) {
 
     const newAccountId = accountResult.insertId;
 
-    // 3. Insert into profile_tbl
+    // 3. Insert into profile_tbl (removed Contact field - set to NULL or remove if column doesn't allow NULL)
     await conn.execute(
-      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Contact, Email) VALUES (?, ?, ?, ?, ?, ?)",
-      [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Contact, pendingAccount.Email]
+      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)",
+      [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
     );
 
     // 4. ✅ DELETE the pending account (no longer needed)
@@ -121,7 +120,7 @@ export async function approveAccount(pendingId: number) {
 
     await conn.commit();
 
-    // 6. Get the complete user data
+    // 6. Get the complete user data (Contact will be NULL in profile_tbl)
     const [newUserRows]: any = await pool.execute(`
       SELECT 
         a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
@@ -135,7 +134,7 @@ export async function approveAccount(pendingId: number) {
       success: true,
       message: "Account approved and activated successfully",
       user: newUserRows[0],
-      note: "Welcome email sent to user. Pending account record deleted."
+      note: "Welcome email sent to user. Pending account record deleted. Contact field set to NULL."
     };
 
   } catch (error) {
@@ -181,7 +180,7 @@ export async function rejectAccount(pendingId: number, reason?: string) {
   }
 }
 
-// ✅ Existing functions
+// ✅ Existing functions (contact field remains in profile_tbl for existing users)
 export async function updateAccountAndProfile(accountId: number, updates: {
   firstName?: string;
   lastName?: string;

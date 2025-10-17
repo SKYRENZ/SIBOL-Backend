@@ -62,7 +62,7 @@ export async function approveAccount(req: Request, res: Response) {
 export async function rejectAccount(req: Request, res: Response) {
   try {
     const { pendingId } = req.params;
-    const reason = req.body?.reason || undefined; // ✅ Safe destructuring
+    const reason = req.body?.reason || undefined;
     
     if (!pendingId) {
       return res.status(400).json({ 
@@ -81,11 +81,14 @@ export async function rejectAccount(req: Request, res: Response) {
   }
 }
 
-// ✅ Existing functions
+// ✅ UPDATED: Removed contact parameter from createUser
 export async function createUser(req: Request, res: Response) {
     try {
-        const { firstName, lastName, areaId, contact, email, roleId } = req.body;
-        const result = await adminService.createUserAsAdmin(firstName, lastName, Number(areaId), contact, email, Number(roleId));
+        // Removed contact from destructuring
+        const { firstName, lastName, areaId, email, roleId } = req.body;
+        
+        // Removed contact parameter
+        const result = await adminService.createUserAsAdmin(firstName, lastName, Number(areaId), email, Number(roleId));
         return res.status(201).json(result);
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Create user failed';

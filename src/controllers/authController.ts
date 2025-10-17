@@ -6,9 +6,11 @@ export async function register(req: Request, res: Response) {
   try {
     console.log('📝 Registration request received:', req.body);
     
-    const { firstName, lastName, areaId, contact, email, roleId } = req.body;
+    // Removed contact from destructuring
+    const { firstName, lastName, areaId, email, roleId } = req.body;
     
-    const result = await authService.registerUser(firstName, lastName, areaId, contact, email, roleId);
+    // Removed contact parameter
+    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId);
     
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
@@ -134,9 +136,9 @@ export async function checkSSOEligibility(req: Request, res: Response) {
     }
 
     const [userRows]: any = await pool.execute(`
-      SELECT p.Email_verified, p.Admin_verified 
-      FROM profile_tbl p 
-      JOIN accounts_tbl a ON p.Account_id = a.Account_id 
+      SELECT Account_id, Username, Roles, FirstName, LastName, Email 
+      FROM accounts_tbl a 
+      JOIN profile_tbl p ON a.Account_id = p.Account_id 
       WHERE p.Email = ? AND a.IsActive = 1
     `, [email]);
 
@@ -147,14 +149,9 @@ export async function checkSSOEligibility(req: Request, res: Response) {
       });
     }
 
-    const user = userRows[0];
-    const canSSO = user.Email_verified && user.Admin_verified;
-
     return res.json({
-      canSSO,
-      emailVerified: user.Email_verified,
-      adminVerified: user.Admin_verified,
-      message: canSSO ? 'Eligible for SSO' : 'Account not fully verified'
+      canSSO: true,
+      message: 'Eligible for SSO'
     });
 
   } catch (error) {

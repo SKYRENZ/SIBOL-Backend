@@ -10,10 +10,10 @@ const ADMIN_ROLE = 1;
 // 📧 Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
 
-//register function - now stores in pending_accounts_tbl with email verification
-export async function registerUser(firstName: string, lastName: string, areaId: number, contact: string, email: string, roleId: number) {
-  // ✅ 1. Validation
-  if (!firstName || !lastName || !areaId || !contact || !email || !roleId) {
+//register function - now stores in pending_accounts_tbl with email verification (NO CONTACT)
+export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number) {
+  // ✅ 1. Validation - removed contact
+  if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
   }
 
@@ -43,12 +43,12 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
     const tokenExpiration = new Date();
     tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
 
-    // ✅ 6. Insert into pending_accounts_tbl with verification token
+    // ✅ 6. Insert into pending_accounts_tbl with verification token (NO CONTACT)
     const [pendingResult]: any = await pool.execute(
       `INSERT INTO pending_accounts_tbl 
-       (Username, Password, FirstName, LastName, Email, Contact, Area_id, Roles, Verification_token, Token_expiration) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, hashedPassword, firstName, lastName, email, contact, areaId, roleId, verificationToken, tokenExpiration]
+       (Username, Password, FirstName, LastName, Email, Area_id, Roles, Verification_token, Token_expiration) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [username, hashedPassword, firstName, lastName, email, areaId, roleId, verificationToken, tokenExpiration]
     );
 
     // ✅ 7. Send verification email
