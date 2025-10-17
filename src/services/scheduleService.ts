@@ -1,14 +1,5 @@
 import pool from "../config/db";
-
-export interface Schedule {
-  Schedule_id?: number;
-  Account_id: number;
-  Collector?: string;
-  Contact: number;
-  Area: number;
-  sched_stat_id: number;
-  Date_of_collection: string;
-}
+import type { Schedule } from "../models/types";
 
 async function getCollectorUsername(accountId: number): Promise<string | null> {
   const [rows] = await pool.query<any[]>(
