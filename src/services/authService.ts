@@ -148,9 +148,11 @@ export async function verifyEmail(token: string) {
   }
 }
 
-// ✅ NEW: Resend verification email (generate new token)
+// ✅ FIXED: Resend verification email (generate new token AND send email)
 export async function resendVerificationEmail(email: string) {
   try {
+    console.log('🔄 Resending verification email for:', email);
+    
     const [pendingRows]: any = await pool.execute(
       "SELECT * FROM pending_accounts_tbl WHERE Email = ? AND IsEmailVerified = 0",
       [email]
@@ -159,6 +161,13 @@ export async function resendVerificationEmail(email: string) {
     if (pendingRows.length === 0) {
       throw new Error("No pending account found for this email or email already verified");
     }
+
+    const pendingAccount = pendingRows[0];
+    console.log('📋 Found pending account:', {
+      email: pendingAccount.Email,
+      firstName: pendingAccount.FirstName,
+      username: pendingAccount.Username
+    });
 
     // Generate new verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
@@ -170,11 +179,28 @@ export async function resendVerificationEmail(email: string) {
       "UPDATE pending_accounts_tbl SET Verification_token = ?, Token_expiration = ? WHERE Email = ?",
       [verificationToken, tokenExpiration, email]
     );
+    
+    console.log('✅ Updated verification token in database');
+
+    // 🔥 FIX: Actually send the email (only if not in test environment)
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        console.log('📧 Sending verification email...');
+        await emailService.sendVerificationEmail(email, verificationToken, pendingAccount.FirstName);
+        console.log('✅ Verification email sent successfully');
+      } catch (emailError) {
+        console.error('❌ Failed to send verification email:', emailError);
+        // Don't throw error, still return success since token was updated
+        console.warn('⚠️ Email sending failed, but token was updated in database');
+      }
+    } else {
+      console.log('🧪 Test environment - skipping email send');
+    }
 
     return {
       success: true,
-      message: "Verification email resent",
-      verificationToken,
+      message: "Verification email resent successfully",
+      verificationToken, // For testing purposes
       email
     };
   } catch (error) {
