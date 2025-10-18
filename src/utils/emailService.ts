@@ -10,34 +10,52 @@ const transporter = nodemailer.createTransport({
 });
 
 export async function sendVerificationEmail(email: string, verificationToken: string, firstName: string) {
-  const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
+  // Fix: Hardcode the frontend URL or provide a fallback
+  const frontendUrl = process.env.FRONT_END_PORT;
+  const verificationUrl = `${frontendUrl}/email-verification?token=${verificationToken}`;
+  
+  console.log('📧 Sending verification email to:', email);
+  console.log('🔗 Verification URL:', verificationUrl);
+  console.log('🌐 Frontend URL from env:', process.env.FRONT_END_PORT);
   
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
     subject: 'SIBOL - Verify Your Email Address',
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">Welcome to SIBOL, ${firstName}!</h2>
-        
-        <p>Thank you for registering with SIBOL. To complete your registration, please verify your email address by clicking the button below:</p>
-        
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${verificationUrl}" 
-             style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-            Verify Email Address
-          </a>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #333; margin-bottom: 10px;">Welcome to SIBOL, ${firstName}!</h1>
         </div>
         
-        <p>Or copy and paste this link into your browser:</p>
-        <p style="word-break: break-all; color: #007bff;">${verificationUrl}</p>
+        <div style="background-color: #f8f9fa; padding: 30px; border-radius: 8px; margin-bottom: 30px;">
+          <p style="font-size: 16px; line-height: 1.6; margin-bottom: 20px;">
+            Thank you for registering with SIBOL. To complete your registration, please verify your email address by clicking the button below:
+          </p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${verificationUrl}" 
+               style="background-color: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
+              Verify Email Address
+            </a>
+          </div>
+          
+          <p style="font-size: 14px; color: #666; margin-top: 20px;">
+            Or copy and paste this link into your browser:
+          </p>
+          <p style="word-break: break-all; color: #007bff; background-color: #fff; padding: 10px; border-radius: 4px; font-family: monospace;">
+            ${verificationUrl}
+          </p>
+        </div>
         
-        <p style="color: #666; font-size: 14px;">
-          This verification link will expire in 24 hours. After email verification, your account will need admin approval before you can log in.
-        </p>
+        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+          <p style="color: #856404; font-size: 14px; margin: 0;">
+            ⏰ This verification link will expire in 24 hours. After email verification, your account will need admin approval before you can log in.
+          </p>
+        </div>
         
         <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
-        <p style="color: #999; font-size: 12px;">
+        <p style="color: #999; font-size: 12px; text-align: center;">
           If you didn't create a SIBOL account, please ignore this email.
         </p>
       </div>
@@ -46,7 +64,12 @@ export async function sendVerificationEmail(email: string, verificationToken: st
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent:', info.messageId);
+    console.log('✅ Email sent successfully:', info.messageId);
+    console.log('📋 Email details:', {
+      to: email,
+      subject: mailOptions.subject,
+      verificationUrl
+    });
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('❌ Email sending failed:', error);
@@ -55,33 +78,38 @@ export async function sendVerificationEmail(email: string, verificationToken: st
 }
 
 export async function sendWelcomeEmail(email: string, firstName: string, username: string) {
-  const loginUrl = `${process.env.FRONTEND_URL}/login`;
+  const frontendUrl = process.env.FRONT_END_PORT;
+  const loginUrl = `${frontendUrl}/login`;
   
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
     subject: 'SIBOL - Account Approved! Welcome aboard!',
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #28a745;">🎉 Welcome to SIBOL, ${firstName}!</h2>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #28a745; text-align: center;">🎉 Welcome to SIBOL, ${firstName}!</h2>
         
-        <p>Great news! Your account has been approved by our admin team.</p>
+        <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <p style="color: #155724; margin-bottom: 15px;">Great news! Your account has been approved by our admin team.</p>
+        </div>
         
         <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
-          <h3>Your Login Details:</h3>
-          <p><strong>Username:</strong> ${username}</p>
-          <p><strong>Password:</strong> SIBOL12345</p>
-          <p style="color: #dc3545; font-size: 14px;">⚠️ Please change your password after first login</p>
+          <h3 style="color: #333; margin-bottom: 15px;">Your Login Details:</h3>
+          <p style="margin: 10px 0;"><strong>Username:</strong> ${username}</p>
+          <p style="margin: 10px 0;"><strong>Password:</strong> SIBOL12345</p>
+          <p style="color: #dc3545; font-size: 14px; margin-top: 15px;">
+            ⚠️ Please change your password after first login for security
+          </p>
         </div>
         
         <div style="text-align: center; margin: 30px 0;">
           <a href="${loginUrl}" 
-             style="background-color: #28a745; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-            Login Now
+             style="background-color: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+            Login to Your Account
           </a>
         </div>
         
-        <p>Welcome to the SIBOL family!</p>
+        <p style="text-align: center; color: #333;">Welcome to the SIBOL family!</p>
       </div>
     `
   };
