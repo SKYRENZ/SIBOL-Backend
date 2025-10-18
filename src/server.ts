@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
+import { isAdmin } from './middleware/isAdmin.js'; // Add this import at the top
 
 import session from 'express-session';
 import passport from './services/googleauthService';
@@ -16,7 +17,6 @@ import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
-import adminRoutes from './Routes/adminRoutes.js';
 // Load environment variables
 dotenv.config();
 
@@ -48,18 +48,15 @@ app.use('/api/auth', authRoutes);
 app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
-app.use('/api/admin', adminRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/profile', profileRoutes);
-// admin routes
-app.use('/api/admin', authenticate, adminRoutes);
 
-// mount auth globally (optional)
-app.use(authenticate);
+// PROTECT admin routes with authenticate and isAdmin (single mount)
+app.use('/api/admin', authenticate, isAdmin, adminRoutes);
 
-// OR mount only for admin path
-// app.use('/api/admin', authenticate, adminRoutes);
+// remove the global authenticate middleware (it was mounted after routes and may cause confusion)
+// app.use(authenticate);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
