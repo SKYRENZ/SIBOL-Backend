@@ -16,7 +16,7 @@ import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
-import adminRoutes from './Routes/adminRoutes.js';
+
 // Load environment variables
 dotenv.config();
 
