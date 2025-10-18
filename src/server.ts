@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import {pool} from "./config/db.js";
+import { authenticate } from './middleware/authenticate.js';
 
 import session from 'express-session';
 import passport from './services/googleauthService';
@@ -15,6 +16,7 @@ import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
+import adminRoutes from './Routes/adminRoutes.js';
 // Load environment variables
 dotenv.config();
 
@@ -34,7 +36,11 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // ✅ Allow your frontend
-app.use(cors({ origin: process.env.FRONT_END_PORT }));
+app.use(cors({
+  origin: process.env.FRONT_END_PORT || 'http://localhost:5173',
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+}));
 app.use(express.json());
 
 // mount feature routers
@@ -46,6 +52,14 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/profile', profileRoutes);
+// admin routes
+app.use('/api/admin', authenticate, adminRoutes);
+
+// mount auth globally (optional)
+app.use(authenticate);
+
+// OR mount only for admin path
+// app.use('/api/admin', authenticate, adminRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);

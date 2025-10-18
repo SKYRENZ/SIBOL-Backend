@@ -121,3 +121,13 @@ export async function toggleActive(req: Request, res: Response) {
     return res.status(400).json({ message });
   }
 }
+
+export async function listUsers(req: Request, res: Response) {
+  try {
+    const rows = await adminService.getAllAccounts();
+    return res.status(200).json({ rows });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'List users failed';
+    return res.status(400).json({ message });
+  }
+}
