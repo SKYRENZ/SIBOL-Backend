@@ -94,21 +94,38 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
   }
 }
 
-// ✅ NEW: Verify email token
+// ✅ UPDATED: Verify email token
 export async function verifyEmail(token: string) {
   try {
-    // Find pending account with valid token
-    const [pendingRows]: any = await pool.execute(
-      `SELECT * FROM pending_accounts_tbl 
-       WHERE Verification_token = ? AND Token_expiration > NOW() AND IsEmailVerified = 0`,
+    // First, check if the token exists (regardless of verification status)
+    const [tokenRows]: any = await pool.execute(
+      `SELECT * FROM pending_accounts_tbl WHERE Verification_token = ?`,
       [token]
     );
 
-    if (pendingRows.length === 0) {
-      throw new Error("Invalid or expired verification token");
+    if (tokenRows.length === 0) {
+      throw new Error("Invalid verification token");
     }
 
-    const pendingAccount = pendingRows[0];
+    const pendingAccount = tokenRows[0];
+
+    // Check if email is already verified
+    if (pendingAccount.IsEmailVerified === 1) {
+      return {
+        success: true,
+        message: "Email already verified. Waiting for admin approval.",
+        pendingId: pendingAccount.Pending_id,
+        email: pendingAccount.Email,
+        alreadyVerified: true
+      };
+    }
+
+    // Check if token has expired
+    const now = new Date();
+    const tokenExpiration = new Date(pendingAccount.Token_expiration);
+    if (tokenExpiration < now) {
+      throw new Error("Verification token has expired. Please request a new verification email.");
+    }
 
     // Update email verification status
     await pool.execute(
@@ -127,7 +144,7 @@ export async function verifyEmail(token: string) {
     if (process.env.NODE_ENV !== 'test') {
       console.error("❌ Email Verification Error:", error);
     }
-    throw new Error(`Email verification failed: ${error}`);
+    throw error; // Don't wrap the error, just re-throw it
   }
 }
 
