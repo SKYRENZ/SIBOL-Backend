@@ -97,53 +97,34 @@ export async function checkStatus(req: Request, res: Response) {
 }
 
 export async function login(req: Request, res: Response) {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ message: 'username and password required' });
-        }
-        const user = await authService.validateUser(username, password);
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
-
-        // sign JWT and return token + user
-        const payload = { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
-        const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
-
-        return res.status(200).json({ user: { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles }, token });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : 'Login failed';
-        return res.status(500).json({ message });
   try {
     const { username, password } = req.body;
-    
     if (!username || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "Username and password are required" 
-      });
+      return res.status(400).json({ message: 'Username and password required' });
     }
-    
-    const user = await authService.validateUser(username, password);
-    
-    if (user) {
-      res.status(200).json({ 
-        success: true, 
-        message: "Login successful", 
-        user 
-      });
-    } else {
-      res.status(401).json({ 
-        success: false, 
-        error: "Invalid credentials" 
-      });
+
+    let user;
+    try {
+      user = await authService.validateUser(username, password);
+    } catch (err: any) {
+      // If validateUser throws for pending status, return 403 with message
+      return res.status(403).json({ message: err.message });
     }
-  } catch (error: any) {
-    res.status(400).json({ 
-      success: false, 
-      error: error.message 
+
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    // sign JWT and return token + user
+    const payload = { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
+    const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
+
+    return res.status(200).json({
+      user: { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
+      token
     });
+  } catch (err: any) {
+    return res.status(500).json({ message: err.message || 'Login failed' });
   }
 }
 
