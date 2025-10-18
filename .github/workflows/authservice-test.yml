@@ -18,6 +18,11 @@ jobs:
           MYSQL_DATABASE: sibol_draft
         ports:
           - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
 
     steps:
       - uses: actions/checkout@v3
@@ -107,4 +112,8 @@ jobs:
           DB_USER: root
           DB_PASS: root
           DB_NAME: sibol_draft
-        run: npx jest src/test/authService.test.ts
+          JWT_SECRET: test-secret-key
+          EMAIL_USER: test@example.com
+          EMAIL_PASSWORD: test-password
+          FRONT_END_PORT: http://localhost:3000
+        run: npx jest src/test/authService.test.ts --verbose
