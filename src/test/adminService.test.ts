@@ -50,9 +50,9 @@ describe('adminService', () => {
   test('createUserAsAdmin calls authService.registerUser and returns result', async () => {
     mockedAuth.registerUser.mockResolvedValue({ success: true, user: { Username: 'john.doe' } });
 
-    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, '09171234567', 'john@example.com', 2);
+    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, 'john@example.com', 2);
 
-    expect(mockedAuth.registerUser).toHaveBeenCalledWith('John', 'Doe', 1, '09171234567', 'john@example.com', 2);
+    expect(mockedAuth.registerUser).toHaveBeenCalledWith('John', 'Doe', 1, 'john@example.com', 2);
     expect(res).toEqual({ success: true, user: { Username: 'john.doe' } });
   });
 
