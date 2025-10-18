@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { createUser, updateUser, toggleActive, listUsers } from '../controllers/adminController';
 import { 
   createUser, 
   updateUser, 
   toggleActive,
+  listUsers,
   getPendingAccounts,
   getPendingAccountById,
   approveAccount,

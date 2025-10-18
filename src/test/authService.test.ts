@@ -1,5 +1,5 @@
 import db from '../config/db';
-import { validateUser, registerUser, verifyEmail, checkAccountStatus } from '../services/authService';
+import { validateUser, registerUser, verifyEmail, checkAccountStatus, resendVerificationEmail } from '../services/authService';
 import { createSqlLogger } from "./sqlLogger";
 
 // Mock the email service to prevent actual email sending during tests
@@ -215,6 +215,66 @@ describe('AuthService - Email Verification (Regular Users Only)', () => {
     expect(status.status).toBe('admin_pending');
     expect(status.message).toBe('Account is pending admin approval');
   });
+
+  it('should handle already verified email gracefully', async () => {
+    // Try to verify the same token again
+    const result = await verifyEmail(TEST_VERIFICATION_TOKEN);
+    
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('Email already verified');
+    expect(result.alreadyVerified).toBe(true);
+  });
+});
+
+describe('AuthService - Resend Verification Email', () => {
+  it('should resend verification email for unverified regular user', async () => {
+    // First, let's create a new unverified user for this test
+    const newUser = await registerUser(
+      'Resend',
+      'Test' + Date.now(),
+      TEST_AREAID,
+      `resendtest${Date.now()}@example.com`,
+      TEST_ROLEID,
+      false
+    );
+
+    // Now test resending verification
+    const result = await resendVerificationEmail(newUser.email);
+    
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('Verification email resent successfully');
+    expect(result.email).toBe(newUser.email);
+    expect(result.verificationToken).toBeDefined();
+
+    // Clean up
+    await db.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [newUser.email]);
+  });
+
+  it('should fail to resend email for already verified user', async () => {
+    // Suppress console.error for this test
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
+    try {
+      await expect(
+        resendVerificationEmail(TEST_EMAIL)
+      ).rejects.toThrow('No pending account found for this email or email already verified');
+    } finally {
+      consoleSpy.mockRestore(); // Restore console.error
+    }
+  });
+
+  it('should fail to resend email for non-existent user', async () => {
+    // Suppress console.error for this test
+    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
+    try {
+      await expect(
+        resendVerificationEmail('nonexistent@example.com')
+      ).rejects.toThrow('No pending account found for this email or email already verified');
+    } finally {
+      consoleSpy.mockRestore(); // Restore console.error
+    }
+  });
 });
 
 describe('AuthService - Admin Approval Simulation', () => {
@@ -295,6 +355,44 @@ describe('AuthService - Login After Approval', () => {
     expect(user.Account_id).toBe(SSO_ACCOUNT_ID);
     expect(user.Password).toBeUndefined();
   });
+
+  it('should throw error for user still pending email verification', async () => {
+    // Create a user that hasn't verified email yet
+    const pendingUser = await registerUser(
+      'Pending',
+      'User' + Date.now(),
+      TEST_AREAID,
+      `pending${Date.now()}@example.com`,
+      TEST_ROLEID,
+      false
+    );
+
+    await expect(
+      validateUser(pendingUser.username, TEST_PASSWORD)
+    ).rejects.toThrow('Please verify your email first');
+
+    // Clean up
+    await db.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [pendingUser.email]);
+  });
+
+  it('should throw error for user pending admin approval', async () => {
+    // Create an SSO user (email verified but pending admin approval)
+    const adminPendingUser = await registerUser(
+      'AdminPending',
+      'User' + Date.now(),
+      TEST_AREAID,
+      `adminpending${Date.now()}@gmail.com`,
+      TEST_ROLEID,
+      true
+    );
+
+    await expect(
+      validateUser(adminPendingUser.username, TEST_PASSWORD)
+    ).rejects.toThrow('Account is pending admin approval');
+
+    // Clean up
+    await db.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [adminPendingUser.email]);
+  });
 });
 
 describe('AuthService - Edge Cases', () => {
@@ -302,6 +400,19 @@ describe('AuthService - Edge Cases', () => {
     await expect(
       registerUser('', '', 0, '', 0)
     ).rejects.toThrow('Missing required fields');
+  });
+
+  it('should prevent duplicate regular registration', async () => {
+    await expect(
+      registerUser(
+        TEST_FIRSTNAME,
+        TEST_LASTNAME,
+        TEST_AREAID,
+        TEST_EMAIL,
+        TEST_ROLEID,
+        false
+      )
+    ).rejects.toThrow('Username or email already exists');
   });
 
   it('should prevent duplicate SSO registration', async () => {
@@ -317,13 +428,17 @@ describe('AuthService - Edge Cases', () => {
     ).rejects.toThrow('Username or email already exists');
   });
 
+  it('should handle invalid verification token', async () => {
+    await expect(
+      verifyEmail('invalid-token-12345')
+    ).rejects.toThrow('Invalid verification token');
+  });
+
   it('should handle email sending properly in test environment', () => {
     // In test environment, email service should be mocked
-    // The actual email sending is skipped due to NODE_ENV === 'test' condition
-    // This test verifies that the registration still works without email sending
     expect(process.env.NODE_ENV).toBe('test');
     
-    // Verify that the mock exists (even if not called in test env)
+    // Verify that the mock exists
     const emailService = require('../utils/emailService');
     expect(emailService.sendVerificationEmail).toBeDefined();
     expect(jest.isMockFunction(emailService.sendVerificationEmail)).toBe(true);
