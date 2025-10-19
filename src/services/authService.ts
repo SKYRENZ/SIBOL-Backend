@@ -268,5 +268,65 @@ export async function validateUser(username: string, password: string) {
   return null;
 }
 
+// Password reset functions
+export async function findProfileByEmail(email: string) {
+    const [rows]: any = await pool.execute('SELECT * FROM profile_tbl WHERE Email = ?', [email]);
+    return rows[0];
+};
+
+export async function createPasswordReset(email: string, code: string, expiration: Date) {
+    const hashedCode = await bcrypt.hash(code, 10);
+    await pool.execute(
+        'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
+        [email, hashedCode, expiration]
+    );
+};
+
+export async function verifyResetCode(email: string, code: string) {
+    // Find latest unused, unexpired code for this email
+    const [rows]: any = await pool.execute(
+        `SELECT * FROM password_reset_tbl 
+         WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() 
+         ORDER BY Created_at DESC LIMIT 1`,
+        [email]
+    );
+    if (!rows.length) throw new Error('No valid reset code found');
+
+    const reset = rows[0];
+    const match = await bcrypt.compare(code, reset.Reset_code);
+    if (!match) throw new Error('Invalid reset code');
+
+    return reset;
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string) {
+    // Verify code
+    const reset = await verifyResetCode(email, code);
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password in accounts_tbl (find Account_id via profile_tbl)
+    const [profileRows]: any = await pool.execute(
+        'SELECT Account_id FROM profile_tbl WHERE Email = ?',
+        [email]
+    );
+    if (!profileRows.length) throw new Error('Profile not found');
+    const accountId = profileRows[0].Account_id;
+
+    await pool.execute(
+        'UPDATE accounts_tbl SET Password = ? WHERE Account_id = ?',
+        [hashedPassword, accountId]
+    );
+
+    // Mark reset code as used
+    await pool.execute(
+        'UPDATE password_reset_tbl SET IsUsed = 1 WHERE Reset_id = ?',
+        [reset.Reset_id]
+    );
+
+    return { success: true, message: 'Password reset successful' };
+}
+
 // NOTE: admin-specific functions (updateAccountAndProfile, setAccountActive, etc.)
 // were moved to src/services/adminService.ts to follow SRP.
