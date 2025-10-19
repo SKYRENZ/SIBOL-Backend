@@ -1,7 +1,9 @@
+import dotenv from 'dotenv';
+dotenv.config(); // <- move this to the very top, before other imports
+
 import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import {pool} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
 import { isAdmin } from './middleware/isAdmin.js'; // Add this import at the top
@@ -18,18 +20,36 @@ import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
 
-// Load environment variables
-dotenv.config();
+// debug: do not print full secret in production — just existence / masked prefix
+console.log('dotenv loaded:', !!process.env.JWT_SECRET, 'JWT_SECRET mask:', process.env.JWT_SECRET ? `${process.env.JWT_SECRET.slice(0,6)}...` : 'NOT SET');
+console.log('SESSION_SECRET set:', !!process.env.SESSION_SECRET);
+
+const SESSION_SECRET = process.env.SESSION_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!SESSION_SECRET) {
+  console.error('FATAL: SESSION_SECRET is not set. Add it to backend .env or env vars.');
+  process.exit(1);
+}
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET is not set. Add it to backend .env or env vars.');
+  process.exit(1);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Add session middleware before passport
 app.use(session({
-  secret: process.env.SESSION_SECRET!,
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false } // set to true in production with HTTPS
+  // idle timeout: 10 minutes (set via env SESSION_IDLE_MS if needed)
+  cookie: {
+    secure: false, // true in prod w/ HTTPS
+    maxAge: Number(process.env.SESSION_IDLE_MS || 10 * 60 * 1000) // idle expiry
+  },
+  rolling: true // refresh expiry on each request (idle timeout)
 }));
 
 // Initialize passport

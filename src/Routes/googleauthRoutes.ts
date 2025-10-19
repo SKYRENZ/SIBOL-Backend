@@ -1,5 +1,9 @@
 import { Router, Request, Response } from 'express';
 import passport from '../services/googleauthService';
+import * as jwt from 'jsonwebtoken';
+
+const SECRET = process.env.JWT_SECRET as jwt.Secret;
+const TOKEN_TTL = process.env.JWT_TTL || '8h';
 
 const router = Router();
 
@@ -10,73 +14,23 @@ router.get('/google',
 
 // Google OAuth callback with custom handling
 router.get('/google/callback', (req: Request, res: Response, next) => {
-  passport.authenticate('google', (err: any, user: any, info: any) => {
-    console.log('🔍 Passport authenticate callback:', { 
-      err: err ? err.message : null, 
-      user: user ? user.Email : null, 
-      info 
-    });
-    
-    if (err) {
-      console.error('❌ Passport error:', err);
-      return res.redirect(`http://localhost:5173/login?error=server_error`);
+  passport.authenticate('google', async (err: any, user: any) => {
+    if (err || !user) {
+      return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/login?auth=fail`);
     }
 
-    if (user) {
-      // Successful authentication
-      req.logIn(user, (loginErr) => {
-        if (loginErr) {
-          console.error('❌ Login error:', loginErr);
-          return res.redirect(`http://localhost:5173/login?error=login_failed`);
-        }
+    // sign token for frontend use
+    const token = jwt.sign(
+      { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
+      SECRET,
+      { expiresIn: TOKEN_TTL } as jwt.SignOptions
+    );
 
-        console.log('✅ User logged in successfully:', user.Email);
-        const userData = {
-          Account_id: user.Account_id,
-          Username: user.Username,
-          Roles: user.Roles,
-          FirstName: user.FirstName,
-          LastName: user.LastName,
-          Email: user.Email
-        };
-        
-        const userDataString = encodeURIComponent(JSON.stringify(userData));
-        return res.redirect(`http://localhost:5173/dashboard?user=${userDataString}&auth=success`);
-      });
-    } else if (info && typeof info === 'object') {
-      // Authentication failed with info
-      console.log('📋 Authentication info received:', info);
-      const { message, email, redirectTo } = info;
-      
-      console.log(`🎯 Redirect case: ${redirectTo}`);
-      
-      switch (redirectTo) {
-        case 'signup':
-          const signupParams = new URLSearchParams({
-            email: email || '',
-            sso: 'google',
-            message: 'Please complete your registration'
-          });
-          console.log('➡️ Redirecting to signup:', signupParams.toString());
-          return res.redirect(`http://localhost:5173/signup?${signupParams.toString()}`);
-          
-        case 'verify-email':
-          console.log('➡️ Redirecting to verify-email');
-          return res.redirect(`http://localhost:5173/verify-email?email=${encodeURIComponent(email || '')}&message=Please verify your email first`);
-          
-        case 'pending-approval':
-          console.log('➡️ Redirecting to pending-approval');
-          return res.redirect(`http://localhost:5173/pending-approval?email=${encodeURIComponent(email || '')}&message=Your account is pending admin approval`);
-          
-        default:
-          console.log('➡️ Redirecting to login with error message:', message);
-          return res.redirect(`http://localhost:5173/login?error=auth_failed&message=${encodeURIComponent(message || 'Authentication failed')}`);
-      }
-    } else {
-      // No user and no info
-      console.log('❌ No user or info returned from authentication');
-      return res.redirect(`http://localhost:5173/login?error=auth_failed&message=${encodeURIComponent('Google authentication failed')}`);
-    }
+    const userDataString = encodeURIComponent(JSON.stringify({
+      Account_id: user.Account_id, Username: user.Username, Roles: user.Roles, Email: user.Email
+    }));
+
+    return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/dashboard?token=${encodeURIComponent(token)}&user=${userDataString}&auth=success`);
   })(req, res, next);
 });
 

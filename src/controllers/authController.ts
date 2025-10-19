@@ -1,8 +1,10 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService';
-import jwt from 'jsonwebtoken';
-const SECRET = process.env.JWT_SECRET || 'changeme';
-import { pool } from '../config/db'; // Add this import
+import * as jwt from 'jsonwebtoken';
+import { pool } from '../config/db.js';
+
+const SECRET = process.env.JWT_SECRET as jwt.Secret;
+const TOKEN_TTL = process.env.JWT_TTL || '8h';
 
 export async function register(req: Request, res: Response) {
   try {
@@ -107,7 +109,6 @@ export async function login(req: Request, res: Response) {
     try {
       user = await authService.validateUser(username, password);
     } catch (err: any) {
-      // If validateUser throws for pending status, return 403 with message
       return res.status(403).json({ message: err.message });
     }
 
@@ -115,13 +116,12 @@ export async function login(req: Request, res: Response) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    // sign JWT and return token + user
     const payload = { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
-    const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
+    const token = jwt.sign(payload, SECRET, { expiresIn: TOKEN_TTL } as jwt.SignOptions);
 
     return res.status(200).json({
       user: { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
-      token
+      token,
     });
   } catch (err: any) {
     return res.status(500).json({ message: err.message || 'Login failed' });
