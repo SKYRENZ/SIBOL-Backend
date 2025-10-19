@@ -12,6 +12,6 @@ router.get("/areas", machineController.getAreas);
 
 router.get("/:id", machineController.getMachineById);
 router.put("/:id", machineController.updateMachine);
-router.delete("/:id", machineController.deleteMachine);
+//router.delete("/:id", machineController.deleteMachine);
 
 export default router;
