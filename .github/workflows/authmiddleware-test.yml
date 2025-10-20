@@ -93,4 +93,4 @@ jobs:
           DB_NAME: sibol_test
           JWT_SECRET: testsecret
           CI: true
-        run: npm test -- --testPathPattern=src/test/auth.middleware.test.ts
+        run: npm test -- --testPathPatterns=src/test/auth.middleware.test.ts
