@@ -45,7 +45,8 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
     }
 
     // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
-    const finalPassword = password || generateRandomPassword();
+    // FIX: Use DEFAULT_PASSWORD for non-SSO instead of random
+    const finalPassword = password || (isSSO ? generateRandomPassword() : DEFAULT_PASSWORD);
     if (!finalPassword || typeof finalPassword !== 'string') {
       throw new Error("Failed to generate a valid password");
     }
@@ -286,6 +287,116 @@ export async function validateUser(username: string, password: string) {
     }
   }
   return null;
+}
+
+// Password reset functions
+export async function findProfileByEmail(email: string) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Invalid email format');
+    }
+    const [rows]: any = await pool.execute('SELECT * FROM profile_tbl WHERE Email = ?', [email]);
+    return rows[0];
+};
+
+export async function createPasswordReset(email: string, code: string, expiration: Date) {
+    // Validate email format
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Invalid email format');
+    }
+    // Validate code length (6 digits)
+    if (!code || !/^\d{6}$/.test(code)) {
+        throw new Error('Invalid code format. Must be a 6-digit number.');
+    }
+    // Prevent duplicate reset entries
+    const [existing]: any = await pool.execute(
+        `SELECT * FROM password_reset_tbl 
+         WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW()`,
+        [email]
+    );
+    if (existing.length > 0) {
+        throw new Error('A valid reset code already exists for this email. Please check your email.');
+    }
+    // Check that email exists in users table before creating code
+    const profile = await findProfileByEmail(email);
+    if (!profile) throw new Error('No account found with that email');
+
+    // Cleanup expired codes (optional, not required but good practice)
+    await pool.execute(
+        `DELETE FROM password_reset_tbl WHERE Expiration <= NOW()`
+    );
+
+    const hashedCode = await bcrypt.hash(code, 10);
+    await pool.execute(
+        'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
+        [email, hashedCode, expiration]
+    );
+};
+
+export async function verifyResetCode(email: string, code: string) {
+    // Validate email format
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Invalid email format');
+    }
+    // Validate code length
+    if (!code || !/^\d{6}$/.test(code)) {
+        throw new Error('Invalid code format. Must be a 6-digit number.');
+    }
+    // Find latest unused, unexpired code for this email
+    const [rows]: any = await pool.execute(
+        `SELECT * FROM password_reset_tbl 
+         WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() 
+         ORDER BY Created_at DESC LIMIT 1`,
+        [email]
+    );
+    if (!rows.length) throw new Error('No valid reset code found');
+
+    const reset = rows[0];
+    const match = await bcrypt.compare(code, reset.Reset_code);
+    if (!match) throw new Error('Invalid reset code');
+
+    return reset;
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string) {
+    // Validate email format
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Invalid email format');
+    }
+    // Validate code length
+    if (!code || !/^\d{6}$/.test(code)) {
+        throw new Error('Invalid code format. Must be a 6-digit number.');
+    }
+    // Validate password strength
+    if (!newPassword || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
+        throw new Error('Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
+    }
+
+    // Verify code
+    const reset = await verifyResetCode(email, code);
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password in accounts_tbl (find Account_id via profile_tbl)
+    const [profileRows]: any = await pool.execute(
+        'SELECT Account_id FROM profile_tbl WHERE Email = ?',
+        [email]
+    );
+    if (!profileRows.length) throw new Error('Profile not found');
+    const accountId = profileRows[0].Account_id;
+
+    await pool.execute(
+        'UPDATE accounts_tbl SET Password = ? WHERE Account_id = ?',
+        [hashedPassword, accountId]
+    );
+
+    // Mark reset code as used
+    await pool.execute(
+        'UPDATE password_reset_tbl SET IsUsed = 1 WHERE Reset_id = ?',
+        [reset.Reset_id]
+    );
+
+    return { success: true, message: 'Password reset successful' };
 }
 
 // NOTE: admin-specific functions (updateAccountAndProfile, setAccountActive, etc.)

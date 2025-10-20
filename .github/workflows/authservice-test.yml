@@ -93,6 +93,17 @@ jobs:
               Created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
               FOREIGN KEY (Area_id) REFERENCES area_tbl(Area_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+            -- NEW: password_reset_tbl for password reset flow
+            CREATE TABLE IF NOT EXISTS password_reset_tbl (
+              Reset_id INT AUTO_INCREMENT PRIMARY KEY,
+              Email VARCHAR(150) NOT NULL,
+              Reset_code VARCHAR(255) NOT NULL,
+              Expiration DATETIME NOT NULL,
+              IsUsed BOOLEAN DEFAULT 0,
+              Created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (Email) REFERENCES profile_tbl(Email) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
           "
 
       - name: Insert test data for AuthService

@@ -21,4 +21,8 @@ router.post('/login', authController.login);
 // NEW: Check if email is eligible for SSO
 router.post('/check-sso-eligibility', authController.checkSSOEligibility);
 
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/verify-reset-code', authController.verifyResetCode);
+router.post('/reset-password', authController.resetPassword);
+
 export default router;

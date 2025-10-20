@@ -123,3 +123,53 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
     throw new Error('Failed to send welcome email');
   }
 }
+
+export async function sendResetEmail(email: string, code: string) {
+  const frontendUrl = process.env.FRONT_END_PORT;
+  const resetUrl = `${frontendUrl}/reset-password`;
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'SIBOL - Password Reset Request',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #007bff; text-align: center;">🔒 Password Reset Request</h2>
+        
+        <div style="background-color: #f8f9fa; border: 1px solid #c3e6cb; padding: 20px; border-radius: 5px; margin: 20px 0;">
+          <p style="color: #333; margin-bottom: 15px;">
+            You requested to reset your password for your SIBOL account. Please use the code below to proceed:
+          </p>
+          <div style="text-align: center; margin: 20px 0;">
+            <span style="font-size: 2em; font-weight: bold; color: #007bff; letter-spacing: 4px; background: #e9ecef; padding: 10px 30px; border-radius: 8px;">
+              ${code}
+            </span>
+          </div>
+          <p style="color: #dc3545; font-size: 14px; margin-top: 15px;">
+            ⚠️ This code will expire in 10 minutes and can only be used once.
+          </p>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" 
+             style="background-color: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
+            Reset Your Password
+          </a>
+        </div>
+        
+        <p style="color: #999; font-size: 12px; text-align: center;">
+          If you did not request a password reset, please ignore this email.
+        </p>
+      </div>
+    `
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✅ Password reset email sent:', info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('❌ Password reset email sending failed:', error);
+    throw new Error('Failed to send password reset email');
+  }
+}

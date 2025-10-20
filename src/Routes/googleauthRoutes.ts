@@ -22,7 +22,7 @@ router.get('/google/callback', (req: Request, res: Response, next) => {
     if (!user) {
       if (info && info.redirectTo) {
         if (info.redirectTo === 'signup') {
-          // Redirect to signup with pre-filled SSO params
+          // Redirect to signup with pre-filled SSO params (from main, with logging from HEAD)
           const params = new URLSearchParams({
             sso: 'google',
             email: info.email || '',
@@ -30,16 +30,29 @@ router.get('/google/callback', (req: Request, res: Response, next) => {
             lastName: info.lastName || '',
             message: info.message || 'Complete your registration to continue with Google Sign-In'
           });
+          console.log('➡️ Redirecting to signup:', params.toString());  // Added logging from HEAD
           return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/signup?${params.toString()}`);
+        } else if (info.redirectTo === 'verify-email') {
+          // Added from HEAD: Handle verify-email case
+          console.log('➡️ Redirecting to verify-email');
+          return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/verify-email?email=${encodeURIComponent(info.email || '')}&message=Please verify your email first`);
+        } else if (info.redirectTo === 'admin-pending') {
+          // Added from HEAD: Handle admin-pending case (renamed to match main's 'pending-approval')
+          console.log('➡️ Redirecting to pending-approval');
+          return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/pending-approval?email=${encodeURIComponent(info.email || '')}&message=Your account is pending admin approval`);
         } else if (info.redirectTo === 'pending-approval') {
-          // Redirect to pending approval page (if you have one)
+          // From main: Keep as-is for compatibility
           return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/pending-approval?email=${encodeURIComponent(info.email)}`);
+        } else {
+          // Added from HEAD: Default case with logging
+          console.log('➡️ Redirecting to login with error message:', info.message || 'Authentication failed');
+          return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/login?error=auth_failed&message=${encodeURIComponent(info.message || 'Authentication failed')}`);
         }
       }
       return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/login?auth=fail`);
     }
 
-    // Sign token for successful login
+    // Sign token for successful login (unchanged)
     const token = jwt.sign(
       { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
       SECRET,
