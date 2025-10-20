@@ -7,7 +7,8 @@ import {
   getPendingAccounts,
   getPendingAccountById,
   approveAccount,
-  rejectAccount
+  rejectAccount,
+  getRoles
 } from '../controllers/adminController';
 
 const router = Router();
@@ -24,5 +25,7 @@ router.get('/pending-accounts', getPendingAccounts);
 router.get('/pending-accounts/:pendingId', getPendingAccountById);
 router.post('/pending-accounts/:pendingId/approve', approveAccount);
 router.post('/pending-accounts/:pendingId/reject', rejectAccount);
+// GET /admin/roles
+router.get('/roles', getRoles);
 
 export default router;

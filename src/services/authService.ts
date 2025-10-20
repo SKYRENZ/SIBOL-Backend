@@ -10,7 +10,17 @@ const ADMIN_ROLE = 1;
 // 📧 Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
 
-export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, isSSO: boolean = false) {
+function generateRandomPassword(length = 10) {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * charset.length);
+    password += charset[randomIndex];
+  }
+  return password;
+}
+
+export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password?: string, isSSO: boolean = false) {
   // ✅ 1. Validation
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
@@ -35,7 +45,8 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
     }
 
     // ✅ 4. Hash the password before storing
-    const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+    const finalPassword = password || generateRandomPassword();  // Use provided or default
+    const hashedPassword = await bcrypt.hash(finalPassword, 10);
 
     // ✅ 5. Generate verification token (only for non-SSO users)
     let verificationToken = null;

@@ -1,10 +1,11 @@
 import { pool } from '../config/db';
 import * as authService from './authService';
 import * as emailService from '../utils/emailService';
+import bcrypt from 'bcrypt';
 
 // create user via existing registerUser (keeps creation logic centralized) - removed contact parameter
-export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, email: string, roleId: number) {
-  return authService.registerUser(firstName, lastName, areaId, email, roleId);
+export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password: string) {
+  return authService.registerUser(firstName, lastName, areaId, email, roleId, password);
 }
 
 // ✅ UPDATED: Get all pending accounts for admin review (removed Contact field)
@@ -233,12 +234,93 @@ export async function setAccountActive(accountId: number, isActive: 0 | 1) {
 }
 
 export async function getAllAccounts() {
-  const [rows]: any = await pool.execute(
-    `SELECT a.Account_id, a.Username, a.Roles, a.IsActive,
-            p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
-     FROM accounts_tbl a
-     LEFT JOIN profile_tbl p USING (Account_id)
-     ORDER BY a.Account_id DESC`
-  );
+  const query = `
+    SELECT a.*, p.FirstName, p.LastName, p.Area_id, p.Contact, p.Email
+    FROM accounts_tbl a
+    LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+  `;
+  const [rows] = await pool.execute(query);
   return rows;
+}
+
+export async function getRoles() {
+  const query = 'SELECT Roles_id, Roles FROM user_roles_tbl';
+  const [rows] = await pool.execute(query);
+  return rows;
+}
+
+// NEW: Update user details (admin feature) - handles both accounts_tbl and profile_tbl
+export async function updateUser(accountId: number, updates: Record<string, any>) {
+  if (!accountId) return { success: false, message: 'accountId required' };
+
+  const conn = await (pool as any).getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Fields that belong to accounts_tbl vs profile_tbl
+    const accountAllowed = new Set(['Roles', 'Username', 'Password', 'User_modules', 'IsActive']);
+    const profileAllowed = new Set(['FirstName', 'LastName', 'Area_id', 'Contact', 'Email']);
+
+    // Build accounts_tbl update
+    const accCols: string[] = [];
+    const accParams: any[] = [];
+    for (const [k, v] of Object.entries(updates)) {
+      if (!accountAllowed.has(k)) continue;
+      accCols.push(`\`${k}\` = ?`);
+      accParams.push(v);
+    }
+
+    let accResult: any = null;
+    if (accCols.length > 0) {
+      accParams.push(accountId);
+      const accSql = `UPDATE accounts_tbl SET ${accCols.join(', ')} WHERE Account_id = ?`;
+
+      const [r]: any = await conn.execute(accSql, accParams);
+      accResult = r;
+    }
+
+    // Build profile_tbl update
+    const profCols: string[] = [];
+    const profKeys: string[] = []; // <-- new: keep raw column keys
+    const profParams: any[] = [];
+    for (const [k, v] of Object.entries(updates)) {
+      if (!profileAllowed.has(k)) continue;
+      profCols.push(`\`${k}\` = ?`);
+      profKeys.push(k);                  // store the actual key for later INSERT columns
+      profParams.push(v);
+    }
+
+    let profResult: any = null;
+    if (profCols.length > 0) {
+      profParams.push(accountId);
+      const profSql = `UPDATE profile_tbl SET ${profCols.join(', ')} WHERE Account_id = ?`;
+      console.log('adminService.updateUser - profile SQL:', profSql, 'params:', profParams);
+      const [r]: any = await conn.execute(profSql, profParams);
+      profResult = r;
+
+      // If no profile row existed, insert a new one with provided fields
+      const affectedProfile = profResult?.affectedRows ?? 0;
+      if (affectedProfile === 0) {
+        const cols = ['Account_id', ...profKeys]; // use profKeys (safe strings)
+        // Build values array - accountId first, then values in same order as profKeys
+        const insertParams = [accountId, ...profParams.slice(0, profParams.length - 1)];
+        const placeholders = Array(cols.length).fill('?').join(', ');
+        const insertSql = `INSERT INTO profile_tbl (${cols.join(', ')}) VALUES (${placeholders})`;
+        console.log('adminService.updateUser - profile INSERT SQL:', insertSql, 'params:', insertParams);
+        const [ir]: any = await conn.execute(insertSql, insertParams);
+        profResult = ir;
+      }
+    }
+
+    await conn.commit();
+
+    const accAffected = accResult?.affectedRows ?? 0;
+    const profAffected = profResult?.affectedRows ?? 0;
+    return { success: true, affectedRowsAccount: accAffected, affectedRowsProfile: profAffected, message: 'User updated successfully' };
+  } catch (err: any) {
+    await conn.rollback();
+    return { success: false, error: err?.message ?? String(err) };
+  } finally {
+    conn.release();
+  }
 }
