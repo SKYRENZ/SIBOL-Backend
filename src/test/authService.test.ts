@@ -102,7 +102,7 @@ describe('AuthService - Regular Registration Flow', () => {
       TEST_AREAID,
       TEST_EMAIL,
       TEST_ROLEID,
-      false // isSSO = false
+      "false" // isSSO = false
     );
 
     expect(result).toBeDefined();
@@ -132,7 +132,7 @@ describe('AuthService - SSO Registration Flow', () => {
       TEST_AREAID,
       SSO_EMAIL,
       TEST_ROLEID,
-      true // isSSO = true
+      "true" // isSSO = true
     );
 
     expect(result).toBeDefined();
@@ -241,7 +241,7 @@ describe('AuthService - Resend Verification Email', () => {
       TEST_AREAID,
       `resendtest${Date.now()}@example.com`,
       TEST_ROLEID,
-      false
+      "false"
     );
 
     // Now test resending verification
@@ -370,7 +370,7 @@ describe('AuthService - Login After Approval', () => {
       TEST_AREAID,
       `pending${Date.now()}@example.com`,
       TEST_ROLEID,
-      false
+      "false"
     );
 
     await expect(
@@ -389,7 +389,7 @@ describe('AuthService - Login After Approval', () => {
       TEST_AREAID,
       `adminpending${Date.now()}@gmail.com`,
       TEST_ROLEID,
-      true
+      "true"
     );
 
     await expect(
@@ -416,7 +416,7 @@ describe('AuthService - Edge Cases', () => {
         TEST_AREAID,
         TEST_EMAIL,
         TEST_ROLEID,
-        false
+        "false"
       )
     ).rejects.toThrow('Username or email already exists');
   });
@@ -429,7 +429,7 @@ describe('AuthService - Edge Cases', () => {
         TEST_AREAID,
         SSO_EMAIL,
         TEST_ROLEID,
-        true
+        "true"
       )
     ).rejects.toThrow('Username or email already exists');
   });
