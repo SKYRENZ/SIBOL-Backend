@@ -64,9 +64,9 @@ router.get('/google/callback', (req: Request, res: Response, next) => {
           console.log('➡️ Redirecting to verify-email');
           return res.redirect(`http://localhost:5173/verify-email?email=${encodeURIComponent(email || '')}&message=Please verify your email first`);
           
-        case 'pending-approval':
+        case 'admin-pending':
           console.log('➡️ Redirecting to pending-approval');
-          return res.redirect(`http://localhost:5173/pending-approval?email=${encodeURIComponent(email || '')}&message=Your account is pending admin approval`);
+          return res.redirect(`http://localhost:5173/admin-pending?email=${encodeURIComponent(email || '')}&message=Your account is pending admin approval`);
           
         default:
           console.log('➡️ Redirecting to login with error message:', message);
