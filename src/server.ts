@@ -16,6 +16,8 @@ import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
+import moduleRoutes from './Routes/moduleRoutes.js';
+import { authorizeByModulePath } from './middleware/authorize.js';
 
 // Load environment variables
 dotenv.config();
@@ -52,8 +54,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/modules', moduleRoutes);
 // admin routes
-app.use('/api/admin', authenticate, adminRoutes);
+app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
 // mount auth globally (optional)
 app.use(authenticate);
