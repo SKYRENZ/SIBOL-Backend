@@ -26,6 +26,7 @@ export async function registerUser(
   areaId: number,
   email: string,
   roleId: number,
+  password: string | undefined,  // Add this parameter
   isSSO: boolean  // Changed from string to boolean
 ) {
   // ✅ 1. Validation
