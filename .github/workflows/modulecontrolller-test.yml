@@ -1,0 +1,96 @@
+name: Module Controller Tests
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - '.github/workflows/modulecontroller-test.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: sibol_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -prootpassword"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MySQL to be available
+        run: |
+          for i in {1..30}; do
+            mysqladmin ping -h127.0.0.1 -uroot -prootpassword && break || sleep 1
+          done
+
+      - name: Create test schema & seed minimal data
+        run: |
+          cat > setup.sql <<'SQL'
+          CREATE DATABASE IF NOT EXISTS sibol_test;
+          USE sibol_test;
+
+          CREATE TABLE IF NOT EXISTS accounts_tbl (
+            Account_id INT PRIMARY KEY AUTO_INCREMENT,
+            Username VARCHAR(255),
+            Password VARCHAR(255),
+            Roles INT,
+            User_modules VARCHAR(255),
+            IsActive TINYINT DEFAULT 1,
+            Points INT DEFAULT 0,
+            Account_created DATETIME DEFAULT CURRENT_TIMESTAMP
+          );
+
+          CREATE TABLE IF NOT EXISTS modules_tbl (
+            Module_id INT PRIMARY KEY AUTO_INCREMENT,
+            Name VARCHAR(100),
+            Path VARCHAR(255)
+          );
+
+          CREATE TABLE IF NOT EXISTS user_module_tbl (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            Roles_id INT,
+            Module_id INT
+          );
+
+          INSERT INTO modules_tbl (Module_id, Name, Path) VALUES
+            (1, 'Dashboard', '/dashboard'),
+            (2, 'SIBOL Machines', '/sibol-machines'),
+            (3, 'Maintenance', '/maintenance'),
+            (6, 'Admin', '/admin')
+          ON DUPLICATE KEY UPDATE Name=VALUES(Name);
+
+          INSERT INTO accounts_tbl (Account_id, Username, Password, Roles, User_modules, IsActive)
+            VALUES (42, 'testuser', '', 1, '1,2,3,6', 1)
+          ON DUPLICATE KEY UPDATE Username=VALUES(Username);
+          SQL
+
+          mysql -h127.0.0.1 -uroot -prootpassword < setup.sql
+
+      - name: Run module.controller tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: rootpassword
+          DB_NAME: sibol_test
+          JWT_SECRET: testsecret
+          CI: true
+        run: npm test -- --testPathPattern=src/test/module.controller.test.ts
