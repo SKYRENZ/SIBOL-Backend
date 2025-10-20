@@ -20,7 +20,14 @@ function generateRandomPassword(length = 10) {
   return password;
 }
 
-export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password?: string, isSSO: boolean = false) {
+export async function registerUser(
+  firstName: string,
+  lastName: string,
+  areaId: number,
+  email: string,
+  roleId: number,
+  isSSO: boolean  // Changed from string to boolean
+) {
   // ✅ 1. Validation
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
