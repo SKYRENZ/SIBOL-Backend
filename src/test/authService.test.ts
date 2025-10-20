@@ -1,5 +1,7 @@
 import db from '../config/db';
-import { validateUser, registerUser, verifyEmail, checkAccountStatus, resendVerificationEmail } from '../services/authService';
+import bcrypt from 'bcrypt';
+import { validateUser, registerUser, verifyEmail, checkAccountStatus, resendVerificationEmail,
+         createPasswordReset, verifyResetCode, resetPassword } from '../services/authService';
 import { createSqlLogger } from "./sqlLogger";
 
 // Mock the email service to prevent actual email sending during tests
@@ -66,6 +68,10 @@ async function cleanupTestData() {
     await db.execute('DELETE FROM accounts_tbl WHERE Username = ?', [SSO_USERNAME]);
     await db.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [TEST_EMAIL]);
     await db.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [SSO_EMAIL]);
+
+    // Clean up password reset entries for test emails
+    await db.execute('DELETE FROM password_reset_tbl WHERE Email = ?', [TEST_EMAIL]);
+    await db.execute('DELETE FROM password_reset_tbl WHERE Email = ?', [SSO_EMAIL]);
   } catch (error) {
     console.log('Cleanup info:', error);
   }
@@ -442,6 +448,71 @@ describe('AuthService - Edge Cases', () => {
     const emailService = require('../utils/emailService');
     expect(emailService.sendVerificationEmail).toBeDefined();
     expect(jest.isMockFunction(emailService.sendVerificationEmail)).toBe(true);
+  });
+});
+
+// ------------------------- NEW: Password reset tests -------------------------
+describe('AuthService - Password Reset Flow', () => {
+  let generatedCode: string;
+  const NEW_PASSWORD = 'NewPassw0rd!';
+
+  it('should create a password reset code (store hashed) for existing account', async () => {
+    // Ensure account/profile exists from previous admin approval step
+    expect(TEST_ACCOUNT_ID).toBeDefined();
+
+    // generate 6-digit code
+    generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // This will insert a hashed code into password_reset_tbl
+    await createPasswordReset(TEST_EMAIL, generatedCode, expiration);
+
+    const [rows]: any = await db.execute(
+      'SELECT * FROM password_reset_tbl WHERE Email = ? ORDER BY Created_at DESC LIMIT 1',
+      [TEST_EMAIL]
+    );
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].Reset_code).toBeDefined();
+    // stored code must not equal plain generated code
+    expect(rows[0].Reset_code).not.toBe(generatedCode);
+  });
+
+  it('should verify the reset code successfully', async () => {
+    expect(generatedCode).toBeDefined();
+    const reset = await verifyResetCode(TEST_EMAIL, generatedCode);
+    expect(reset).toBeDefined();
+    expect(reset.Email).toBe(TEST_EMAIL);
+    expect(reset.IsUsed).toBe(0);
+  });
+
+  it('should reset the password and mark the code as used', async () => {
+    expect(generatedCode).toBeDefined();
+
+    const result = await resetPassword(TEST_EMAIL, generatedCode, NEW_PASSWORD);
+    expect(result).toBeDefined();
+    expect(result.success).toBe(true);
+
+    // Verify accounts_tbl password updated (hashed)
+    const [accRows]: any = await db.execute(
+      `SELECT a.Password FROM accounts_tbl a 
+       JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE p.Email = ? LIMIT 1`,
+      [TEST_EMAIL]
+    );
+    expect(accRows.length).toBe(1);
+    const hashed = accRows[0].Password;
+    const match = await bcrypt.compare(NEW_PASSWORD, hashed);
+    expect(match).toBe(true);
+
+    // Verify reset code marked used
+    const [resetRows]: any = await db.execute(
+      'SELECT IsUsed FROM password_reset_tbl WHERE Email = ? ORDER BY Created_at DESC LIMIT 1',
+      [TEST_EMAIL]
+    );
+    expect(resetRows.length).toBeGreaterThan(0);
+    expect(resetRows[0].IsUsed).toBe(1);
   });
 });
 
