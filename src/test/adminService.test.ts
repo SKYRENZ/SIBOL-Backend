@@ -1,6 +1,5 @@
 import * as adminService from '../services/adminService';
 import { pool } from '../config/db';
-import * as authService from '../services/authService';
 import { createSqlLogger } from "./sqlLogger";
 const SQL_LOGGER = createSqlLogger("adminService");
 const LOG_SQL = process.env.MOCK_SQL_LOG === "true";
@@ -20,18 +19,9 @@ const mockedPool = dbMock.pool as {
   getConnection: jest.Mock;
 };
 
-jest.mock("../services/authService", () => ({
-  registerUser: jest.fn(),
-}));
-
-const mockedAuth = require("../services/authService") as {
-  registerUser: jest.Mock;
-};
-
 describe('adminService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // DO NOT reassign mockedPool.execute/getConnection here — keep them as jest mocks
   });
 
   afterEach(() => {
@@ -47,13 +37,34 @@ describe('adminService', () => {
     // unified directory print handled by sqlLogger
   });
 
-  test('createUserAsAdmin calls authService.registerUser and returns result', async () => {
-    mockedAuth.registerUser.mockResolvedValue({ success: true, user: { Username: 'john.doe' } });
+  test('createUserAsAdmin creates user directly and returns result', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn()
+        .mockResolvedValueOnce([[]])  // Check existing
+        .mockResolvedValueOnce([{ insertId: 1 }])  // Insert account
+        .mockResolvedValueOnce([{}]),  // Insert profile
+      commit: jest.fn().mockResolvedValue(undefined),
+      rollback: jest.fn().mockResolvedValue(undefined),
+      release: jest.fn().mockResolvedValue(undefined),
+    };
 
-    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, 'john@example.com', 2);
+    mockedPool.getConnection.mockResolvedValue(mockConn);
+    mockedPool.execute.mockResolvedValueOnce([[{ Account_id: 1, Username: 'john.doe', Roles: 2, IsActive: 1, FirstName: 'John', LastName: 'Doe', Email: 'john@example.com', Contact: null, Area_id: 1 }]]);
 
-    expect(mockedAuth.registerUser).toHaveBeenCalledWith('John', 'Doe', 1, 'john@example.com', 2);
-    expect(res).toEqual({ success: true, user: { Username: 'john.doe' } });
+    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, 'john@example.com', 2, 'hashedpass');
+
+    expect(mockConn.beginTransaction).toHaveBeenCalled();
+    expect(mockConn.execute).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO accounts_tbl'),
+      ['john.doe', 'hashedpass', 2, 1]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(res).toEqual({
+      success: true,
+      message: 'User created successfully',
+      user: { Account_id: 1, Username: 'john.doe', Roles: 2, IsActive: 1, FirstName: 'John', LastName: 'Doe', Email: 'john@example.com', Contact: null, Area_id: 1 }
+    });
   });
 
   test('updateAccountAndProfile updates profile and roles inside a transaction and returns updated user', async () => {

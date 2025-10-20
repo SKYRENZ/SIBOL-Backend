@@ -10,7 +10,17 @@ const ADMIN_ROLE = 1;
 // 📧 Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
 
-export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, isSSO: boolean = false) {
+function generateRandomPassword(length = 10) {
+  const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
+  let password = "";
+  for (let i = 0; i < length; i++) {
+    const randomIndex = Math.floor(Math.random() * charset.length);
+    password += charset[randomIndex];
+  }
+  return password;
+}
+
+export async function registerUser(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password?: string, isSSO: boolean = false) {
   // ✅ 1. Validation
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
@@ -34,13 +44,23 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
       throw new Error("Username or email already exists");
     }
 
-    // ✅ 4. Hash the password before storing
-    const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
+    // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
+    const finalPassword = password || generateRandomPassword();
+    if (!finalPassword || typeof finalPassword !== 'string') {
+      throw new Error("Failed to generate a valid password");
+    }
+    let hashedPassword;
+    try {
+      hashedPassword = await bcrypt.hash(finalPassword, 10);
+    } catch (hashError) {
+      console.error("❌ Bcrypt hashing failed:", hashError);
+      throw new Error("Password hashing failed");
+    }
 
     // ✅ 5. Generate verification token (only for non-SSO users)
     let verificationToken = null;
     let tokenExpiration = null;
-    let isEmailVerified = isSSO ? 1 : 0; // SSO users have pre-verified emails
+    let isEmailVerified = isSSO ? 1 : 0;  // SSO users have pre-verified emails
 
     if (!isSSO) {
       verificationToken = crypto.randomBytes(32).toString('hex');

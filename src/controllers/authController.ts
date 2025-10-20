@@ -15,8 +15,8 @@ export async function register(req: Request, res: Response) {
     // Add isSSO to destructuring
     const { firstName, lastName, areaId, email, roleId, isSSO } = req.body;
     
-    // Pass isSSO flag to the service
-    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId, isSSO || false);
+    // Pass undefined for password so the service will generate one, then pass isSSO as the final flag
+    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId, undefined, isSSO || false);
     
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
