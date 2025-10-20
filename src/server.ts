@@ -1,12 +1,9 @@
-import dotenv from 'dotenv';
-dotenv.config(); // <- move this to the very top, before other imports
-
 import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 import {pool} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
-import { isAdmin } from './middleware/isAdmin.js'; // Add this import at the top
 
 import session from 'express-session';
 import passport from './services/googleauthService';
@@ -19,37 +16,21 @@ import scheduleRoutes from "./Routes/scheduleRoutes.js";
 import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
+import moduleRoutes from './Routes/moduleRoutes.js';
+import { authorizeByModulePath } from './middleware/authorize.js';
 
-// debug: do not print full secret in production — just existence / masked prefix
-console.log('dotenv loaded:', !!process.env.JWT_SECRET, 'JWT_SECRET mask:', process.env.JWT_SECRET ? `${process.env.JWT_SECRET.slice(0,6)}...` : 'NOT SET');
-console.log('SESSION_SECRET set:', !!process.env.SESSION_SECRET);
-
-const SESSION_SECRET = process.env.SESSION_SECRET;
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!SESSION_SECRET) {
-  console.error('FATAL: SESSION_SECRET is not set. Add it to backend .env or env vars.');
-  process.exit(1);
-}
-if (!JWT_SECRET) {
-  console.error('FATAL: JWT_SECRET is not set. Add it to backend .env or env vars.');
-  process.exit(1);
-}
+// Load environment variables
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Add session middleware before passport
 app.use(session({
-  secret: SESSION_SECRET,
+  secret: process.env.SESSION_SECRET!,
   resave: false,
   saveUninitialized: false,
-  // idle timeout: 10 minutes (set via env SESSION_IDLE_MS if needed)
-  cookie: {
-    secure: false, // true in prod w/ HTTPS
-    maxAge: Number(process.env.SESSION_IDLE_MS || 10 * 60 * 1000) // idle expiry
-  },
-  rolling: true // refresh expiry on each request (idle timeout)
+  cookie: { secure: false } // set to true in production with HTTPS
 }));
 
 // Initialize passport
@@ -69,15 +50,19 @@ app.use('/api/auth', authRoutes);
 app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/profile', profileRoutes);
+app.use('/api/modules', moduleRoutes);
+// admin routes
+app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
-// PROTECT admin routes with authenticate and isAdmin (single mount)
-app.use('/api/admin', authenticate, isAdmin, adminRoutes);
+// mount auth globally (optional)
+app.use(authenticate);
 
-// remove the global authenticate middleware (it was mounted after routes and may cause confusion)
-// app.use(authenticate);
+// OR mount only for admin path
+// app.use('/api/admin', authenticate, adminRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
