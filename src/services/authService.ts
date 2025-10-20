@@ -45,7 +45,8 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
     }
 
     // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
-    const finalPassword = password || generateRandomPassword();
+    // FIX: Use DEFAULT_PASSWORD for non-SSO instead of random
+    const finalPassword = password || (isSSO ? generateRandomPassword() : DEFAULT_PASSWORD);
     if (!finalPassword || typeof finalPassword !== 'string') {
       throw new Error("Failed to generate a valid password");
     }
