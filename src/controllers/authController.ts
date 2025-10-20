@@ -99,37 +99,35 @@ export async function checkStatus(req: Request, res: Response) {
   }
 }
 
-export async function login(req: Request, res: Response) {
+export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password required' });
-    }
+    const [rows]: any = await pool.query('SELECT * FROM accounts_tbl WHERE Username = ? LIMIT 1', [username]);
+    const user = rows?.[0];
+    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    let user;
+    // verify password (bcrypt if available, fallback to plain compare)
+    let isValid = false;
     try {
-      user = await authService.validateUser(username, password);
-    } catch (err: any) {
-      // If validateUser throws for pending status, return 403 with message
-      return res.status(403).json({ message: err.message });
+      const bcrypt = await import('bcrypt');
+      isValid = await bcrypt.compare(password, user.Password);
+    } catch {
+      isValid = password === user.Password;
     }
+    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
-    }
+    // include Account_id and Roles in token payload so authenticate middleware can resolve user
+    const payload = { Account_id: user.Account_id, Roles: user.Roles, Username: user.Username };
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // sign JWT and return token + user
-    const payload = { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles };
-    const token = jwt.sign(payload, SECRET, { expiresIn: '8h' });
+    const safeUser = { ...user };
+    delete (safeUser as any).Password;
 
-    return res.status(200).json({
-      user: { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
-      token
-    });
+    return res.json({ token, user: safeUser });
   } catch (err: any) {
-    return res.status(500).json({ message: err.message || 'Login failed' });
+    return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
   }
-}
+};
 
 export async function checkSSOEligibility(req: Request, res: Response) {
   try {
