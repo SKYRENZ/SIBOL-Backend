@@ -94,7 +94,15 @@ export async function createUser(req: Request, res: Response) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const result = await adminService.createUserAsAdmin(firstName, lastName, Number(areaId), email, Number(roleId), Password);
+    // Hash the password before passing to service
+    const hashedPassword = await bcrypt.hash(Password, 10);
+
+    const result = await adminService.createUserAsAdmin(firstName, lastName, Number(areaId), email, Number(roleId), hashedPassword);
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to create user');
+    }
+
+    const user = result.user;
 
     // Handle Access (convert to User_modules)
     if (Access) {
@@ -130,13 +138,13 @@ export async function createUser(req: Request, res: Response) {
       });
 
       const userModules = Array.from(ids).join(',');
-      await pool.execute("UPDATE accounts_tbl SET User_modules = ? WHERE Account_id = ?", [userModules, (result as any).user.Account_id]);  // Cast to any
+      await pool.execute("UPDATE accounts_tbl SET User_modules = ? WHERE Account_id = ?", [userModules, user.Account_id]);
     }
 
-    return res.status(201).json({ message: 'User created successfully', user: (result as any).user });  // Cast to any
+    return res.status(201).json({ message: 'User created successfully', user });
   } catch (err) {
-    console.error('Create user error:', err);
-    return res.status(500).json({ error: 'Failed to create user' });
+    console.error('Create user error:', err);  // Log full error for debugging
+    return res.status(500).json({ error: 'Failed to create user', details: err instanceof Error ? err.message : 'Unknown error' });  // Include details in dev mode
   }
 }
 

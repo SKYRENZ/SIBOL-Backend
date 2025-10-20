@@ -23,46 +23,37 @@ passport.use(new GoogleStrategy({
       lastName: profile.name?.familyName
     });
 
-    const email = profile.emails[0].value;
-    
-    // Check if user exists in active accounts (accounts_tbl + profile_tbl)
-    const [userRows]: any = await pool.execute(`
-      SELECT a.Account_id, a.Username, a.Roles, p.FirstName, p.LastName, p.Email 
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id 
-      WHERE p.Email = ? AND a.IsActive = 1
-    `, [email]);
+    const email = profile.emails?.[0]?.value;
+    if (!email) {
+      return done(null, false, { message: 'No email provided by Google' });
+    }
 
-    if (userRows.length > 0) {
-      // User exists and is active - allow login
-      const user = userRows[0];
-      console.log('✅ User found and active:', user.Email);
-      return done(null, user);
+    // Check for existing active user
+    const [activeUser]: any = await pool.execute(
+      'SELECT a.*, p.FirstName, p.LastName, p.Email FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE p.Email = ? AND a.IsActive = 1',
+      [email]
+    );
+
+    if (activeUser.length > 0) {
+      return done(null, activeUser[0]);
     }
 
     console.log('❌ User not found in active accounts, checking pending...');
 
-    // Check if user exists in pending accounts
-    const [pendingRows]: any = await pool.execute(`
-      SELECT * FROM pending_accounts_tbl WHERE Email = ?
-    `, [email]);
+    // Check for pending user (email verified)
+    const [pendingUser]: any = await pool.execute(
+      'SELECT * FROM pending_accounts_tbl WHERE Email = ? AND IsEmailVerified = 1',
+      [email]
+    );
 
-    if (pendingRows.length > 0) {
-      const pending = pendingRows[0];
+    if (pendingUser.length > 0) {
+      const pending = pendingUser[0];
       console.log('📋 Found in pending accounts:', {
         email: pending.Email,
         isEmailVerified: pending.IsEmailVerified,
         isAdminVerified: pending.IsAdminVerified
       });
 
-      if (!pending.IsEmailVerified) {
-        console.log('📧 Email not verified, redirecting to verify-email');
-        return done(null, false, { 
-          message: 'email_pending',
-          email: email,
-          redirectTo: 'verify-email'
-        });
-      }
       if (!pending.IsAdminVerified) {
         console.log('👤 Admin approval pending, redirecting to pending-approval');
         return done(null, false, { 
@@ -71,21 +62,20 @@ passport.use(new GoogleStrategy({
           redirectTo: 'pending-approval'
         });
       }
+      // If somehow admin-verified but not moved, handle edge case (e.g., approveAccount)
     }
 
-    // User doesn't exist at all - redirect to signup
-    console.log('🔄 User not registered, redirecting to signup');
-    const authInfo = { 
+    // NEW: For unregistered SSO users, redirect to signup for completion (do NOT auto-register)
+    const firstName = profile.name?.givenName || '';
+    const lastName = profile.name?.familyName || '';
+    console.log('👤 Unregistered SSO user, redirecting to signup for completion');
+    return done(null, false, {
       message: 'not_registered',
       email: email,
-      firstName: profile.name?.givenName || '',
-      lastName: profile.name?.familyName || '',
+      firstName: firstName,
+      lastName: lastName,
       redirectTo: 'signup'
-    };
-    
-    console.log('📤 Sending authInfo:', authInfo);
-    return done(null, false, authInfo);
-    
+    });
   } catch (error) {
     console.error('❌ Google OAuth error:', error);
     return done(error, null);

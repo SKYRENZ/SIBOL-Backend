@@ -44,14 +44,23 @@ export async function registerUser(firstName: string, lastName: string, areaId: 
       throw new Error("Username or email already exists");
     }
 
-    // ✅ 4. Hash the password before storing
-    const finalPassword = password || generateRandomPassword();  // Use provided or default
-    const hashedPassword = await bcrypt.hash(finalPassword, 10);
+    // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
+    const finalPassword = password || generateRandomPassword();
+    if (!finalPassword || typeof finalPassword !== 'string') {
+      throw new Error("Failed to generate a valid password");
+    }
+    let hashedPassword;
+    try {
+      hashedPassword = await bcrypt.hash(finalPassword, 10);
+    } catch (hashError) {
+      console.error("❌ Bcrypt hashing failed:", hashError);
+      throw new Error("Password hashing failed");
+    }
 
     // ✅ 5. Generate verification token (only for non-SSO users)
     let verificationToken = null;
     let tokenExpiration = null;
-    let isEmailVerified = isSSO ? 1 : 0; // SSO users have pre-verified emails
+    let isEmailVerified = isSSO ? 1 : 0;  // SSO users have pre-verified emails
 
     if (!isSSO) {
       verificationToken = crypto.randomBytes(32).toString('hex');

@@ -3,9 +3,64 @@ import * as authService from './authService';
 import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
 
-// create user via existing registerUser (keeps creation logic centralized) - removed contact parameter
+// create user directly (bypassing pending state for admin creation)
 export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password: string) {
-  return authService.registerUser(firstName, lastName, areaId, email, roleId, password);
+  const conn = await (pool as any).getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // Generate username
+    const username = `${firstName}.${lastName}`.toLowerCase();
+
+    // Check for existing username/email in active accounts
+    const [existingActive]: any = await conn.execute(
+      "SELECT * FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Username = ? OR p.Email = ?",
+      [username, email]
+    );
+    if (existingActive.length > 0) {
+      throw new Error("Username or email already exists");
+    }
+
+    // Insert into accounts_tbl
+    const [accountResult]: any = await conn.execute(
+      "INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)",
+      [username, password, roleId]
+    );
+    const newAccountId = accountResult.insertId;
+
+    // Insert into profile_tbl
+    await conn.execute(
+      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)",
+      [newAccountId, firstName, lastName, areaId, email]
+    );
+
+    // Send welcome email
+    await emailService.sendWelcomeEmail(email, firstName, username);
+
+    await conn.commit();
+
+    // Return the created user
+    const [userRows]: any = await pool.execute(`
+      SELECT 
+        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
+        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+      FROM accounts_tbl a 
+      JOIN profile_tbl p ON a.Account_id = p.Account_id 
+      WHERE a.Account_id = ?
+    `, [newAccountId]);
+
+    return {
+      success: true,
+      message: 'User created successfully',
+      user: userRows[0]
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error("❌ Admin create user error:", error);
+    throw new Error(`Failed to create user: ${error}`);
+  } finally {
+    conn.release();
+  }
 }
 
 // ✅ UPDATED: Get all pending accounts for admin review (removed Contact field)

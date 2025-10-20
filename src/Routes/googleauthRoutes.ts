@@ -14,12 +14,32 @@ router.get('/google',
 
 // Google OAuth callback with custom handling
 router.get('/google/callback', (req: Request, res: Response, next) => {
-  passport.authenticate('google', async (err: any, user: any) => {
-    if (err || !user) {
+  passport.authenticate('google', (err: any, user: any, info: any) => {
+    if (err) {
+      return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/login?auth=fail&error=${encodeURIComponent(err.message)}`);
+    }
+
+    if (!user) {
+      if (info && info.redirectTo) {
+        if (info.redirectTo === 'signup') {
+          // Redirect to signup with pre-filled SSO params
+          const params = new URLSearchParams({
+            sso: 'google',
+            email: info.email || '',
+            firstName: info.firstName || '',
+            lastName: info.lastName || '',
+            message: info.message || 'Complete your registration to continue with Google Sign-In'
+          });
+          return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/signup?${params.toString()}`);
+        } else if (info.redirectTo === 'pending-approval') {
+          // Redirect to pending approval page (if you have one)
+          return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/pending-approval?email=${encodeURIComponent(info.email)}`);
+        }
+      }
       return res.redirect(`${process.env.FRONT_END_PORT || 'http://localhost:5173'}/login?auth=fail`);
     }
 
-    // sign token for frontend use
+    // Sign token for successful login
     const token = jwt.sign(
       { Account_id: user.Account_id, Username: user.Username, Roles: user.Roles },
       SECRET,
