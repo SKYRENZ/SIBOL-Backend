@@ -5,6 +5,7 @@ import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
 
 const SECRET = process.env.JWT_SECRET || 'changeme';
+const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
 
 
 export async function register(req: Request, res: Response) {
