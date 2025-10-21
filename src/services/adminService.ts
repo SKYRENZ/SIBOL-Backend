@@ -678,12 +678,20 @@ export async function rejectAccount(pendingId: number, reason?: string) {
   }
 }
 
-// NEW: Fetch modules for access conversion (matches frontend fetchModules)
-export async function getModules() {
+// REPLACED: getModules implementation to query modules_tbl and normalize fields
+export const getModules = async () => {
   try {
-    const [rows]: any = await pool.execute('SELECT Module_id, Module_name FROM modules_tbl');
-    return rows;
-  } catch (error) {
-    throw new Error(`Failed to fetch modules: ${String(error)}`);
+    const [rows] = await pool.query('SELECT * FROM modules_tbl');
+    const list = Array.isArray(rows) ? (rows as any[]) : [];
+
+    return list.map((m: any) => ({
+      Module_id: m.Module_id ?? m.module_id ?? m.id ?? null,
+      Module_name: m.Name ?? m.Module_name ?? m.name ?? '',  // Use 'Name' from modules_tbl
+      Path: m.Path ?? m.path ?? m.route ?? null,
+      _raw: m,
+    }));
+  } catch (err: any) {
+    console.error('Get modules error:', err);
+    throw new Error(`Failed to fetch modules: ${err?.message ?? String(err)}`);
   }
-}
+};
