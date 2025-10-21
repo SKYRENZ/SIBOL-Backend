@@ -1,9 +1,10 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import config from '../config/env.js';  // Add this import
 
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID!;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET!;
-const BACKEND_URL = process.env.BACKEND_URL || `https://sibol-backend-i0i6.onrender.com`;
+const CLIENT_ID = config.GOOGLE_CLIENT_ID;  // Use config.GOOGLE_CLIENT_ID
+const CLIENT_SECRET = config.GOOGLE_CLIENT_SECRET;  // Use config.GOOGLE_CLIENT_SECRET
+const BACKEND_URL = config.BACKEND_URL;  // Use config.BACKEND_URL
 const CALLBACK_URL = `${BACKEND_URL}/api/auth/google/callback`;
 
 console.log('GOOGLE_CLIENT_ID:', CLIENT_ID);

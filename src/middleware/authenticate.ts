@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/db';
+import config from '../config/env.js';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   const auth = (req.headers.authorization || '').split(' ');
@@ -8,8 +9,8 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   if (!token) return res.status(401).json({ message: 'Authentication required' });
 
   try {
-    // read secret at runtime so tests can set process.env before calling authenticate
-    const SECRET = process.env.JWT_SECRET || 'changeme';
+    // prefer runtime override but fall back to centralized config
+    const SECRET = process.env.JWT_SECRET || config.JWT_SECRET || 'changeme';
     const payload = jwt.verify(token, SECRET) as any;
 
     // try to resolve account id from common payload shapes

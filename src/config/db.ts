@@ -1,16 +1,16 @@
 import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
-dotenv.config();
+import config from './env.js';  // Add this import
 
-const port = Number(process.env.DB_PORT) || 3306;
-const useSsl = process.env.DB_SSL === 'true' || process.env.DB_SSL === '1';
+// Replace direct process.env usage
+const port = config.DB_PORT;  // Use config.DB_PORT
+const useSsl = config.DB_SSL;  // Use config.DB_SSL
 
 export const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
+  host: config.DB_HOST,  // Use config.DB_HOST
   port,
-  user: process.env.DB_USER || '',
-  password: process.env.DB_PASS || '',
-  database: process.env.DB_NAME || '',
+  user: config.DB_USER,  // Use config.DB_USER
+  password: config.DB_PASS,  // Use config.DB_PASS
+  database: config.DB_NAME,  // Use config.DB_NAME
   waitForConnections: true,
   connectionLimit: 10,
   connectTimeout: 20000,

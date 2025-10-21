@@ -3,9 +3,10 @@ import * as authService from '../services/authService';
 import { pool } from '../config/db'; // Add this import
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
+import config from '../config/env.js';  // Add this import
 
-const SECRET = process.env.JWT_SECRET || 'changeme';
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+const SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
+const JWT_SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
 
 
 export async function register(req: Request, res: Response) {

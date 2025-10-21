@@ -2,9 +2,10 @@ import { pool } from '../config/db';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import * as emailService from '../utils/emailService';
+import config from '../config/env.js';
 
-// 🔐 Default password
-const DEFAULT_PASSWORD = "SIBOL12345";
+// DEFAULT_PASSWORD moved to config
+const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
 const ADMIN_ROLE = 1;
 
 // 📧 Email verification token expiration (24 hours)
@@ -20,15 +21,18 @@ function generateRandomPassword(length = 10) {
   return password;
 }
 
+// When creating users (use DEFAULT_PASSWORD fallback if password param missing)
 export async function registerUser(
   firstName: string,
   lastName: string,
   areaId: number,
   email: string,
   roleId: number,
-  password: string | undefined,  // Add this parameter
-  isSSO: boolean  // Changed from string to boolean
+  password: string | undefined,
+  isSSO: boolean
 ) {
+  const finalPassword = password && password.length > 0 ? password : DEFAULT_PASSWORD;
+
   // ✅ 1. Validation
   if (!firstName || !lastName || !areaId || !email || !roleId) {
     throw new Error("Missing required fields");
@@ -54,7 +58,6 @@ export async function registerUser(
 
     // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
     // FIX: Use DEFAULT_PASSWORD for non-SSO instead of random
-    const finalPassword = password || (isSSO ? generateRandomPassword() : DEFAULT_PASSWORD);
     if (!finalPassword || typeof finalPassword !== 'string') {
       throw new Error("Failed to generate a valid password");
     }
@@ -413,12 +416,22 @@ export async function resetPassword(email: string, code: string, newPassword: st
 async function testDBConnection() {
   try {
     const connection = await pool.getConnection();
-    console.log('DB connection test:', connection);
-    connection.release();  // Release the connection
+    // Log only non-sensitive connection details
+    try {
+      // some connection implementations expose config; guard access
+      const host = (connection as any)?.config?.host ?? 'unknown';
+      const port = (connection as any)?.config?.port ?? 'unknown';
+      const threadId = (connection as any)?.threadId ?? 'unknown';
+      console.log(`DB connection test: host=${host} port=${port} threadId=${threadId}`);
+    } catch (logErr) {
+      console.log('DB connection test: connection established (details hidden)');
+    } finally {
+      connection.release(); // Release the connection
+    }
   } catch (error) {
     console.error('DB connection error:', error);
   }
 }
 
-// Call it once, e.g., at the top of the file or in server.ts
-testDBConnection();
+// Export helper so server.ts (or a startup script) can call it explicitly
+export { testDBConnection };
