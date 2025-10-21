@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import passport from '../services/googleauthService';
 import * as jwt from 'jsonwebtoken';
+import type { NextFunction } from 'express';
 
 const SECRET = process.env.JWT_SECRET as jwt.Secret;
 const TOKEN_TTL = process.env.JWT_TTL || '8h';
@@ -8,9 +9,20 @@ const TOKEN_TTL = process.env.JWT_TTL || '8h';
 const router = Router();
 
 // Initiate Google OAuth
-router.get('/google', 
-  passport.authenticate('google', { scope: ['profile', 'email'] })
-);
+router.get('/google', (req: Request, res: Response, next: NextFunction) => {
+  const callback = `${process.env.BACKEND_URL || 'https://sibol-backend-i0i6.onrender.com'}/api/auth/google/callback`;
+  console.log('Starting Google OAuth. Strategy callback configured as:', callback);
+  // Also log the URL that will be asked to Google (constructed from known params)
+  const authUrlPreview = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrlPreview.searchParams.set('client_id', process.env.GOOGLE_CLIENT_ID || '');
+  authUrlPreview.searchParams.set('redirect_uri', callback);
+  authUrlPreview.searchParams.set('response_type', 'code');
+  authUrlPreview.searchParams.set('scope', 'profile email');
+  console.log('Google auth URL preview (compare redirect_uri):', authUrlPreview.toString());
+
+  // Continue with passport flow
+  passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
+});
 
 // Google OAuth callback with custom handling
 router.get('/google/callback', (req: Request, res: Response, next) => {
