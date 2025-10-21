@@ -25,8 +25,8 @@ router.post('/forgot-password', authController.forgotPassword);
 router.post('/verify-reset-code', authController.verifyResetCode);
 router.post('/reset-password', authController.resetPassword);
 
-// PUBLIC
-router.post('/signup', authController.signup);
+// PUBLIC (signup maps to `register` which is exported by the controller)
+router.post('/signup', authController.register);
 router.post('/login', authController.login);
 router.post('/forgot-password', authController.forgotPassword);
 
