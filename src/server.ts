@@ -4,7 +4,7 @@ dotenv.config();  // Must be before other imports
 import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
-import {pool} from "./config/db.js";
+import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
 
 import session from 'express-session';
@@ -62,6 +62,7 @@ app.use(authenticate);
 // OR mount only for admin path
 // app.use('/api/admin', authenticate, adminRoutes);
 
+testDbConnection();
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
 });

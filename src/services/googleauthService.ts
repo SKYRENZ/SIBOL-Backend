@@ -1,20 +1,14 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { pool } from '../config/db';
 
-interface GoogleProfile {
-  id: string;
-  emails: Array<{ value: string; verified: boolean }>;
-  displayName: string;
-  name: { givenName: string; familyName: string };
-}
+console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID);
+console.log('GOOGLE_CALLBACK:', `${process.env.BACKEND_URL}/api/auth/google/callback`);
 
-console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID);  // Add this for debugging
 const googleStrategy = new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-  callbackURL: `${process.env.FRONT_END_PORT}/api/auth/google/callback`,  // Adjust if needed
-  scope: ['profile', 'email'],  // Add this line
+  callbackURL: `${process.env.BACKEND_URL}/api/auth/google/callback`, // <-- use BACKEND_URL
+  scope: ['profile', 'email'], // <-- required
 }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
   try {
     console.log('🔍 Google OAuth profile received:', {
