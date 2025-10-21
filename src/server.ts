@@ -22,14 +22,20 @@ import moduleRoutes from './Routes/moduleRoutes.js';
 import { authorizeByModulePath } from './middleware/authorize.js';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
+
+// trust proxy so secure cookies work behind Render's proxy
+app.set('trust proxy', 1);
 
 // Add session middleware before passport
 app.use(session({
   secret: process.env.SESSION_SECRET!,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false } // set to true in production with HTTPS
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // true on Render (HTTPS)
+    sameSite: 'none', // allow cross-site if frontend is different origin
+  }
 }));
 
 // Initialize passport
@@ -64,7 +70,8 @@ app.use(authenticate);
 
 testDbConnection();
 app.listen(PORT, () => {
-  console.log(`✅ Backend running at http://localhost:${PORT}`);
+  const backendUrl = process.env.BACKEND_URL || `http://localhost:${PORT}`;
+  console.log(`✅ Backend running at ${backendUrl}`);
 });
 
 export default app;
