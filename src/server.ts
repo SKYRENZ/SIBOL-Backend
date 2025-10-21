@@ -1,7 +1,9 @@
+import dotenv from 'dotenv';
+dotenv.config();  // Must be before other imports
+
 import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import {pool} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
 
@@ -18,9 +20,6 @@ import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
 import moduleRoutes from './Routes/moduleRoutes.js';
 import { authorizeByModulePath } from './middleware/authorize.js';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;

@@ -9,6 +9,7 @@ interface GoogleProfile {
   name: { givenName: string; familyName: string };
 }
 
+console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID);  // Add this for debugging
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
