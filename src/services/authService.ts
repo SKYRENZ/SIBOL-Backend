@@ -8,7 +8,7 @@ import config from '../config/env.js';
 const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
 const ADMIN_ROLE = 1;
 
-// 📧 Email verification token expiration (24 hours)
+// Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
 
 function generateRandomPassword(length = 10) {
@@ -22,10 +22,11 @@ function generateRandomPassword(length = 10) {
 }
 
 // When creating users (use DEFAULT_PASSWORD fallback if password param missing)
+// NOTE: changed parameter name areaId -> barangayId and use Barangay_id column in inserts
 export async function registerUser(
   firstName: string,
   lastName: string,
-  areaId: number,
+  barangayId: number,
   email: string,
   roleId: number,
   password: string | undefined,
@@ -33,8 +34,8 @@ export async function registerUser(
 ) {
   const finalPassword = password && password.length > 0 ? password : DEFAULT_PASSWORD;
 
-  // ✅ 1. Validation
-  if (!firstName || !lastName || !areaId || !email || !roleId) {
+  // 1. Validation
+  if (!firstName || !lastName || !barangayId || !email || !roleId) {
     throw new Error("Missing required fields");
   }
 
@@ -42,22 +43,29 @@ export async function registerUser(
   const username = `${firstName}.${lastName}`.toLowerCase();
 
   try {
-    // ✅ 2. Check if username already exists in pending_accounts_tbl
-    const [existingPending]: any = await pool.execute("SELECT * FROM pending_accounts_tbl WHERE Username = ? OR Email = ?", [username, email]);
+    // 2. Check if username already exists in pending_accounts_tbl
+    const [existingPending]: any = await pool.execute(
+      "SELECT * FROM pending_accounts_tbl WHERE Username = ? OR Email = ?",
+      [username, email]
+    );
 
     if (existingPending.length > 0) {
       throw new Error("Username or email already exists in pending accounts");
     }
 
-    // ✅ 3. Check if username/email already exists in active accounts_tbl
-    const [existingActive]: any = await pool.execute("SELECT * FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Username = ? OR p.Email = ?", [username, email]);
+    // 3. Check if username/email already exists in active accounts_tbl/profile_tbl
+    const [existingActive]: any = await pool.execute(
+      `SELECT * FROM accounts_tbl a
+       JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE a.Username = ? OR p.Email = ?`,
+      [username, email]
+    );
 
     if (existingActive.length > 0) {
       throw new Error("Username or email already exists");
     }
 
-    // ✅ 4. Generate and hash the password automatically (for all users, including SSO)
-    // FIX: Use DEFAULT_PASSWORD for non-SSO instead of random
+    // 4. Generate and hash the password
     if (!finalPassword || typeof finalPassword !== 'string') {
       throw new Error("Failed to generate a valid password");
     }
@@ -69,7 +77,7 @@ export async function registerUser(
       throw new Error("Password hashing failed");
     }
 
-    // ✅ 5. Generate verification token (only for non-SSO users)
+    // 5. Generate verification token (only for non-SSO users)
     let verificationToken = null;
     let tokenExpiration = null;
     let isEmailVerified = isSSO ? 1 : 0;  // SSO users have pre-verified emails
@@ -80,25 +88,24 @@ export async function registerUser(
       tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
     }
 
-    // ✅ 6. Insert into pending_accounts_tbl
+    // 6. Insert into pending_accounts_tbl — use Barangay_id column
     const [pendingResult]: any = await pool.execute(
       `INSERT INTO pending_accounts_tbl 
-       (Username, Password, FirstName, LastName, Email, Area_id, Roles, Verification_token, Token_expiration, IsEmailVerified) 
+       (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, Verification_token, Token_expiration, IsEmailVerified) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [username, hashedPassword, firstName, lastName, email, areaId, roleId, verificationToken, tokenExpiration, isEmailVerified]
+      [username, hashedPassword, firstName, lastName, email, barangayId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
-    // ✅ 7. Send verification email (only for non-SSO users and only if not in test environment)
+    // 7. Send verification email (only for non-SSO users and only if not in test environment)
     if (!isSSO && process.env.NODE_ENV !== 'test') {
       try {
         await emailService.sendVerificationEmail(email, verificationToken!, firstName);
       } catch (emailError) {
-        // Log email error but don't fail registration
         console.warn('⚠️ Email sending failed, but registration completed:', emailError);
       }
     }
 
-    // ✅ 8. Return registration data
+    // 8. Return registration data
     const responseMessage = isSSO 
       ? "Registration successful. Your account is pending admin approval."
       : "Registration successful. Please check your email to verify your account.";
@@ -118,7 +125,6 @@ export async function registerUser(
       note: responseNote
     };
   } catch (error) {
-    // ✅ Only log in non-test environments
     if (process.env.NODE_ENV !== 'test') {
       console.error("❌ Registration Error:", error);
     }
@@ -126,10 +132,9 @@ export async function registerUser(
   }
 }
 
-// ✅ UPDATED: Verify email token
+// Verify email token (no changes needed to columns)
 export async function verifyEmail(token: string) {
   try {
-    // First, check if the token exists (regardless of verification status)
     const [tokenRows]: any = await pool.execute(
       `SELECT * FROM pending_accounts_tbl WHERE Verification_token = ?`,
       [token]
@@ -141,7 +146,6 @@ export async function verifyEmail(token: string) {
 
     const pendingAccount = tokenRows[0];
 
-    // Check if email is already verified
     if (pendingAccount.IsEmailVerified === 1) {
       return {
         success: true,
@@ -152,14 +156,12 @@ export async function verifyEmail(token: string) {
       };
     }
 
-    // Check if token has expired
     const now = new Date();
     const tokenExpiration = new Date(pendingAccount.Token_expiration);
     if (tokenExpiration < now) {
       throw new Error("Verification token has expired. Please request a new verification email.");
     }
 
-    // Update email verification status
     await pool.execute(
       "UPDATE pending_accounts_tbl SET IsEmailVerified = 1 WHERE Pending_id = ?",
       [pendingAccount.Pending_id]
@@ -172,15 +174,14 @@ export async function verifyEmail(token: string) {
       email: pendingAccount.Email
     };
   } catch (error) {
-    // ✅ Only log in non-test environments
     if (process.env.NODE_ENV !== 'test') {
       console.error("❌ Email Verification Error:", error);
     }
-    throw error; // Don't wrap the error, just re-throw it
+    throw error;
   }
 }
 
-// ✅ FIXED: Resend verification email (generate new token AND send email)
+// Resend verification email (no column change required)
 export async function resendVerificationEmail(email: string) {
   try {
     console.log('🔄 Resending verification email for:', email);
@@ -201,12 +202,10 @@ export async function resendVerificationEmail(email: string) {
       username: pendingAccount.Username
     });
 
-    // Generate new verification token
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiration = new Date();
     tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
 
-    // Update token in database
     await pool.execute(
       "UPDATE pending_accounts_tbl SET Verification_token = ?, Token_expiration = ? WHERE Email = ?",
       [verificationToken, tokenExpiration, email]
@@ -214,7 +213,6 @@ export async function resendVerificationEmail(email: string) {
     
     console.log('✅ Updated verification token in database');
 
-    // 🔥 FIX: Actually send the email (only if not in test environment)
     if (process.env.NODE_ENV !== 'test') {
       try {
         console.log('📧 Sending verification email...');
@@ -222,7 +220,6 @@ export async function resendVerificationEmail(email: string) {
         console.log('✅ Verification email sent successfully');
       } catch (emailError) {
         console.error('❌ Failed to send verification email:', emailError);
-        // Don't throw error, still return success since token was updated
         console.warn('⚠️ Email sending failed, but token was updated in database');
       }
     } else {
@@ -232,7 +229,7 @@ export async function resendVerificationEmail(email: string) {
     return {
       success: true,
       message: "Verification email resent successfully",
-      verificationToken, // For testing purposes
+      verificationToken,
       email
     };
   } catch (error) {
@@ -241,9 +238,8 @@ export async function resendVerificationEmail(email: string) {
   }
 }
 
-// ✅ NEW: Check account status (for login attempts)
+// Check account status (no change needed)
 export async function checkAccountStatus(username: string) {
-  // Check if account is in pending_accounts_tbl
   const [pendingRows]: any = await pool.execute(
     "SELECT IsEmailVerified, IsAdminVerified FROM pending_accounts_tbl WHERE Username = ?",
     [username]
@@ -259,7 +255,6 @@ export async function checkAccountStatus(username: string) {
     }
   }
 
-  // Check if account exists in active accounts_tbl
   const [activeRows]: any = await pool.execute(
     "SELECT Account_id, IsActive FROM accounts_tbl WHERE Username = ?",
     [username]
@@ -276,16 +271,14 @@ export async function checkAccountStatus(username: string) {
   return { status: 'not_found', message: 'Account not found' };
 }
 
-// ✅ UPDATED: Login function with status check
+// Login helper (no change)
 export async function validateUser(username: string, password: string) {
-  // First check account status
   const statusCheck = await checkAccountStatus(username);
   
   if (statusCheck.status !== 'active') {
     throw new Error(statusCheck.message);
   }
 
-  // Proceed with normal login
   const query = "SELECT Account_id, Username, Password, Roles FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1";
   const [rows]: any = await pool.execute(query, [username]);
   
@@ -300,7 +293,7 @@ export async function validateUser(username: string, password: string) {
   return null;
 }
 
-// Password reset functions
+// Password reset & profile helpers (no change)
 export async function findProfileByEmail(email: string) {
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error('Invalid email format');
@@ -310,15 +303,12 @@ export async function findProfileByEmail(email: string) {
 };
 
 export async function createPasswordReset(email: string, code: string, expiration: Date) {
-    // Validate email format
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error('Invalid email format');
     }
-    // Validate code length (6 digits)
     if (!code || !/^\d{6}$/.test(code)) {
         throw new Error('Invalid code format. Must be a 6-digit number.');
     }
-    // Prevent duplicate reset entries
     const [existing]: any = await pool.execute(
         `SELECT * FROM password_reset_tbl 
          WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW()`,
@@ -327,11 +317,9 @@ export async function createPasswordReset(email: string, code: string, expiratio
     if (existing.length > 0) {
         throw new Error('A valid reset code already exists for this email. Please check your email.');
     }
-    // Check that email exists in users table before creating code
     const profile = await findProfileByEmail(email);
     if (!profile) throw new Error('No account found with that email');
 
-    // Cleanup expired codes (optional, not required but good practice)
     await pool.execute(
         `DELETE FROM password_reset_tbl WHERE Expiration <= NOW()`
     );
@@ -344,15 +332,12 @@ export async function createPasswordReset(email: string, code: string, expiratio
 };
 
 export async function verifyResetCode(email: string, code: string) {
-    // Validate email format
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error('Invalid email format');
     }
-    // Validate code length
     if (!code || !/^\d{6}$/.test(code)) {
         throw new Error('Invalid code format. Must be a 6-digit number.');
     }
-    // Find latest unused, unexpired code for this email
     const [rows]: any = await pool.execute(
         `SELECT * FROM password_reset_tbl 
          WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() 
@@ -369,26 +354,19 @@ export async function verifyResetCode(email: string, code: string) {
 }
 
 export async function resetPassword(email: string, code: string, newPassword: string) {
-    // Validate email format
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new Error('Invalid email format');
     }
-    // Validate code length
     if (!code || !/^\d{6}$/.test(code)) {
         throw new Error('Invalid code format. Must be a 6-digit number.');
     }
-    // Validate password strength
     if (!newPassword || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
         throw new Error('Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
     }
 
-    // Verify code
     const reset = await verifyResetCode(email, code);
-
-    // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password in accounts_tbl (find Account_id via profile_tbl)
     const [profileRows]: any = await pool.execute(
         'SELECT Account_id FROM profile_tbl WHERE Email = ?',
         [email]
@@ -401,7 +379,6 @@ export async function resetPassword(email: string, code: string, newPassword: st
         [hashedPassword, accountId]
     );
 
-    // Mark reset code as used
     await pool.execute(
         'UPDATE password_reset_tbl SET IsUsed = 1 WHERE Reset_id = ?',
         [reset.Reset_id]
@@ -410,15 +387,11 @@ export async function resetPassword(email: string, code: string, newPassword: st
     return { success: true, message: 'Password reset successful' };
 }
 
-// NOTE: admin-specific functions (updateAccountAndProfile, setAccountActive, etc.)
-// were moved to src/services/adminService.ts to follow SRP.
-
+// Test DB connection helper
 async function testDBConnection() {
   try {
     const connection = await pool.getConnection();
-    // Log only non-sensitive connection details
     try {
-      // some connection implementations expose config; guard access
       const host = (connection as any)?.config?.host ?? 'unknown';
       const port = (connection as any)?.config?.port ?? 'unknown';
       const threadId = (connection as any)?.threadId ?? 'unknown';
@@ -426,12 +399,11 @@ async function testDBConnection() {
     } catch (logErr) {
       console.log('DB connection test: connection established (details hidden)');
     } finally {
-      connection.release(); // Release the connection
+      connection.release();
     }
   } catch (error) {
     console.error('DB connection error:', error);
   }
 }
 
-// Export helper so server.ts (or a startup script) can call it explicitly
 export { testDBConnection };

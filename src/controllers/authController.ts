@@ -13,11 +13,25 @@ export async function register(req: Request, res: Response) {
   try {
     console.log('📝 Registration request received:', req.body);
     
-    // Add isSSO to destructuring
-    const { firstName, lastName, areaId, email, roleId, isSSO } = req.body;
-    
+    // NOTE: use barangayId (new DB column) instead of areaId
+    const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
+    // support legacy areaId if caller still sends it
+    const finalBarangayId = barangayId ?? areaId;
+
+    if (!finalBarangayId) {
+      return res.status(400).json({ success: false, error: 'barangayId is required' });
+    }
+
     // Pass undefined for password so the service will generate one, then pass isSSO as the final flag
-    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId, undefined, isSSO || false);
+    const result = await authService.registerUser(
+      firstName,
+      lastName,
+      Number(finalBarangayId),
+      email,
+      Number(roleId),
+      undefined,
+      Boolean(isSSO || false)
+    );
     
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
