@@ -13,11 +13,12 @@ export const pool = mysql.createPool({
   database: process.env.DB_NAME || '',
   waitForConnections: true,
   connectionLimit: 10,
-  connectTimeout: 20000, // 20s
-  ssl: useSsl ? { rejectUnauthorized: false } : undefined
-});
+  connectTimeout: 20000,
+  // cast ssl to any to satisfy mysql2 typings
+  ssl: useSsl ? ({ rejectUnauthorized: false } as any) : undefined,
+} as any);
 
-// helper to test connection at runtime
+// helper to test connection at startup
 export async function testDbConnection(retries = 3, delayMs = 3000) {
   for (let i = 0; i < retries; i++) {
     try {
