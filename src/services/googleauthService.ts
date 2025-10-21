@@ -10,10 +10,11 @@ interface GoogleProfile {
 }
 
 console.log('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID);  // Add this for debugging
-passport.use(new GoogleStrategy({
+const googleStrategy = new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID!,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-  callbackURL: "/api/auth/google/callback"
+  callbackURL: `${process.env.FRONT_END_PORT}/api/auth/google/callback`,  // Adjust if needed
+  scope: ['profile', 'email'],  // Add this line
 }, async (accessToken: string, refreshToken: string, profile: any, done: any) => {
   try {
     console.log('🔍 Google OAuth profile received:', {
@@ -81,7 +82,7 @@ passport.use(new GoogleStrategy({
     console.error('❌ Google OAuth error:', error);
     return done(error, null);
   }
-}));
+});
 
 passport.serializeUser((user: any, done: any) => {
   done(null, user.Account_id);

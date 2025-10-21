@@ -409,3 +409,16 @@ export async function resetPassword(email: string, code: string, newPassword: st
 
 // NOTE: admin-specific functions (updateAccountAndProfile, setAccountActive, etc.)
 // were moved to src/services/adminService.ts to follow SRP.
+
+async function testDBConnection() {
+  try {
+    const connection = await pool.getConnection();
+    console.log('DB connection test:', connection);
+    connection.release();  // Release the connection
+  } catch (error) {
+    console.error('DB connection error:', error);
+  }
+}
+
+// Call it once, e.g., at the top of the file or in server.ts
+testDBConnection();
