@@ -1,21 +1,28 @@
 import mysql from 'mysql2/promise';
-import config from './env.js';  // Add this import
+import config from './env.js';
 
 // Replace direct process.env usage
-const port = config.DB_PORT;  // Use config.DB_PORT
-const useSsl = config.DB_SSL;  // Use config.DB_SSL
+const DB_HOST = process.env.DB_HOST ?? config.DB_HOST ?? 'localhost';
+const DB_USER = process.env.DB_USER ?? config.DB_USER ?? 'root';
+const DB_PASSWORD = process.env.DB_PASSWORD ?? config.DB_PASS ?? '';
+const DB_NAME = process.env.DB_NAME ?? config.DB_NAME ?? 'sibol';
+const DB_PORT = Number(process.env.DB_PORT ?? config.DB_PORT ?? 3306);
+
+// <-- changed: log resolved DB config (no password) for debugging
+console.info('[db] resolved config', { host: DB_HOST, user: DB_USER, database: DB_NAME, port: DB_PORT });
 
 export const pool = mysql.createPool({
-  host: config.DB_HOST,  // Use config.DB_HOST
-  port,
-  user: config.DB_USER,  // Use config.DB_USER
-  password: config.DB_PASS,  // Use config.DB_PASS
-  database: config.DB_NAME,  // Use config.DB_NAME
+  host: DB_HOST,
+  user: DB_USER,
+  password: DB_PASSWORD,
+  database: DB_NAME,
+  port: DB_PORT,
   waitForConnections: true,
   connectionLimit: 10,
+  queueLimit: 0,
   connectTimeout: 20000,
   // cast ssl to any to satisfy mysql2 typings
-  ssl: useSsl ? ({ rejectUnauthorized: false } as any) : undefined,
+  ssl: config.DB_SSL ? ({ rejectUnauthorized: false } as any) : undefined,
 } as any);
 
 // helper to test connection at startup
