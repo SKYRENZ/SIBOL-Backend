@@ -141,6 +141,8 @@ export const login = async (req: Request, res: Response) => {
 
     return res.json({ token, user: safeUser });
   } catch (err: any) {
+    // <-- changed: log full stack for dev:local debugging
+    console.error('login error:', err?.stack ?? err);
     return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
   }
 };
