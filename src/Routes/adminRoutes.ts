@@ -8,7 +8,8 @@ import {
   getPendingAccountById,
   approveAccount,
   rejectAccount,
-  getRoles
+  getRoles,
+  getModules
 } from '../controllers/adminController';
 import { isAdmin } from '../middleware/isAdmin';
 
@@ -30,5 +31,8 @@ router.post('/pending-accounts/:pendingId/reject', isAdmin, rejectAccount);
 
 // Roles
 router.get('/roles', isAdmin, getRoles);
+
+// Modules
+router.get('/modules', isAdmin, getModules);
 
 export default router;

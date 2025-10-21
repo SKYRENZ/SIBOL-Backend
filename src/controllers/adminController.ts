@@ -148,64 +148,38 @@ export async function createUser(req: Request, res: Response) {
   }
 }
 
+// NEW: Controller for fetching modules
+export async function getModules(req: Request, res: Response) {
+  try {
+    const result = await adminService.getModules();
+    return res.status(200).json(result);
+  } catch (error: any) {
+    console.error('Get modules error:', error);
+    return res.status(500).json({ error: 'Failed to fetch modules' });
+  }
+}
+
 export async function updateUser(req: Request, res: Response) {
   try {
     const { accountId } = req.params;
-    if (!accountId) return res.status(400).json({ error: 'accountId required' });
+    const updates: any = req.body;
+    console.log('req.body', req.body);
+    console.log('updates', updates);
 
-    const updates: any = { ...(req.body ?? {}) };
-    console.log('updateUser - Incoming req.body:', req.body);  // Log raw request body
-    console.log('updateUser - Initial updates:', updates);     // Log initial updates object
-
-    // Hash the password if provided (for edit mode)
-    if (updates.Password) {
-      updates.Password = await bcrypt.hash(updates.Password, 10);
-    }
-
-    // If frontend sent Access (array of module names or ids), convert to CSV of module IDs
-    if (updates.Access) {
-      console.log('updateUser - Access array received:', updates.Access);  // Log Access array
-      const rawModules: any = await fetchAllModules();
-      const modules: any[] = rawModules?.rows ?? rawModules ?? [];
-      console.log('updateUser - Fetched modules:', modules);  // Log fetched modules
-
-      // build name/path/id -> id map (case-insensitive for names/paths)
-      const lookup = new Map<string, number>();
-      modules.forEach((m: any) => {
-        const id = Number(m.Module_id ?? m.id ?? m.module_id ?? 0);
-        if (!id) return;
-        const name = String(m.Name ?? m.Module_name ?? m.name ?? '').trim();
-        const path = String(m.Path ?? m.path ?? '').trim();
-        if (name) lookup.set(name.toLowerCase(), id);
-        if (path) lookup.set(path.toLowerCase(), id);
-        lookup.set(String(id), id);
-      });
-      console.log('updateUser - Lookup map:', Array.from(lookup.entries()));  // Log lookup map
-
-      const items = Array.isArray(updates.Access) ? updates.Access : [updates.Access];
-      const ids = new Set<number>();
-      items.forEach((it: any) => {
-        if (it == null) return;
-        if (typeof it === 'number') ids.add(it);
-        else {
-          const s = String(it).trim();
-          const n = Number(s);
-          if (!Number.isNaN(n) && n > 0) {
-            ids.add(n);
-          } else {
-            const found = lookup.get(s.toLowerCase());
-            if (found) ids.add(found);
-          }
-        }
-      });
-      updates.User_modules = Array.from(ids).join(',');
-      console.log('updateUser - Converted User_modules:', updates.User_modules);  // Log converted CSV
+    // Handle Access array -> User_modules CSV
+    if (updates.Access && Array.isArray(updates.Access)) {
+      const modules = await adminService.getModules();  // FIXED: Use getModules instead of getRoles
+      console.log('modules', modules);
+      const moduleIds = updates.Access.map((name: string) => {
+        const mod = modules.find((m: any) => m.Module_name === name);  // FIXED: Match against Module_name, return Module_id
+        return mod ? mod.Module_id : null;
+      }).filter(Boolean);
+      updates.User_modules = moduleIds.join(',');
       delete updates.Access;
     }
 
-    console.log('updateUser - Final updates to DB:', updates);  // Log what will be updated
+    console.log('final updates', updates);
     const result = await adminService.updateUser(Number(accountId), updates);
-    console.log('updateUser - DB update result:', result);  // Log DB result
     res.json({ message: 'User updated successfully', result });
   } catch (err) {
     console.error('Update user error:', err);

@@ -80,7 +80,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 // mount feature routers
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRoutes);  // Mount auth routes first
 app.use('/api/machines', machineRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
@@ -93,7 +93,7 @@ app.use('/api/auth', googleAuthRoutes);
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
 // mount auth globally (optional)
-app.use(authenticate);
+app.use(authenticate);  // Apply global auth middleware AFTER public routes
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);

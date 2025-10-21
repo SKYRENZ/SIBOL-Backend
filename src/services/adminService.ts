@@ -677,3 +677,13 @@ export async function rejectAccount(pendingId: number, reason?: string) {
     throw new Error("Failed to reject pending account");
   }
 }
+
+// NEW: Fetch modules for access conversion (matches frontend fetchModules)
+export async function getModules() {
+  try {
+    const [rows]: any = await pool.execute('SELECT Module_id, Module_name FROM modules_tbl');
+    return rows;
+  } catch (error) {
+    throw new Error(`Failed to fetch modules: ${String(error)}`);
+  }
+}
