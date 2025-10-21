@@ -1,6 +1,6 @@
-import { pool } from '../config/db.js'; // add or normalize this import if not present
 import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
+import { pool } from '../config/db';
 import config from '../config/env.js';
 
 /**
@@ -326,49 +326,64 @@ export async function getUserById(userId: number) {
 
 // Update user (admin)
 export async function updateUser(userId: number, updates: any) {
-  const conn = await (pool as any).getConnection();
+  let conn: any = null;
   try {
+    conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    // 1. Update accounts_tbl
-    const { Roles, IsActive, Password, ...accountUpdates } = updates;
+    const accSets: string[] = [];
+    const accParams: any[] = [];
+    const profSets: string[] = [];
+    const profParams: any[] = [];
 
-    if (Object.keys(accountUpdates).length > 0) {
-      const setClause = Object.keys(accountUpdates).map(key => `a.${key} = ?`).join(", ");
-      const params = Object.values(accountUpdates);
-
-      await conn.execute(
-        `UPDATE accounts_tbl a SET ${setClause} WHERE a.Account_id = ?`,
-        [...params, userId]
-      );
+    // account-level fields (accounts_tbl)
+    if (updates.Username !== undefined) { accSets.push('Username = ?'); accParams.push(updates.Username); }
+    if (updates.Roles !== undefined) { accSets.push('Roles = ?'); accParams.push(updates.Roles); }
+    if (updates.IsActive !== undefined) { accSets.push('IsActive = ?'); accParams.push(updates.IsActive ? 1 : 0); }
+    if (updates.User_modules !== undefined) { accSets.push('User_modules = ?'); accParams.push(updates.User_modules); }
+    if (updates.Password !== undefined && updates.Password !== '') {
+      const hash = await bcrypt.hash(String(updates.Password), 10);
+      accSets.push('Password = ?'); accParams.push(hash);
     }
 
-    // 2. Update profile_tbl (excluding Account_id)
-    const profileUpdates = { ...updates };
-    delete profileUpdates.Account_id;
+    // profile-level fields (profile_tbl)
+    if (updates.FirstName !== undefined) { profSets.push('FirstName = ?'); profParams.push(updates.FirstName); }
+    if (updates.LastName !== undefined) { profSets.push('LastName = ?'); profParams.push(updates.LastName); }
+    if (updates.Email !== undefined) { profSets.push('Email = ?'); profParams.push(updates.Email); }
+    if (updates.Contact !== undefined) { profSets.push('Contact = ?'); profParams.push(updates.Contact); }
+    if (updates.Area_id !== undefined) { profSets.push('Area_id = ?'); profParams.push(updates.Area_id); }
 
-    if (Object.keys(profileUpdates).length > 0) {
-      const setClause = Object.keys(profileUpdates).map(key => `p.${key} = ?`).join(", ");
-      const params = Object.values(profileUpdates);
+    // run updates if anything to update
+    if (accSets.length > 0) {
+      const sqlAcc = `UPDATE accounts_tbl SET ${accSets.join(', ')} WHERE Account_id = ?`;
+      await conn.execute(sqlAcc, [...accParams, userId]);
+    }
 
-      await conn.execute(
-        `UPDATE profile_tbl p SET ${setClause} WHERE p.Account_id = ?`,
-        [...params, userId]
-      );
+    if (profSets.length > 0) {
+      const sqlProf = `UPDATE profile_tbl SET ${profSets.join(', ')} WHERE Account_id = ?`;
+      await conn.execute(sqlProf, [...profParams, userId]);
     }
 
     await conn.commit();
 
-    return {
-      success: true,
-      message: 'User updated successfully'
-    };
-  } catch (error) {
-    await conn.rollback();
-    console.error("❌ Error updating user:", error);
-    throw new Error("Failed to update user");
+    // return fresh user/profile summary
+    const [rows]: any = await pool.query(
+      `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.User_modules, p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+       FROM accounts_tbl a
+       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+       WHERE a.Account_id = ?`,
+      [userId]
+    );
+
+    return { success: true, user: rows?.[0] ?? null };
+  } catch (err: any) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+    console.error('❌ Error updating user:', err);
+    throw new Error('Failed to update user');
   } finally {
-    conn.release();
+    if (conn) try { conn.release(); } catch (_) {}
   }
 }
 
@@ -660,5 +675,15 @@ export async function rejectAccount(pendingId: number, reason?: string) {
   } catch (error) {
     console.error("❌ Error rejecting pending account:", error);
     throw new Error("Failed to reject pending account");
+  }
+}
+
+// NEW: Fetch modules for access conversion (matches frontend fetchModules)
+export async function getModules() {
+  try {
+    const [rows]: any = await pool.execute('SELECT Module_id, Module_name FROM modules_tbl');
+    return rows;
+  } catch (error) {
+    throw new Error(`Failed to fetch modules: ${String(error)}`);
   }
 }
