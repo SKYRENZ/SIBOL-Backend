@@ -39,9 +39,8 @@ app.use(passport.session());
 
 // ✅ Allow your frontend
 app.use(cors({
-  origin: process.env.FRONT_END_PORT || 'http://localhost:5173',
+  origin: process.env.FRONT_END_PORT || 'https://sproutsibol.netlify.app',  // Fallback to HTTPS
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
 }));
 app.use(express.json());
 
