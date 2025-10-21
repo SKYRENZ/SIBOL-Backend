@@ -5,6 +5,7 @@ import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
 import config, { FRONTEND_ORIGINS_ARRAY } from './config/env.js';
+console.log('Server starting', { NODE_ENV: config.NODE_ENV, DB_HOST: config.DB_HOST, DB_NAME: config.DB_NAME });
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';

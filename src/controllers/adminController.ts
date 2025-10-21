@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import * as adminService from '../services/adminService';
-import { fetchAllModules } from '../services/moduleService';
-import pool from '../config/db';  // Add this import
+import { fetchAllModules } from '../services/moduleService.js'; // add this import if not present
+import { pool } from '../config/db.js';
 import bcrypt from 'bcrypt';  // Add this import for password hashing
 
 // ✅ NEW: Get all pending accounts (email verified only)
@@ -106,8 +106,7 @@ export async function createUser(req: Request, res: Response) {
 
     // Handle Access (convert to User_modules)
     if (Access) {
-      const rawModules: any = await fetchAllModules();
-      const modules: any[] = rawModules?.rows ?? rawModules ?? [];
+      const modules: any[] = await fetchAllModules();
 
       const lookup = new Map<string, number>();
       modules.forEach((m: any) => {
@@ -151,11 +150,17 @@ export async function createUser(req: Request, res: Response) {
 // NEW: Controller for fetching modules
 export async function getModules(req: Request, res: Response) {
   try {
-    const result = await adminService.getModules();
-    return res.status(200).json(result);
-  } catch (error: any) {
-    console.error('Get modules error:', error);
-    return res.status(500).json({ error: 'Failed to fetch modules' });
+    // moduleService returns Module_id, Name, Path from modules_tbl
+    const rows: any[] = await fetchAllModules();
+    const normalized = (rows || []).map(m => ({
+      Module_id: m.Module_id ?? m.id ?? 0,
+      Module_name: m.Name ?? m.Module_name ?? m.name ?? '',
+      Path: m.Path ?? m.path ?? null,
+    }));
+    return res.json(normalized);
+  } catch (err: any) {
+    console.error('Get modules error:', err);
+    return res.status(500).json({ message: 'Failed to load modules', error: err?.message ?? err });
   }
 }
 
@@ -203,12 +208,16 @@ export async function toggleActive(req: Request, res: Response) {
 
 export async function listUsers(req: Request, res: Response) {
   try {
-    // use the correct service function which returns { success, users, count }
-    const rawAccounts: any = await adminService.getAllUsers();
+    // optional filters from querystring
+    const roleFilter = req.query.role ? Number(req.query.role) : undefined;
+    const isActiveFilter = typeof req.query.isActive !== 'undefined' ? (String(req.query.isActive) === '1' || String(req.query.isActive) === 'true') : undefined;
+
+    // service returns { success, users, count } — forward filters to keep results up-to-date
+    const rawAccounts: any = await adminService.getAllUsers(roleFilter, isActiveFilter);
     const accounts: any[] = rawAccounts?.users ?? rawAccounts?.rows ?? rawAccounts ?? [];
 
-    const rawModules: any = await fetchAllModules();
-    const modules: any[] = rawModules?.rows ?? rawModules ?? [];
+    // always fetch latest modules for name resolution
+    const modules: any[] = await fetchAllModules();
 
     // build id -> displayName map (normalize possible keys)
     const moduleMap = new Map<number, string>();
@@ -219,7 +228,7 @@ export async function listUsers(req: Request, res: Response) {
     });
 
     const normalized = (accounts || []).map((acct: any) => {
-      const csv = acct.User_modules ?? acct.User_modules ?? '';
+      const csv = acct.User_modules ?? '';
       const ids = String(csv || '')
         .split(',')
         .map((s: string) => Number(s.trim()))
@@ -228,7 +237,7 @@ export async function listUsers(req: Request, res: Response) {
       return { ...acct, Access };
     });
 
-    return res.status(200).json({ rows: normalized });
+    return res.status(200).json({ success: true, users: normalized, count: normalized.length });
   } catch (err: any) {
     console.error('listUsers error:', err);
     return res.status(500).json({ success: false, error: err?.message ?? 'Failed to list users' });
