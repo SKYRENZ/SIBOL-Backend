@@ -1,25 +1,25 @@
 import nodemailer from 'nodemailer';
+import config from '../config/env.js';  // Add this import
 
 // Create transporter (using Gmail) - Fixed: createTransport not createTransporter
-const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransport({  // Corrected from createTransporter
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_USER, // Your Gmail address
-    pass: process.env.EMAIL_PASSWORD // Your Gmail app password
+    user: config.EMAIL_USER,  // Use config.EMAIL_USER
+    pass: config.EMAIL_PASSWORD  // Use config.EMAIL_PASSWORD
   }
 });
 
 export async function sendVerificationEmail(email: string, verificationToken: string, firstName: string) {
-  // Fix: Hardcode the frontend URL or provide a fallback
-  const frontendUrl = process.env.FRONT_END_PORT;
+  const frontendUrl = config.FRONT_END_PORT;  // Use config.FRONT_END_PORT
   const verificationUrl = `${frontendUrl}/email-verification?token=${verificationToken}`;
   
   console.log('📧 Sending verification email to:', email);
   console.log('🔗 Verification URL:', verificationUrl);
-  console.log('🌐 Frontend URL from env:', process.env.FRONT_END_PORT);
+  console.log('🌐 Frontend URL from config:', frontendUrl);  // Updated log
   
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: config.EMAIL_USER,
     to: email,
     subject: 'SIBOL - Verify Your Email Address',
     html: `
@@ -77,12 +77,21 @@ export async function sendVerificationEmail(email: string, verificationToken: st
   }
 }
 
-export async function sendWelcomeEmail(email: string, firstName: string, username: string) {
-  const frontendUrl = process.env.FRONT_END_PORT;
+export async function sendWelcomeEmail(email: string, firstName: string, username: string, plainPassword?: string) {
+  const frontendUrl = config.FRONT_END_PORT;
   const loginUrl = `${frontendUrl}/login`;
-  
+  // Use provided plainPassword if available; otherwise don't show password in email
+  const passwordSection = plainPassword
+    ? `<p style="margin: 10px 0;"><strong>Password:</strong> ${plainPassword}</p>
+       <p style="color: #dc3545; font-size: 14px; margin-top: 15px;">
+         ⚠️ Please change your password after first login for security
+       </p>`
+    : `<p style="color: #6c757d; font-size: 13px; margin-top: 15px;">
+         For security reasons we do not display your password. If you need help to login, please use the "Forgot Password" flow.
+       </p>`;
+
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: config.EMAIL_USER,
     to: email,
     subject: 'SIBOL - Account Approved! Welcome aboard!',
     html: `
@@ -96,10 +105,7 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
         <div style="background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin: 20px 0;">
           <h3 style="color: #333; margin-bottom: 15px;">Your Login Details:</h3>
           <p style="margin: 10px 0;"><strong>Username:</strong> ${username}</p>
-          <p style="margin: 10px 0;"><strong>Password:</strong> SIBOL12345</p>
-          <p style="color: #dc3545; font-size: 14px; margin-top: 15px;">
-            ⚠️ Please change your password after first login for security
-          </p>
+          ${passwordSection}
         </div>
         
         <div style="text-align: center; margin: 30px 0;">
@@ -125,11 +131,11 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
 }
 
 export async function sendResetEmail(email: string, code: string) {
-  const frontendUrl = process.env.FRONT_END_PORT;
+  const frontendUrl = config.FRONT_END_PORT;
   const resetUrl = `${frontendUrl}/reset-password`;
 
   const mailOptions = {
-    from: process.env.EMAIL_USER,
+    from: config.EMAIL_USER,
     to: email,
     subject: 'SIBOL - Password Reset Request',
     html: `

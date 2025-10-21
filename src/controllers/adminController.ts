@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import * as adminService from '../services/adminService';
-import { fetchAllModules } from '../services/moduleService';
-import pool from '../config/db';  // Add this import
+import { fetchAllModules } from '../services/moduleService.js'; // add this import if not present
+import { pool } from '../config/db.js';
 import bcrypt from 'bcrypt';  // Add this import for password hashing
 
 // ✅ NEW: Get all pending accounts (email verified only)
@@ -106,8 +106,7 @@ export async function createUser(req: Request, res: Response) {
 
     // Handle Access (convert to User_modules)
     if (Access) {
-      const rawModules: any = await fetchAllModules();
-      const modules: any[] = rawModules?.rows ?? rawModules ?? [];
+      const modules: any[] = await fetchAllModules();
 
       const lookup = new Map<string, number>();
       modules.forEach((m: any) => {
@@ -148,64 +147,44 @@ export async function createUser(req: Request, res: Response) {
   }
 }
 
+// NEW: Controller for fetching modules
+export async function getModules(req: Request, res: Response) {
+  try {
+    // moduleService returns Module_id, Name, Path from modules_tbl
+    const rows: any[] = await fetchAllModules();
+    const normalized = (rows || []).map(m => ({
+      Module_id: m.Module_id ?? m.id ?? 0,
+      Module_name: m.Name ?? m.Module_name ?? m.name ?? '',
+      Path: m.Path ?? m.path ?? null,
+    }));
+    return res.json(normalized);
+  } catch (err: any) {
+    console.error('Get modules error:', err);
+    return res.status(500).json({ message: 'Failed to load modules', error: err?.message ?? err });
+  }
+}
+
 export async function updateUser(req: Request, res: Response) {
   try {
     const { accountId } = req.params;
-    if (!accountId) return res.status(400).json({ error: 'accountId required' });
+    const updates: any = req.body;
+    console.log('req.body', req.body);
+    console.log('updates', updates);
 
-    const updates: any = { ...(req.body ?? {}) };
-    console.log('updateUser - Incoming req.body:', req.body);  // Log raw request body
-    console.log('updateUser - Initial updates:', updates);     // Log initial updates object
-
-    // Hash the password if provided (for edit mode)
-    if (updates.Password) {
-      updates.Password = await bcrypt.hash(updates.Password, 10);
-    }
-
-    // If frontend sent Access (array of module names or ids), convert to CSV of module IDs
-    if (updates.Access) {
-      console.log('updateUser - Access array received:', updates.Access);  // Log Access array
-      const rawModules: any = await fetchAllModules();
-      const modules: any[] = rawModules?.rows ?? rawModules ?? [];
-      console.log('updateUser - Fetched modules:', modules);  // Log fetched modules
-
-      // build name/path/id -> id map (case-insensitive for names/paths)
-      const lookup = new Map<string, number>();
-      modules.forEach((m: any) => {
-        const id = Number(m.Module_id ?? m.id ?? m.module_id ?? 0);
-        if (!id) return;
-        const name = String(m.Name ?? m.Module_name ?? m.name ?? '').trim();
-        const path = String(m.Path ?? m.path ?? '').trim();
-        if (name) lookup.set(name.toLowerCase(), id);
-        if (path) lookup.set(path.toLowerCase(), id);
-        lookup.set(String(id), id);
-      });
-      console.log('updateUser - Lookup map:', Array.from(lookup.entries()));  // Log lookup map
-
-      const items = Array.isArray(updates.Access) ? updates.Access : [updates.Access];
-      const ids = new Set<number>();
-      items.forEach((it: any) => {
-        if (it == null) return;
-        if (typeof it === 'number') ids.add(it);
-        else {
-          const s = String(it).trim();
-          const n = Number(s);
-          if (!Number.isNaN(n) && n > 0) {
-            ids.add(n);
-          } else {
-            const found = lookup.get(s.toLowerCase());
-            if (found) ids.add(found);
-          }
-        }
-      });
-      updates.User_modules = Array.from(ids).join(',');
-      console.log('updateUser - Converted User_modules:', updates.User_modules);  // Log converted CSV
+    // Handle Access array -> User_modules CSV
+    if (updates.Access && Array.isArray(updates.Access)) {
+      const modules = await adminService.getModules();  // FIXED: Use getModules instead of getRoles
+      console.log('modules', modules);
+      const moduleIds = updates.Access.map((name: string) => {
+        const mod = modules.find((m: any) => m.Module_name === name);  // FIXED: Match against Module_name, return Module_id
+        return mod ? mod.Module_id : null;
+      }).filter(Boolean);
+      updates.User_modules = moduleIds.join(',');
       delete updates.Access;
     }
 
-    console.log('updateUser - Final updates to DB:', updates);  // Log what will be updated
+    console.log('final updates', updates);
     const result = await adminService.updateUser(Number(accountId), updates);
-    console.log('updateUser - DB update result:', result);  // Log DB result
     res.json({ message: 'User updated successfully', result });
   } catch (err) {
     console.error('Update user error:', err);
@@ -229,11 +208,16 @@ export async function toggleActive(req: Request, res: Response) {
 
 export async function listUsers(req: Request, res: Response) {
   try {
-    const rawAccounts: any = await adminService.getAllAccounts();
-    const accounts: any[] = rawAccounts?.rows ?? rawAccounts ?? [];
+    // optional filters from querystring
+    const roleFilter = req.query.role ? Number(req.query.role) : undefined;
+    const isActiveFilter = typeof req.query.isActive !== 'undefined' ? (String(req.query.isActive) === '1' || String(req.query.isActive) === 'true') : undefined;
 
-    const rawModules: any = await fetchAllModules();
-    const modules: any[] = rawModules?.rows ?? rawModules ?? [];
+    // service returns { success, users, count } — forward filters to keep results up-to-date
+    const rawAccounts: any = await adminService.getAllUsers(roleFilter, isActiveFilter);
+    const accounts: any[] = rawAccounts?.users ?? rawAccounts?.rows ?? rawAccounts ?? [];
+
+    // always fetch latest modules for name resolution
+    const modules: any[] = await fetchAllModules();
 
     // build id -> displayName map (normalize possible keys)
     const moduleMap = new Map<number, string>();
@@ -244,7 +228,7 @@ export async function listUsers(req: Request, res: Response) {
     });
 
     const normalized = (accounts || []).map((acct: any) => {
-      const csv = acct.User_modules ?? acct.User_modules ?? '';
+      const csv = acct.User_modules ?? '';
       const ids = String(csv || '')
         .split(',')
         .map((s: string) => Number(s.trim()))
@@ -253,19 +237,19 @@ export async function listUsers(req: Request, res: Response) {
       return { ...acct, Access };
     });
 
-    return res.status(200).json({ rows: normalized });
+    return res.status(200).json({ success: true, users: normalized, count: normalized.length });
   } catch (err: any) {
     console.error('listUsers error:', err);
     return res.status(500).json({ success: false, error: err?.message ?? 'Failed to list users' });
   }
 }
 
-// ✅ NEW: Get roles
+// new: Get roles for admin UI
 export async function getRoles(req: Request, res: Response) {
   try {
-    const roles = await adminService.getRoles();
-    res.json({ rows: roles });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch roles' });
+    const result = await adminService.getRoles();
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error.message });
   }
 }

@@ -96,14 +96,7 @@ afterAll(async () => {
 
 describe('AuthService - Regular Registration Flow', () => {
   it('should register regular user successfully (requires email verification)', async () => {
-    const result = await registerUser(
-      TEST_FIRSTNAME,
-      TEST_LASTNAME,
-      TEST_AREAID,
-      TEST_EMAIL,
-      TEST_ROLEID,
-      false // isSSO = false
-    );
+    const result = await registerUser(TEST_FIRSTNAME, TEST_LASTNAME, TEST_AREAID, TEST_EMAIL, TEST_ROLEID, undefined, false);  // Added undefined for password, changed "false" to false
 
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
@@ -126,14 +119,7 @@ describe('AuthService - Regular Registration Flow', () => {
 
 describe('AuthService - SSO Registration Flow', () => {
   it('should register SSO user successfully (skip email verification)', async () => {
-    const result = await registerUser(
-      SSO_FIRSTNAME,
-      SSO_LASTNAME,
-      TEST_AREAID,
-      SSO_EMAIL,
-      TEST_ROLEID,
-      true // isSSO = true
-    );
+    const result = await registerUser(SSO_FIRSTNAME, SSO_LASTNAME, TEST_AREAID, SSO_EMAIL, TEST_ROLEID, undefined, true);  // Added undefined, changed "true" to true
 
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
@@ -241,7 +227,8 @@ describe('AuthService - Resend Verification Email', () => {
       TEST_AREAID,
       `resendtest${Date.now()}@example.com`,
       TEST_ROLEID,
-      false
+      undefined,
+      false  // Changed "false" to false
     );
 
     // Now test resending verification
@@ -370,7 +357,8 @@ describe('AuthService - Login After Approval', () => {
       TEST_AREAID,
       `pending${Date.now()}@example.com`,
       TEST_ROLEID,
-      false
+      undefined,
+      false  // Changed "false" to false
     );
 
     await expect(
@@ -389,7 +377,8 @@ describe('AuthService - Login After Approval', () => {
       TEST_AREAID,
       `adminpending${Date.now()}@gmail.com`,
       TEST_ROLEID,
-      true
+      undefined,
+      true  // Changed "true" to true
     );
 
     await expect(
@@ -404,7 +393,7 @@ describe('AuthService - Login After Approval', () => {
 describe('AuthService - Edge Cases', () => {
   it('should throw error for missing required fields', async () => {
     await expect(
-      registerUser('', '', 0, '', 0)
+      registerUser('', '', 0, '', 0, undefined, false)  // Added undefined for password, false for isSSO
     ).rejects.toThrow('Missing required fields');
   });
 
@@ -416,7 +405,8 @@ describe('AuthService - Edge Cases', () => {
         TEST_AREAID,
         TEST_EMAIL,
         TEST_ROLEID,
-        false
+        undefined,
+        false  // Changed "false" to false
       )
     ).rejects.toThrow('Username or email already exists');
   });
@@ -429,7 +419,8 @@ describe('AuthService - Edge Cases', () => {
         TEST_AREAID,
         SSO_EMAIL,
         TEST_ROLEID,
-        true
+        undefined,
+        true  // Changed "true" to true
       )
     ).rejects.toThrow('Username or email already exists');
   });

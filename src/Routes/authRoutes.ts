@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import * as authController from '../controllers/authController';
+import * as authController from '../controllers/authController.js';
 
 const router = Router();
 
@@ -24,5 +24,13 @@ router.post('/check-sso-eligibility', authController.checkSSOEligibility);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/verify-reset-code', authController.verifyResetCode);
 router.post('/reset-password', authController.resetPassword);
+
+// PUBLIC (signup maps to `register` which is exported by the controller)
+router.post('/signup', authController.register);
+router.post('/login', authController.login);
+router.post('/forgot-password', authController.forgotPassword);
+
+// PROTECTED ones should use middleware individually
+// router.get('/me', authenticate, getMe);
 
 export default router;

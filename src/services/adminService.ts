@@ -1,63 +1,84 @@
-import { pool } from '../config/db';
-import * as authService from './authService';
 import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
+import { pool } from '../config/db';
+import config from '../config/env.js';
 
-// create user directly (bypassing pending state for admin creation)
-export async function createUserAsAdmin(firstName: string, lastName: string, areaId: number, email: string, roleId: number, password: string) {
+/**
+ * Create a user directly as admin.
+ * - password is optional; falls back to config.DEFAULT_PASSWORD
+ * - hashes password before storing
+ * - commits transaction then sends welcome email (with plain password only for admin-created accounts)
+ */
+export async function createUserAsAdmin(
+  firstName: string,
+  lastName: string,
+  areaId: number,
+  email: string,
+  roleId: number,
+  password?: string
+) {
   const conn = await (pool as any).getConnection();
   try {
     await conn.beginTransaction();
 
-    // Generate username
     const username = `${firstName}.${lastName}`.toLowerCase();
 
-    // Check for existing username/email in active accounts
+    // Check for existing username/email
     const [existingActive]: any = await conn.execute(
-      "SELECT * FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Username = ? OR p.Email = ?",
+      'SELECT a.Account_id FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Username = ? OR p.Email = ?',
       [username, email]
     );
     if (existingActive.length > 0) {
-      throw new Error("Username or email already exists");
+      throw new Error('Username or email already exists');
     }
 
-    // Insert into accounts_tbl
+    // Determine password and hash it
+    const usePassword = password && password.length > 0 ? password : config.DEFAULT_PASSWORD;
+    const hashedPassword = await bcrypt.hash(usePassword, 10);
+
+    // Insert account
     const [accountResult]: any = await conn.execute(
-      "INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)",
-      [username, password, roleId]
+      'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)',
+      [username, hashedPassword, roleId]
     );
     const newAccountId = accountResult.insertId;
 
-    // Insert into profile_tbl
+    // Insert profile
     await conn.execute(
-      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)",
+      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)',
       [newAccountId, firstName, lastName, areaId, email]
     );
 
-    // Send welcome email
-    await emailService.sendWelcomeEmail(email, firstName, username);
-
     await conn.commit();
 
-    // Return the created user
-    const [userRows]: any = await pool.execute(`
-      SELECT 
-        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
-        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id 
-      WHERE a.Account_id = ?
-    `, [newAccountId]);
+    // Send welcome email (include plain password only for admin-created accounts)
+    try {
+      await emailService.sendWelcomeEmail(email, firstName, username, usePassword);
+    } catch (emailErr) {
+      // Log but do not fail the flow since account was created
+      console.error('Warning: failed to send welcome email:', emailErr);
+    }
+
+    // Return the created user summary
+    const [userRows]: any = await pool.execute(
+      `SELECT 
+         a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
+         p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+       FROM accounts_tbl a
+       JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE a.Account_id = ?`,
+      [newAccountId]
+    );
 
     return {
       success: true,
       message: 'User created successfully',
-      user: userRows[0]
+      user: userRows[0],
     };
   } catch (error) {
     await conn.rollback();
-    console.error("❌ Admin create user error:", error);
-    throw new Error(`Failed to create user: ${error}`);
+    console.error('❌ Admin create user error:', error);
+    throw new Error(`Failed to create user: ${String(error)}`);
   } finally {
     conn.release();
   }
@@ -188,194 +209,489 @@ export async function approveAccount(pendingId: number) {
 
     return {
       success: true,
-      message: "Account approved and activated successfully",
-      user: newUserRows[0],
-      note: "Welcome email sent to user. Pending account record deleted. Contact field set to NULL."
+      message: 'Account approved and user created',
+      user: newUserRows[0]
     };
-
   } catch (error) {
     await conn.rollback();
-    console.error("❌ Account approval error:", error);
-    throw new Error(`Account approval failed: ${error}`);
+    console.error("❌ Admin approve account error:", error);
+    throw new Error(`Failed to approve account: ${error}`);
   } finally {
     conn.release();
   }
 }
 
-// ✅ NEW: Admin reject account (already deletes the pending account)
-export async function rejectAccount(pendingId: number, reason?: string) {
+// ADMIN FUNCTIONS
+
+// Get admin stats (simplified)
+export async function getAdminStats() {
   try {
-    // Get pending account data for logging/email
-    const [pendingRows]: any = await pool.execute(
-      "SELECT * FROM pending_accounts_tbl WHERE Pending_id = ? AND IsEmailVerified = 1 AND IsAdminVerified = 0",
-      [pendingId]
-    );
+    const [
+      activeUsersResult,
+      pendingAccountsResult,
+      areasResult,
+      rolesResult
+    ] = await Promise.all([
+      pool.execute("SELECT COUNT(*) as cnt FROM accounts_tbl WHERE IsActive = 1"),
+      pool.execute("SELECT COUNT(*) as cnt FROM pending_accounts_tbl WHERE IsEmailVerified = 1 AND IsAdminVerified = 0"),
+      pool.execute("SELECT COUNT(*) as cnt FROM area_tbl"),
+      pool.execute("SELECT COUNT(*) as cnt FROM user_roles_tbl")
+    ]);
 
-    if (pendingRows.length === 0) {
-      throw new Error("Pending account not found, email not verified, or already processed");
-    }
+    // each result is [rows, fields] - rows[0].cnt contains the count
+    const extractCount = (res: any) => {
+      const rows = Array.isArray(res) ? res[0] : res;
+      if (Array.isArray(rows) && rows.length > 0 && typeof rows[0].cnt !== 'undefined') {
+        return Number(rows[0].cnt) || 0;
+      }
+      return 0;
+    };
 
-    const pendingAccount = pendingRows[0];
-
-    // Delete the pending account
-    await pool.execute("DELETE FROM pending_accounts_tbl WHERE Pending_id = ?", [pendingId]);
+    const stats = {
+      activeUsers: extractCount(activeUsersResult),
+      pendingAccounts: extractCount(pendingAccountsResult),
+      areas: extractCount(areasResult),
+      roles: extractCount(rolesResult)
+    };
 
     return {
       success: true,
-      message: "Account rejected successfully",
-      rejectedUser: {
-        email: pendingAccount.Email,
-        name: `${pendingAccount.FirstName} ${pendingAccount.LastName}`,
-        reason: reason || "Not specified"
-      }
+      stats
     };
-
   } catch (error) {
-    console.error("❌ Account rejection error:", error);
-    throw new Error(`Account rejection failed: ${error}`);
+    console.error("❌ Error fetching admin stats:", error);
+    throw new Error("Failed to fetch admin stats");
   }
 }
 
-// ✅ Existing functions (contact field remains in profile_tbl for existing users)
-export async function updateAccountAndProfile(accountId: number, updates: {
-  firstName?: string;
-  lastName?: string;
-  areaId?: number;
-  contact?: string;
-  email?: string;
-  roleId?: number;
-}) {
-  if (!accountId) throw new Error("accountId required");
-
-  const conn = await (pool as any).getConnection();
+// Get all users (with optional filters)
+export async function getAllUsers(roleId?: number, isActive?: boolean) {
   try {
-    await conn.beginTransaction();
-
-    if (updates.roleId !== undefined) {
-      await conn.execute("UPDATE accounts_tbl SET Roles = ? WHERE Account_id = ?", [updates.roleId, accountId]);
-    }
-
-    const profileFields: string[] = [];
     const params: any[] = [];
-    if (updates.firstName !== undefined) { profileFields.push("FirstName = ?"); params.push(updates.firstName); }
-    if (updates.lastName !== undefined) { profileFields.push("LastName = ?"); params.push(updates.lastName); }
-    if (updates.areaId !== undefined) { profileFields.push("Area_id = ?"); params.push(updates.areaId); }
-    if (updates.contact !== undefined) { profileFields.push("Contact = ?"); params.push(updates.contact); }
-    if (updates.email !== undefined) { profileFields.push("Email = ?"); params.push(updates.email); }
+    let where = 'WHERE 1=1';
+    if (roleId !== undefined && roleId !== null) {
+      where += ' AND a.Roles = ?';
+      params.push(roleId);
+    }
+    if (isActive !== undefined && isActive !== null) {
+      where += ' AND a.IsActive = ?';
+      params.push(isActive ? 1 : 0);
+    }
 
-    if (profileFields.length > 0) {
-      const sql = `UPDATE profile_tbl SET ${profileFields.join(", ")} WHERE Account_id = ?`;
-      params.push(accountId);
-      await conn.execute(sql, params);
+    const sql = `
+      SELECT a.*, p.FirstName, p.LastName, p.Email
+      FROM accounts_tbl a
+      LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+      ${where}
+      ORDER BY a.Account_id
+    `;
+    const [rows]: any = await pool.query(sql, params);
+
+    return {
+      success: true,
+      users: Array.isArray(rows) ? rows : [],
+      count: Array.isArray(rows) ? rows.length : 0
+    };
+  } catch (error) {
+    console.error('getAllUsers error:', error);
+    throw new Error('Failed to fetch users');
+  }
+}
+
+// Get user by ID
+export async function getUserById(userId: number) {
+  try {
+    const [rows]: any = await pool.execute(`
+      SELECT 
+        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
+        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+      FROM accounts_tbl a 
+      JOIN profile_tbl p ON a.Account_id = p.Account_id 
+      WHERE a.Account_id = ?
+    `, [userId]);
+
+    if (rows.length === 0) {
+      throw new Error("User not found");
+    }
+
+    return {
+      success: true,
+      user: rows[0]
+    };
+  } catch (error) {
+    console.error("❌ Error fetching user by ID:", error);
+    throw new Error("Failed to fetch user details");
+  }
+}
+
+// Update user (admin)
+export async function updateUser(userId: number, updates: any) {
+  let conn: any = null;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const accSets: string[] = [];
+    const accParams: any[] = [];
+    const profSets: string[] = [];
+    const profParams: any[] = [];
+
+    // account-level fields (accounts_tbl)
+    if (updates.Username !== undefined) { accSets.push('Username = ?'); accParams.push(updates.Username); }
+    if (updates.Roles !== undefined) { accSets.push('Roles = ?'); accParams.push(updates.Roles); }
+    if (updates.IsActive !== undefined) { accSets.push('IsActive = ?'); accParams.push(updates.IsActive ? 1 : 0); }
+    if (updates.User_modules !== undefined) { accSets.push('User_modules = ?'); accParams.push(updates.User_modules); }
+    if (updates.Password !== undefined && updates.Password !== '') {
+      const hash = await bcrypt.hash(String(updates.Password), 10);
+      accSets.push('Password = ?'); accParams.push(hash);
+    }
+
+    // profile-level fields (profile_tbl)
+    if (updates.FirstName !== undefined) { profSets.push('FirstName = ?'); profParams.push(updates.FirstName); }
+    if (updates.LastName !== undefined) { profSets.push('LastName = ?'); profParams.push(updates.LastName); }
+    if (updates.Email !== undefined) { profSets.push('Email = ?'); profParams.push(updates.Email); }
+    if (updates.Contact !== undefined) { profSets.push('Contact = ?'); profParams.push(updates.Contact); }
+    if (updates.Area_id !== undefined) { profSets.push('Area_id = ?'); profParams.push(updates.Area_id); }
+
+    // run updates if anything to update
+    if (accSets.length > 0) {
+      const sqlAcc = `UPDATE accounts_tbl SET ${accSets.join(', ')} WHERE Account_id = ?`;
+      await conn.execute(sqlAcc, [...accParams, userId]);
+    }
+
+    if (profSets.length > 0) {
+      const sqlProf = `UPDATE profile_tbl SET ${profSets.join(', ')} WHERE Account_id = ?`;
+      await conn.execute(sqlProf, [...profParams, userId]);
     }
 
     await conn.commit();
 
-    const [rows]: any = await pool.execute("SELECT a.Account_id, a.Username, a.Roles, a.IsActive, p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id FROM accounts_tbl a JOIN profile_tbl p USING (Account_id) WHERE a.Account_id = ?", [accountId]);
-    return rows[0];
-  } catch (err) {
-    await conn.rollback();
-    throw err;
+    // return fresh user/profile summary
+    const [rows]: any = await pool.query(
+      `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.User_modules, p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
+       FROM accounts_tbl a
+       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+       WHERE a.Account_id = ?`,
+      [userId]
+    );
+
+    return { success: true, user: rows?.[0] ?? null };
+  } catch (err: any) {
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+    console.error('❌ Error updating user:', err);
+    throw new Error('Failed to update user');
   } finally {
-    conn.release();
+    if (conn) try { conn.release(); } catch (_) {}
   }
 }
 
-export async function setAccountActive(accountId: number, isActive: 0 | 1) {
-  if (!accountId) throw new Error("accountId required");
-  await pool.execute("UPDATE accounts_tbl SET IsActive = ? WHERE Account_id = ?", [isActive, accountId]);
-  const [rows]: any = await pool.execute("SELECT Account_id, Username, Roles, IsActive FROM accounts_tbl WHERE Account_id = ?", [accountId]);
-  return rows[0];
+// Delete user (soft delete by setting IsActive = 0)
+export async function deleteUser(userId: number) {
+  try {
+    await pool.execute(
+      `UPDATE accounts_tbl SET IsActive = 0 WHERE Account_id = ?`,
+      [userId]
+    );
+
+    return {
+      success: true,
+      message: 'User deactivated successfully'
+    };
+  } catch (error) {
+    console.error("❌ Error deactivating user:", error);
+    throw new Error("Failed to deactivate user");
+  }
 }
 
-export async function getAllAccounts() {
-  const query = `
-    SELECT a.*, p.FirstName, p.LastName, p.Area_id, p.Contact, p.Email
-    FROM accounts_tbl a
-    LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
-  `;
-  const [rows] = await pool.execute(query);
-  return rows;
+// Get user areas (for admin)
+export async function getUserAreas(userId: number) {
+  try {
+    const [rows]: any = await pool.execute(`
+      SELECT a.Area_id, a.Area_Name
+      FROM area_tbl a
+      JOIN profile_tbl p ON a.Area_id = p.Area_id
+      WHERE p.Account_id = ?
+    `, [userId]);
+
+    return {
+      success: true,
+      areas: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching user areas:", error);
+    throw new Error("Failed to fetch user areas");
+  }
 }
 
-export async function getRoles() {
-  const query = 'SELECT Roles_id, Roles FROM user_roles_tbl';
-  const [rows] = await pool.execute(query);
-  return rows;
+// Get user roles (for admin)
+export async function getUserRoles(userId: number) {
+  try {
+    const [rows]: any = await pool.execute(`
+      SELECT r.Roles_id, r.Roles
+      FROM user_roles_tbl r
+      JOIN accounts_tbl a ON r.Roles_id = a.Roles
+      WHERE a.Account_id = ?
+    `, [userId]);
+
+    return {
+      success: true,
+      roles: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching user roles:", error);
+    throw new Error("Failed to fetch user roles");
+  }
 }
 
-// NEW: Update user details (admin feature) - handles both accounts_tbl and profile_tbl
-export async function updateUser(accountId: number, updates: Record<string, any>) {
-  if (!accountId) return { success: false, message: 'accountId required' };
-
+// Assign areas to user (admin)
+export async function assignAreasToUser(userId: number, areaIds: number[]) {
   const conn = await (pool as any).getConnection();
   try {
     await conn.beginTransaction();
 
-    // Fields that belong to accounts_tbl vs profile_tbl
-    const accountAllowed = new Set(['Roles', 'Username', 'Password', 'User_modules', 'IsActive']);
-    const profileAllowed = new Set(['FirstName', 'LastName', 'Area_id', 'Contact', 'Email']);
+    // 1. Delete existing area assignments
+    await conn.execute(
+      `DELETE FROM user_area_tbl WHERE Account_id = ?`,
+      [userId]
+    );
 
-    // Build accounts_tbl update
-    const accCols: string[] = [];
-    const accParams: any[] = [];
-    for (const [k, v] of Object.entries(updates)) {
-      if (!accountAllowed.has(k)) continue;
-      accCols.push(`\`${k}\` = ?`);
-      accParams.push(v);
-    }
-
-    let accResult: any = null;
-    if (accCols.length > 0) {
-      accParams.push(accountId);
-      const accSql = `UPDATE accounts_tbl SET ${accCols.join(', ')} WHERE Account_id = ?`;
-
-      const [r]: any = await conn.execute(accSql, accParams);
-      accResult = r;
-    }
-
-    // Build profile_tbl update
-    const profCols: string[] = [];
-    const profKeys: string[] = []; // <-- new: keep raw column keys
-    const profParams: any[] = [];
-    for (const [k, v] of Object.entries(updates)) {
-      if (!profileAllowed.has(k)) continue;
-      profCols.push(`\`${k}\` = ?`);
-      profKeys.push(k);                  // store the actual key for later INSERT columns
-      profParams.push(v);
-    }
-
-    let profResult: any = null;
-    if (profCols.length > 0) {
-      profParams.push(accountId);
-      const profSql = `UPDATE profile_tbl SET ${profCols.join(', ')} WHERE Account_id = ?`;
-      console.log('adminService.updateUser - profile SQL:', profSql, 'params:', profParams);
-      const [r]: any = await conn.execute(profSql, profParams);
-      profResult = r;
-
-      // If no profile row existed, insert a new one with provided fields
-      const affectedProfile = profResult?.affectedRows ?? 0;
-      if (affectedProfile === 0) {
-        const cols = ['Account_id', ...profKeys]; // use profKeys (safe strings)
-        // Build values array - accountId first, then values in same order as profKeys
-        const insertParams = [accountId, ...profParams.slice(0, profParams.length - 1)];
-        const placeholders = Array(cols.length).fill('?').join(', ');
-        const insertSql = `INSERT INTO profile_tbl (${cols.join(', ')}) VALUES (${placeholders})`;
-        console.log('adminService.updateUser - profile INSERT SQL:', insertSql, 'params:', insertParams);
-        const [ir]: any = await conn.execute(insertSql, insertParams);
-        profResult = ir;
-      }
+    // 2. Insert new area assignments
+    const values = areaIds.map(areaId => [userId, areaId]);
+    if (values.length > 0) {
+      await conn.execute(
+        `INSERT INTO user_area_tbl (Account_id, Area_id) VALUES ?`,
+        [values]
+      );
     }
 
     await conn.commit();
 
-    const accAffected = accResult?.affectedRows ?? 0;
-    const profAffected = profResult?.affectedRows ?? 0;
-    return { success: true, affectedRowsAccount: accAffected, affectedRowsProfile: profAffected, message: 'User updated successfully' };
-  } catch (err: any) {
+    return {
+      success: true,
+      message: 'Areas assigned to user successfully'
+    };
+  } catch (error) {
     await conn.rollback();
-    return { success: false, error: err?.message ?? String(err) };
+    console.error("❌ Error assigning areas to user:", error);
+    throw new Error("Failed to assign areas to user");
   } finally {
     conn.release();
   }
 }
+
+// Assign roles to user (admin)
+export async function assignRolesToUser(userId: number, roleIds: number[]) {
+  const conn = await (pool as any).getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // 1. Delete existing role assignments
+    await conn.execute(
+      `DELETE FROM user_roles_tbl WHERE Account_id = ?`,
+      [userId]
+    );
+
+    // 2. Insert new role assignments
+    const values = roleIds.map(roleId => [userId, roleId]);
+    if (values.length > 0) {
+      await conn.execute(
+        `INSERT INTO user_roles_tbl (Account_id, Roles_id) VALUES ?`,
+        [values]
+      );
+    }
+
+    await conn.commit();
+
+    return {
+      success: true,
+      message: 'Roles assigned to user successfully'
+    };
+  } catch (error) {
+    await conn.rollback();
+    console.error("❌ Error assigning roles to user:", error);
+    throw new Error("Failed to assign roles to user");
+  } finally {
+    conn.release();
+  }
+}
+
+// Get area assignments for user (admin)
+export async function getUserAreaAssignments(userId: number) {
+  try {
+    const [rows]: any = await pool.execute(`
+      SELECT ua.Area_id, a.Area_Name
+      FROM user_area_tbl ua
+      JOIN area_tbl a ON ua.Area_id = a.Area_id
+      WHERE ua.Account_id = ?
+    `, [userId]);
+
+    return {
+      success: true,
+      areaAssignments: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching user area assignments:", error);
+    throw new Error("Failed to fetch user area assignments");
+  }
+}
+
+// Get role assignments for user (admin)
+export async function getUserRoleAssignments(userId: number) {
+  try {
+    const [rows]: any = await pool.execute(`
+      SELECT ur.Roles_id, r.Roles
+      FROM user_roles_tbl ur
+      JOIN user_roles_tbl r ON ur.Roles_id = r.Roles_id
+      WHERE ur.Account_id = ?
+    `, [userId]);
+
+    return {
+      success: true,
+      roleAssignments: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching user role assignments:", error);
+    throw new Error("Failed to fetch user role assignments");
+  }
+}
+
+// Admin login
+export async function adminLogin(username: string, password: string) {
+  try {
+    // 1. Get admin account by username
+    const [adminRows]: any = await pool.execute(
+      `SELECT a.Account_id, a.Username, a.Password, a.Roles, a.IsActive
+       FROM accounts_tbl a 
+       WHERE a.Username = ? AND a.IsActive = 1`,
+      [username]
+    );
+
+    if (adminRows.length === 0) {
+      throw new Error("Admin account not found or inactive");
+    }
+
+    const admin = adminRows[0];
+
+    // 2. Check password
+    const isPasswordValid = await bcrypt.compare(password, admin.Password);
+    if (!isPasswordValid) {
+      throw new Error("Invalid password");
+    }
+
+    // 3. Return admin session info (exclude password)
+    const { Password, ...adminSession } = admin;
+    return {
+      success: true,
+      admin: adminSession
+    };
+  } catch (error) {
+    console.error("❌ Admin login error:", error);
+    throw new Error("Failed to login as admin");
+  }
+}
+
+// Admin logout (invalidate session)
+export async function adminLogout(adminId: number) {
+  try {
+    // Invalidate admin session (implementation depends on session management)
+    // For example, delete session token from database or cache
+    return {
+      success: true,
+      message: 'Admin logged out successfully'
+    };
+  } catch (error) {
+    console.error("❌ Admin logout error:", error);
+    throw new Error("Failed to logout as admin");
+  }
+}
+
+// Get all roles
+export async function getRoles() {
+  try {
+    const [rows]: any = await pool.execute(`SELECT Roles_id, Roles FROM user_roles_tbl ORDER BY Roles_id`);
+    return {
+      success: true,
+      roles: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching roles:", error);
+    throw new Error("Failed to fetch roles");
+  }
+}
+
+// Set account active/inactive
+export async function setAccountActive(accountId: number, isActive: number) {
+  try {
+    await pool.execute(`UPDATE accounts_tbl SET IsActive = ? WHERE Account_id = ?`, [isActive, accountId]);
+
+    // return basic updated account summary
+    const [rows]: any = await pool.execute(
+      `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, p.FirstName, p.LastName, p.Email
+       FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE a.Account_id = ?`,
+      [accountId]
+    );
+
+    return {
+      success: true,
+      account: rows[0] ?? null
+    };
+  } catch (error) {
+    console.error("❌ Error setting account active state:", error);
+    throw new Error("Failed to update account active state");
+  }
+}
+
+// Reject pending account
+export async function rejectAccount(pendingId: number, reason?: string) {
+  try {
+    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+    if (!rows || rows.length === 0) {
+      throw new Error("Pending account not found");
+    }
+    const pending = rows[0];
+
+    // Optionally: store a rejection record or send email
+    try {
+      if (pending.Email) {
+        // best-effort: send rejection email if your emailService supports it
+        if ((emailService as any).sendRejectionEmail) {
+          await (emailService as any).sendRejectionEmail(pending.Email, pending.FirstName, reason);
+        }
+      }
+    } catch (emailErr) {
+      console.warn("Warning: failed to send rejection email:", emailErr);
+    }
+
+    // Delete pending record
+    await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+
+    return {
+      success: true,
+      message: 'Pending account rejected and removed'
+    };
+  } catch (error) {
+    console.error("❌ Error rejecting pending account:", error);
+    throw new Error("Failed to reject pending account");
+  }
+}
+
+// REPLACED: getModules implementation to query modules_tbl and normalize fields
+export const getModules = async () => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM modules_tbl');
+    const list = Array.isArray(rows) ? (rows as any[]) : [];
+
+    return list.map((m: any) => ({
+      Module_id: m.Module_id ?? m.module_id ?? m.id ?? null,
+      Module_name: m.Name ?? m.Module_name ?? m.name ?? '',  // Use 'Name' from modules_tbl
+      Path: m.Path ?? m.path ?? m.route ?? null,
+      _raw: m,
+    }));
+  } catch (err: any) {
+    console.error('Get modules error:', err);
+    throw new Error(`Failed to fetch modules: ${err?.message ?? String(err)}`);
+  }
+};

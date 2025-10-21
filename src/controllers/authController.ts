@@ -3,20 +3,35 @@ import * as authService from '../services/authService';
 import { pool } from '../config/db'; // Add this import
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
+import config from '../config/env.js';  // Add this import
 
-const SECRET = process.env.JWT_SECRET || 'changeme';
-const JWT_SECRET = process.env.JWT_SECRET || 'changeme';
+const SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
+const JWT_SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
 
 
 export async function register(req: Request, res: Response) {
   try {
     console.log('📝 Registration request received:', req.body);
     
-    // Add isSSO to destructuring
-    const { firstName, lastName, areaId, email, roleId, isSSO } = req.body;
-    
+    // NOTE: use barangayId (new DB column) instead of areaId
+    const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
+    // support legacy areaId if caller still sends it
+    const finalBarangayId = barangayId ?? areaId;
+
+    if (!finalBarangayId) {
+      return res.status(400).json({ success: false, error: 'barangayId is required' });
+    }
+
     // Pass undefined for password so the service will generate one, then pass isSSO as the final flag
-    const result = await authService.registerUser(firstName, lastName, areaId, email, roleId, undefined, isSSO || false);
+    const result = await authService.registerUser(
+      firstName,
+      lastName,
+      Number(finalBarangayId),
+      email,
+      Number(roleId),
+      undefined,
+      Boolean(isSSO || false)
+    );
     
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
@@ -126,6 +141,8 @@ export const login = async (req: Request, res: Response) => {
 
     return res.json({ token, user: safeUser });
   } catch (err: any) {
+    // <-- changed: log full stack for dev:local debugging
+    console.error('login error:', err?.stack ?? err);
     return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
   }
 };

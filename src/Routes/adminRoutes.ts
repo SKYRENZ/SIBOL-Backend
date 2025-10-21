@@ -8,28 +8,31 @@ import {
   getPendingAccountById,
   approveAccount,
   rejectAccount,
-  getRoles
+  getRoles,
+  getModules
 } from '../controllers/adminController';
 import { isAdmin } from '../middleware/isAdmin';
 
 const router = Router();
 
-// GET /admin/accounts  (no per-route isAdmin here; global middleware on mount covers it)
-router.get('/accounts', listUsers);
-router.put('/:accountId', updateUser);
-router.patch('/:accountId/active', toggleActive);
-
-// POST /admin/create
-router.post('/create', isAdmin, createUser);
-// ✅ NEW: Pending accounts management (only email verified users)
-router.get('/pending-accounts', isAdmin, getPendingAccounts);
-router.get('/pending-accounts/:pendingId', isAdmin, getPendingAccountById);
-router.post('/pending-accounts/:pendingId/approve',  approveAccount);
-router.post('/pending-accounts/:pendingId/reject', isAdmin, rejectAccount);
-router.get('/roles', isAdmin, getRoles);
-// ✅ Existing routes
-router.post('/create', isAdmin, createUser);
+// User listing / management
+router.get('/accounts', isAdmin, listUsers);
 router.put('/:accountId', isAdmin, updateUser);
 router.patch('/:accountId/active', isAdmin, toggleActive);
+
+// Create user (admin only)
+router.post('/create', isAdmin, createUser);
+
+// Pending accounts management (admin only)
+router.get('/pending-accounts', isAdmin, getPendingAccounts);
+router.get('/pending-accounts/:pendingId', isAdmin, getPendingAccountById);
+router.post('/pending-accounts/:pendingId/approve', isAdmin, approveAccount);
+router.post('/pending-accounts/:pendingId/reject', isAdmin, rejectAccount);
+
+// Roles
+router.get('/roles', isAdmin, getRoles);
+
+// Modules
+router.get('/modules', isAdmin, getModules);
 
 export default router;

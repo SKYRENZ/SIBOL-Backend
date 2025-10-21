@@ -1,8 +1,9 @@
 import { pool } from '../config/db.js';
 
-export const fetchAllModules = async () => {
+export const fetchAllModules = async (): Promise<any[]> => {
+  // mysql2 returns [rows, fields]; return rows as an array
   const [rows] = await pool.query('SELECT Module_id, Name, Path FROM modules_tbl ORDER BY Module_id');
-  return rows;
+  return Array.isArray(rows) ? (rows as any[]) : [];
 };
 
 export const fetchAllowedModulesForAccount = async (account: any) => {

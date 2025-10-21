@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import passport from '../services/googleauthService';
+import config from '../config/env.js';
 
 export async function googleAuthInit(req: Request, res: Response, next: NextFunction) {
   // passport returns middleware; just invoke it
@@ -10,14 +11,14 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
   return passport.authenticate('google', (err: any, user: any, info: any) => {
     if (err) {
       console.error('Passport error:', err);
-      return res.redirect(`http://localhost:5173/login?error=server_error`);
+      return res.redirect(`${config.FRONT_END_PORT}/login?error=server_error`);
     }
 
     if (user) {
       req.logIn(user, (loginErr) => {
         if (loginErr) {
           console.error('Login error:', loginErr);
-          return res.redirect(`http://localhost:5173/login?error=login_failed`);
+          return res.redirect(`${config.FRONT_END_PORT}/login?error=login_failed`);
         }
         const userDataString = encodeURIComponent(JSON.stringify({
           Account_id: user.Account_id,
@@ -27,7 +28,7 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
           LastName: user.LastName,
           Email: user.Email
         }));
-        return res.redirect(`http://localhost:5173/dashboard?user=${userDataString}&auth=success`);
+        return res.redirect(`${config.FRONT_END_PORT}/dashboard?user=${userDataString}&auth=success`);
       });
     } else if (info && typeof info === 'object') {
       const { message, email, redirectTo } = info;
