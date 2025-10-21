@@ -229,8 +229,9 @@ export async function toggleActive(req: Request, res: Response) {
 
 export async function listUsers(req: Request, res: Response) {
   try {
-    const rawAccounts: any = await adminService.getAllAccounts();
-    const accounts: any[] = rawAccounts?.rows ?? rawAccounts ?? [];
+    // use the correct service function which returns { success, users, count }
+    const rawAccounts: any = await adminService.getAllUsers();
+    const accounts: any[] = rawAccounts?.users ?? rawAccounts?.rows ?? rawAccounts ?? [];
 
     const rawModules: any = await fetchAllModules();
     const modules: any[] = rawModules?.rows ?? rawModules ?? [];
@@ -260,12 +261,12 @@ export async function listUsers(req: Request, res: Response) {
   }
 }
 
-// ✅ NEW: Get roles
+// new: Get roles for admin UI
 export async function getRoles(req: Request, res: Response) {
   try {
-    const roles = await adminService.getRoles();
-    res.json({ rows: roles });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch roles' });
+    const result = await adminService.getRoles();
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(400).json({ success: false, error: error.message });
   }
 }

@@ -1,4 +1,4 @@
-import { pool } from '../config/db';
+import { pool } from '../config/db.js'; // add or normalize this import if not present
 import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
 import config from '../config/env.js';
@@ -226,21 +226,37 @@ export async function approveAccount(pendingId: number) {
 // Get admin stats (simplified)
 export async function getAdminStats() {
   try {
-    const [[activeUsers], [pendingAccounts], [areas], [roles]] = await Promise.all([
-      pool.execute("SELECT COUNT(*) as count FROM accounts_tbl WHERE IsActive = 1"),
-      pool.execute("SELECT COUNT(*) as count FROM pending_accounts_tbl WHERE IsEmailVerified = 1 AND IsAdminVerified = 0"),
-      pool.execute("SELECT COUNT(*) as count FROM area_tbl"),
-      pool.execute("SELECT COUNT(*) as count FROM user_roles_tbl")
+    const [
+      activeUsersResult,
+      pendingAccountsResult,
+      areasResult,
+      rolesResult
+    ] = await Promise.all([
+      pool.execute("SELECT COUNT(*) as cnt FROM accounts_tbl WHERE IsActive = 1"),
+      pool.execute("SELECT COUNT(*) as cnt FROM pending_accounts_tbl WHERE IsEmailVerified = 1 AND IsAdminVerified = 0"),
+      pool.execute("SELECT COUNT(*) as cnt FROM area_tbl"),
+      pool.execute("SELECT COUNT(*) as cnt FROM user_roles_tbl")
     ]);
+
+    // each result is [rows, fields] - rows[0].cnt contains the count
+    const extractCount = (res: any) => {
+      const rows = Array.isArray(res) ? res[0] : res;
+      if (Array.isArray(rows) && rows.length > 0 && typeof rows[0].cnt !== 'undefined') {
+        return Number(rows[0].cnt) || 0;
+      }
+      return 0;
+    };
+
+    const stats = {
+      activeUsers: extractCount(activeUsersResult),
+      pendingAccounts: extractCount(pendingAccountsResult),
+      areas: extractCount(areasResult),
+      roles: extractCount(rolesResult)
+    };
 
     return {
       success: true,
-      stats: {
-        activeUsers: activeUsers.count,
-        pendingAccounts: pendingAccounts.count,
-        areas: areas.count,
-        roles: roles.count
-      }
+      stats
     };
   } catch (error) {
     console.error("❌ Error fetching admin stats:", error);
@@ -251,36 +267,34 @@ export async function getAdminStats() {
 // Get all users (with optional filters)
 export async function getAllUsers(roleId?: number, isActive?: boolean) {
   try {
-    let query = `
-      SELECT 
-        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
-        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id
-      WHERE 1=1
-    `;
-    const params: any = [];
-
-    if (roleId) {
-      query += ` AND a.Roles = ?`;
+    const params: any[] = [];
+    let where = 'WHERE 1=1';
+    if (roleId !== undefined && roleId !== null) {
+      where += ' AND a.Roles = ?';
       params.push(roleId);
     }
-
-    if (typeof isActive === 'boolean') {
-      query += ` AND a.IsActive = ?`;
+    if (isActive !== undefined && isActive !== null) {
+      where += ' AND a.IsActive = ?';
       params.push(isActive ? 1 : 0);
     }
 
-    const [rows]: any = await pool.execute(query, params);
+    const sql = `
+      SELECT a.*, p.FirstName, p.LastName, p.Email
+      FROM accounts_tbl a
+      LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+      ${where}
+      ORDER BY a.Account_id
+    `;
+    const [rows]: any = await pool.query(sql, params);
 
     return {
       success: true,
-      users: rows,
-      count: rows.length
+      users: Array.isArray(rows) ? rows : [],
+      count: Array.isArray(rows) ? rows.length : 0
     };
   } catch (error) {
-    console.error("❌ Error fetching users:", error);
-    throw new Error("Failed to fetch users");
+    console.error('getAllUsers error:', error);
+    throw new Error('Failed to fetch users');
   }
 }
 
@@ -575,5 +589,76 @@ export async function adminLogout(adminId: number) {
   } catch (error) {
     console.error("❌ Admin logout error:", error);
     throw new Error("Failed to logout as admin");
+  }
+}
+
+// Get all roles
+export async function getRoles() {
+  try {
+    const [rows]: any = await pool.execute(`SELECT Roles_id, Roles FROM user_roles_tbl ORDER BY Roles_id`);
+    return {
+      success: true,
+      roles: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching roles:", error);
+    throw new Error("Failed to fetch roles");
+  }
+}
+
+// Set account active/inactive
+export async function setAccountActive(accountId: number, isActive: number) {
+  try {
+    await pool.execute(`UPDATE accounts_tbl SET IsActive = ? WHERE Account_id = ?`, [isActive, accountId]);
+
+    // return basic updated account summary
+    const [rows]: any = await pool.execute(
+      `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, p.FirstName, p.LastName, p.Email
+       FROM accounts_tbl a JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE a.Account_id = ?`,
+      [accountId]
+    );
+
+    return {
+      success: true,
+      account: rows[0] ?? null
+    };
+  } catch (error) {
+    console.error("❌ Error setting account active state:", error);
+    throw new Error("Failed to update account active state");
+  }
+}
+
+// Reject pending account
+export async function rejectAccount(pendingId: number, reason?: string) {
+  try {
+    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+    if (!rows || rows.length === 0) {
+      throw new Error("Pending account not found");
+    }
+    const pending = rows[0];
+
+    // Optionally: store a rejection record or send email
+    try {
+      if (pending.Email) {
+        // best-effort: send rejection email if your emailService supports it
+        if ((emailService as any).sendRejectionEmail) {
+          await (emailService as any).sendRejectionEmail(pending.Email, pending.FirstName, reason);
+        }
+      }
+    } catch (emailErr) {
+      console.warn("Warning: failed to send rejection email:", emailErr);
+    }
+
+    // Delete pending record
+    await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+
+    return {
+      success: true,
+      message: 'Pending account rejected and removed'
+    };
+  } catch (error) {
+    console.error("❌ Error rejecting pending account:", error);
+    throw new Error("Failed to reject pending account");
   }
 }
