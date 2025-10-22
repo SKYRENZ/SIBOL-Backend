@@ -188,15 +188,22 @@ export async function approveAccount(pendingId: number) {
       [pendingId]
     );
 
-    // 5. Send welcome email
-    await emailService.sendWelcomeEmail(
-      pendingAccount.Email, 
-      pendingAccount.FirstName, 
-      pendingAccount.Username
-    );
-
+    // COMMIT first so DB changes are durable even if email fails
     await conn.commit();
 
+    // 5. Send welcome email (best-effort; do NOT fail the approval on email errors)
+    try {
+      await emailService.sendWelcomeEmail(
+        pendingAccount.Email, 
+        pendingAccount.FirstName, 
+        pendingAccount.Username
+      );
+    } catch (emailErr) {
+      console.warn("Warning: failed to send welcome email (non-fatal):", emailErr);
+      // optionally persist a flag/log in DB or continue silently
+    }
+
+    // continue to fetch created user and return success
     // 6. Get the complete user data (Contact will be NULL in profile_tbl)
     const [newUserRows]: any = await pool.execute(`
       SELECT 
