@@ -18,7 +18,7 @@ export const config = {
   FRONT_END_PORT: getOptionalEnv('FRONT_END_PORT', 'https://sproutsibol.vercel.app'),
 
   // Comma-separated list of allowed frontend origins (for dev + prod)
-  FRONT_END_ORIGINS: getOptionalEnv('FRONT_END_ORIGINS', 'http://localhost:5173,https://https://sproutsibol.vercel.app'),
+  FRONT_END_ORIGINS: getOptionalEnv('FRONT_END_ORIGINS', 'http://localhost:5173,https://sproutsibol.vercel.app'),
 
   // DB
   DB_HOST: getOptionalEnv('DB_HOST', ''),
