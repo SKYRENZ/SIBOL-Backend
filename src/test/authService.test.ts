@@ -20,7 +20,7 @@ const SQL_LOGGER = createSqlLogger("authService");
 
 const TEST_FIRSTNAME = 'Test';
 const TEST_LASTNAME = 'User' + Date.now();
-const TEST_AREAID = 1;
+const TEST_BARANGAY_ID = 1;
 const TEST_EMAIL = `testuser${Date.now()}@example.com`;
 const TEST_ROLEID = 2;
 const TEST_PASSWORD = 'SIBOL12345';
@@ -96,7 +96,7 @@ afterAll(async () => {
 
 describe('AuthService - Regular Registration Flow', () => {
   it('should register regular user successfully (requires email verification)', async () => {
-    const result = await registerUser(TEST_FIRSTNAME, TEST_LASTNAME, TEST_AREAID, TEST_EMAIL, TEST_ROLEID, undefined, false);  // Added undefined for password, changed "false" to false
+    const result = await registerUser(TEST_FIRSTNAME, TEST_LASTNAME, TEST_BARANGAY_ID, TEST_EMAIL, TEST_ROLEID, undefined, false);  // Added undefined for password, changed "false" to false
 
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
@@ -119,7 +119,7 @@ describe('AuthService - Regular Registration Flow', () => {
 
 describe('AuthService - SSO Registration Flow', () => {
   it('should register SSO user successfully (skip email verification)', async () => {
-    const result = await registerUser(SSO_FIRSTNAME, SSO_LASTNAME, TEST_AREAID, SSO_EMAIL, TEST_ROLEID, undefined, true);  // Added undefined, changed "true" to true
+    const result = await registerUser(SSO_FIRSTNAME, SSO_LASTNAME, TEST_BARANGAY_ID, SSO_EMAIL, TEST_ROLEID, undefined, true);  // Added undefined, changed "true" to true
 
     expect(result).toBeDefined();
     expect(result.success).toBe(true);
@@ -224,7 +224,7 @@ describe('AuthService - Resend Verification Email', () => {
     const newUser = await registerUser(
       'Resend',
       'Test' + Date.now(),
-      TEST_AREAID,
+      TEST_BARANGAY_ID,
       `resendtest${Date.now()}@example.com`,
       TEST_ROLEID,
       undefined,
@@ -291,8 +291,8 @@ describe('AuthService - Admin Approval Simulation', () => {
     TEST_ACCOUNT_ID = accountResult.insertId;
 
     await db.execute(
-      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)',
-      [TEST_ACCOUNT_ID, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
+      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Barangay_id, Email) VALUES (?, ?, ?, ?, ?)',
+      [TEST_ACCOUNT_ID, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Barangay_id, pendingAccount.Email]
     );
 
     await db.execute('DELETE FROM pending_accounts_tbl WHERE Pending_id = ?', [TEST_PENDING_ID]);
@@ -318,8 +318,8 @@ describe('AuthService - Admin Approval Simulation', () => {
     SSO_ACCOUNT_ID = accountResult.insertId;
 
     await db.execute(
-      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)',
-      [SSO_ACCOUNT_ID, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
+      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Barangay_id, Email) VALUES (?, ?, ?, ?, ?)',
+      [SSO_ACCOUNT_ID, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Barangay_id, pendingAccount.Email]
     );
 
     await db.execute('DELETE FROM pending_accounts_tbl WHERE Pending_id = ?', [SSO_PENDING_ID]);
@@ -354,7 +354,7 @@ describe('AuthService - Login After Approval', () => {
     const pendingUser = await registerUser(
       'Pending',
       'User' + Date.now(),
-      TEST_AREAID,
+      TEST_BARANGAY_ID,
       `pending${Date.now()}@example.com`,
       TEST_ROLEID,
       undefined,
@@ -374,7 +374,7 @@ describe('AuthService - Login After Approval', () => {
     const adminPendingUser = await registerUser(
       'AdminPending',
       'User' + Date.now(),
-      TEST_AREAID,
+      TEST_BARANGAY_ID,
       `adminpending${Date.now()}@gmail.com`,
       TEST_ROLEID,
       undefined,
@@ -402,7 +402,7 @@ describe('AuthService - Edge Cases', () => {
       registerUser(
         TEST_FIRSTNAME,
         TEST_LASTNAME,
-        TEST_AREAID,
+        TEST_BARANGAY_ID,
         TEST_EMAIL,
         TEST_ROLEID,
         undefined,
@@ -416,7 +416,7 @@ describe('AuthService - Edge Cases', () => {
       registerUser(
         SSO_FIRSTNAME,
         SSO_LASTNAME,
-        TEST_AREAID,
+        TEST_BARANGAY_ID,
         SSO_EMAIL,
         TEST_ROLEID,
         undefined,

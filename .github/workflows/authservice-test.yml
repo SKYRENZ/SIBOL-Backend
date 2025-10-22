@@ -54,9 +54,10 @@ jobs:
               Account_created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP()
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
-            CREATE TABLE IF NOT EXISTS area_tbl (
-              Area_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
-              Area_Name VARCHAR(150) NOT NULL
+            -- NEW: barangay table (replaces area_tbl)
+            CREATE TABLE IF NOT EXISTS barangay_tbl (
+              Barangay_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+              Barangay_Name VARCHAR(150) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             CREATE TABLE IF NOT EXISTS user_roles_tbl (
@@ -69,12 +70,12 @@ jobs:
               Account_id INT(11) DEFAULT NULL,
               FirstName VARCHAR(100) NOT NULL,
               LastName VARCHAR(100) NOT NULL,
-              Area_id INT(11) DEFAULT NULL,
+              Barangay_id INT(11) DEFAULT NULL,
               Contact BIGINT(20) DEFAULT NULL,
               Email VARCHAR(150) UNIQUE,
               QR_code VARCHAR(255) DEFAULT NULL,
               FOREIGN KEY (Account_id) REFERENCES accounts_tbl(Account_id),
-              FOREIGN KEY (Area_id) REFERENCES area_tbl(Area_id)
+              FOREIGN KEY (Barangay_id) REFERENCES barangay_tbl(Barangay_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             CREATE TABLE IF NOT EXISTS pending_accounts_tbl (
@@ -84,14 +85,14 @@ jobs:
               FirstName VARCHAR(100) NOT NULL,
               LastName VARCHAR(100) NOT NULL,
               Email VARCHAR(150) NOT NULL,
-              Area_id INT(11) DEFAULT NULL,
+              Barangay_id INT(11) DEFAULT NULL,
               Roles INT(11) DEFAULT NULL,
               Verification_token VARCHAR(255) DEFAULT NULL,
               Token_expiration TIMESTAMP NULL DEFAULT NULL,
               IsEmailVerified TINYINT(1) DEFAULT 0,
               IsAdminVerified TINYINT(1) DEFAULT 0,
               Created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP(),
-              FOREIGN KEY (Area_id) REFERENCES area_tbl(Area_id)
+              FOREIGN KEY (Barangay_id) REFERENCES barangay_tbl(Barangay_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
             -- NEW: password_reset_tbl for password reset flow
@@ -109,8 +110,8 @@ jobs:
       - name: Insert test data for AuthService
         run: |
           mysql -h 127.0.0.1 -u root -proot sibol_draft -e "
-            INSERT INTO area_tbl (Area_id, Area_Name) VALUES (1, 'Test Area') 
-            ON DUPLICATE KEY UPDATE Area_Name='Test Area';
+            INSERT INTO barangay_tbl (Barangay_id, Barangay_Name) VALUES (1, 'Test Barangay') 
+            ON DUPLICATE KEY UPDATE Barangay_Name='Test Barangay';
             
             INSERT INTO user_roles_tbl (Roles_id, Roles) VALUES (1, 'Admin'), (2, 'User') 
             ON DUPLICATE KEY UPDATE Roles=VALUES(Roles);
