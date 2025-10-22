@@ -12,7 +12,7 @@ import config from '../config/env.js';
 export async function createUserAsAdmin(
   firstName: string,
   lastName: string,
-  areaId: number,
+  barangayId: number,  // Renamed from areaId
   email: string,
   roleId: number,
   password?: string
@@ -45,8 +45,8 @@ export async function createUserAsAdmin(
 
     // Insert profile
     await conn.execute(
-      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)',
-      [newAccountId, firstName, lastName, areaId, email]
+      'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Barangay_id, Email) VALUES (?, ?, ?, ?, ?)',  // Changed Area_id to Barangay_id
+      [newAccountId, firstName, lastName, barangayId, email]  // Changed areaId to barangayId
     );
 
     await conn.commit();
@@ -286,13 +286,15 @@ export async function getAllUsers(roleId?: number, isActive?: boolean) {
     }
 
     const sql = `
-      SELECT a.*, p.FirstName, p.LastName, p.Email
+      SELECT a.*, p.FirstName, p.LastName, p.Email, p.Barangay_id, b.Barangay_Name
       FROM accounts_tbl a
       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+      LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
       ${where}
       ORDER BY a.Account_id
     `;
-    const [rows]: any = await pool.query(sql, params);
+    console.log('Executing SQL:', sql, 'Params:', params);  // Keep for debugging if needed
+    const [rows]: any = await pool.execute(sql, params);  // Use pool.execute for consistency
 
     return {
       success: true,
@@ -301,7 +303,7 @@ export async function getAllUsers(roleId?: number, isActive?: boolean) {
     };
   } catch (error) {
     console.error('getAllUsers error:', error);
-    throw new Error('Failed to fetch users');
+    throw error;  // Throw actual error for better debugging
   }
 }
 
@@ -344,21 +346,16 @@ export async function updateUser(userId: number, updates: any) {
     const profParams: any[] = [];
 
     // account-level fields (accounts_tbl)
-    if (updates.Username !== undefined) { accSets.push('Username = ?'); accParams.push(updates.Username); }
     if (updates.Roles !== undefined) { accSets.push('Roles = ?'); accParams.push(updates.Roles); }
     if (updates.IsActive !== undefined) { accSets.push('IsActive = ?'); accParams.push(updates.IsActive ? 1 : 0); }
     if (updates.User_modules !== undefined) { accSets.push('User_modules = ?'); accParams.push(updates.User_modules); }
-    if (updates.Password !== undefined && updates.Password !== '') {
-      const hash = await bcrypt.hash(String(updates.Password), 10);
-      accSets.push('Password = ?'); accParams.push(hash);
-    }
 
     // profile-level fields (profile_tbl)
     if (updates.FirstName !== undefined) { profSets.push('FirstName = ?'); profParams.push(updates.FirstName); }
     if (updates.LastName !== undefined) { profSets.push('LastName = ?'); profParams.push(updates.LastName); }
     if (updates.Email !== undefined) { profSets.push('Email = ?'); profParams.push(updates.Email); }
     if (updates.Contact !== undefined) { profSets.push('Contact = ?'); profParams.push(updates.Contact); }
-    if (updates.Area_id !== undefined) { profSets.push('Area_id = ?'); profParams.push(updates.Area_id); }
+    if (updates.Barangay_id !== undefined) { profSets.push('Barangay_id = ?'); profParams.push(updates.Barangay_id); }  // Changed from Area_id
 
     // run updates if anything to update
     if (accSets.length > 0) {
@@ -702,3 +699,17 @@ export const getModules = async () => {
     throw new Error(`Failed to fetch modules: ${err?.message ?? String(err)}`);
   }
 };
+
+// NEW: Add getBarangays function
+export async function getBarangays() {
+  try {
+    const [rows]: any = await pool.execute(`SELECT Barangay_id, Barangay_Name FROM barangay_tbl ORDER BY Barangay_id`);
+    return {
+      success: true,
+      barangays: rows
+    };
+  } catch (error) {
+    console.error("❌ Error fetching barangays:", error);
+    throw new Error("Failed to fetch barangays");
+  }
+}
