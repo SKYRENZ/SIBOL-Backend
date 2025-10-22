@@ -407,3 +407,13 @@ async function testDBConnection() {
 }
 
 export { testDBConnection };
+
+export async function getBarangays() {
+  // Return all barangays (your table doesn't have an IsActive column)
+  const [rows]: any = await pool.execute(
+    `SELECT Barangay_id AS id, Barangay_Name AS name
+     FROM barangay_tbl
+     ORDER BY Barangay_Name`
+  );
+  return rows;
+}
