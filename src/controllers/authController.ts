@@ -247,3 +247,14 @@ export async function resetPassword(req: Request, res: Response) {
         res.status(400).json({ success: false, error: error.message });
     }
 }
+
+// New: return barangay list from DB for sign-up dropdown
+export async function getBarangays(req: Request, res: Response) {
+  try {
+    const rows = await authService.getBarangays();
+    return res.json({ success: true, barangays: rows });
+  } catch (err: any) {
+    console.error('getBarangays error:', err);
+    return res.status(500).json({ success: false, error: 'Failed to load barangays' });
+  }
+}
