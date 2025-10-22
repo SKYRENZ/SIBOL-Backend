@@ -15,10 +15,10 @@ export const config = {
   NODE_ENV: getOptionalEnv('NODE_ENV', 'development'),
   PORT: parseInt(getOptionalEnv('PORT', '5000'), 10),
   BACKEND_URL: getOptionalEnv('BACKEND_URL', `http://localhost:${process.env.PORT || 5000}`),
-  FRONT_END_PORT: getOptionalEnv('FRONT_END_PORT', 'http://sproutsibol.netlify.app'),
+  FRONT_END_PORT: getOptionalEnv('FRONT_END_PORT', 'http://sibol-frontend.vercel.app'),
 
   // Comma-separated list of allowed frontend origins (for dev + prod)
-  FRONT_END_ORIGINS: getOptionalEnv('FRONT_END_ORIGINS', 'http://localhost:5173,http://sproutsibol.netlify.app'),
+  FRONT_END_ORIGINS: getOptionalEnv('FRONT_END_ORIGINS', 'http://localhost:5173,http://sibol-frontend.vercel.app'),
 
   // DB
   DB_HOST: getOptionalEnv('DB_HOST', ''),
