@@ -9,7 +9,8 @@ import {
   approveAccount,
   rejectAccount,
   getRoles,
-  getModules
+  getModules,
+  getBarangays
 } from '../controllers/adminController';
 import { isAdmin } from '../middleware/isAdmin';
 
@@ -34,5 +35,8 @@ router.get('/roles', isAdmin, getRoles);
 
 // Modules
 router.get('/modules', isAdmin, getModules);
+
+// NEW: Route for barangays
+router.get('/barangays', isAdmin, getBarangays);
 
 export default router;

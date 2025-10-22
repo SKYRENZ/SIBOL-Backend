@@ -87,17 +87,16 @@ export async function rejectAccount(req: Request, res: Response) {
 // ✅ UPDATED: Removed contact parameter from createUser
 export async function createUser(req: Request, res: Response) {
   try {
-    // Destructure with frontend keys (use renaming for consistency)
-    const { FirstName: firstName, LastName: lastName, Area_id: areaId, Email: email, Roles: roleId, Username, Password, Access } = req.body;
+    const { FirstName: firstName, LastName: lastName, Barangay_id: barangayId, Email: email, Roles: roleId, Username, Password, Access } = req.body;  // Changed Area_id to Barangay_id
 
-    if (!firstName || !lastName || !areaId || !email || !roleId || !Password) {
+    if (!firstName || !lastName || !barangayId || !email || !roleId || !Password) {  // Changed areaId to barangayId
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     // Hash the password before passing to service
     const hashedPassword = await bcrypt.hash(Password, 10);
 
-    const result = await adminService.createUserAsAdmin(firstName, lastName, Number(areaId), email, Number(roleId), hashedPassword);
+    const result = await adminService.createUserAsAdmin(firstName, lastName, Number(barangayId), email, Number(roleId), hashedPassword);  // Changed areaId to barangayId
     if (!result.success) {
       throw new Error(result.message || 'Failed to create user');
     }
@@ -164,14 +163,16 @@ export async function getModules(req: Request, res: Response) {
   }
 }
 
+// UPDATED: updateUser - Only process role and access (no username/password)
 export async function updateUser(req: Request, res: Response) {
   try {
     const { accountId } = req.params;
     const updates: any = req.body;
-    console.log('req.body', req.body);
-    console.log('updates', updates);
+    // Remove any username/password from updates (defensive)
+    delete updates.Username;
+    delete updates.Password;
 
-    // Handle Access array -> User_modules CSV
+    // Handle Access array -> User_modules CSV (unchanged)
     if (updates.Access && Array.isArray(updates.Access)) {
       const modules = await adminService.getModules();  // FIXED: Use getModules instead of getRoles
       console.log('modules', modules);
@@ -251,5 +252,21 @@ export async function getRoles(req: Request, res: Response) {
     return res.status(200).json(result);
   } catch (error: any) {
     return res.status(400).json({ success: false, error: error.message });
+  }
+}
+
+// NEW: Controller for fetching barangays
+export async function getBarangays(req: Request, res: Response) {
+  try {
+    console.log('Fetching barangays from database...');  // NEW: Debug log
+    const result = await adminService.getBarangays();
+    console.log('Barangays fetched:', result);  // NEW: Debug log for result
+    return res.status(200).json(result);
+  } catch (error: any) {
+    console.error('Error in getBarangays controller:', error);  // Enhanced error log
+    return res.status(400).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 }
