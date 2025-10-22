@@ -25,7 +25,7 @@ const _originalPoolExecute = (pool as any).execute;
 
 let TEST_ACCOUNT_ID: number;
 let TEST_PROFILE_ID: number;
-let TEST_AREA_ID: number;
+let TEST_BARANGAY_ID: number;
 let testEmail: string;
 
 const SQL_LOGGER = createSqlLogger("googleauthService");
@@ -38,12 +38,12 @@ beforeAll(async () => {
     return _originalPoolExecute.call(pool, sql, params);
   };
 
-  // Create test area
-  const [areaResult]: any = await pool.execute(
-    'INSERT INTO area_tbl (Area_Name) VALUES (?)',
-    [`Test Area ${Date.now()}`]
+  // Create test barangay
+  const [barangayResult]: any = await pool.execute(
+    'INSERT INTO barangay_tbl (Barangay_Name) VALUES (?)',
+    [`Test Barangay ${Date.now()}`]
   );
-  TEST_AREA_ID = areaResult.insertId;
+  TEST_BARANGAY_ID = barangayResult.insertId;
 
   // Create test account (using role ID 2 for 'User' which should exist from the workflow)
   const timestamp = Date.now();
@@ -57,8 +57,8 @@ beforeAll(async () => {
 
   // Create test profile
   const [profileResult]: any = await pool.execute(
-    'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Contact, Email) VALUES (?, ?, ?, ?, ?, ?)',
-    [TEST_ACCOUNT_ID, 'Test', 'User', TEST_AREA_ID, 1234567890, testEmail]
+    'INSERT INTO profile_tbl (Account_id, FirstName, LastName, Barangay_id, Contact, Email) VALUES (?, ?, ?, ?, ?, ?)',
+    [TEST_ACCOUNT_ID, 'Test', 'User', TEST_BARANGAY_ID, 1234567890, testEmail]
   );
   TEST_PROFILE_ID = profileResult.insertId;
 });
@@ -83,8 +83,8 @@ afterAll(async () => {
   if (TEST_ACCOUNT_ID) {
     await pool.execute('DELETE FROM accounts_tbl WHERE Account_id = ?', [TEST_ACCOUNT_ID]);
   }
-  if (TEST_AREA_ID) {
-    await pool.execute('DELETE FROM area_tbl WHERE Area_id = ?', [TEST_AREA_ID]);
+  if (TEST_BARANGAY_ID) {
+    await pool.execute('DELETE FROM barangay_tbl WHERE Barangay_id = ?', [TEST_BARANGAY_ID]);
   }
   await pool.end();
 
@@ -123,7 +123,8 @@ describe('Google Auth Service', () => {
       expect(GoogleStrategy).toHaveBeenCalled();
       
       const strategyConfig = GoogleStrategy.mock.calls[0][0];
-      expect(strategyConfig.callbackURL).toBe("/api/auth/google/callback");
+      // Accept full callback URL (BACKEND_URL + path) or just the path
+      expect(String(strategyConfig.callbackURL)).toContain('/api/auth/google/callback');
     });
 
     it('should set up serialization and deserialization', () => {
@@ -181,8 +182,8 @@ describe('Google Auth Service', () => {
     it('should handle pending email verification', async () => {
       // Create a pending account that needs email verification
       await pool.execute(
-        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Area_id, Roles, IsEmailVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        ['pending.user', 'hashedpass', 'Pending', 'User', 'pending@example.com', TEST_AREA_ID, 2, 0]
+        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, IsEmailVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ['pending.user', 'hashedpass', 'Pending', 'User', 'pending@example.com', TEST_BARANGAY_ID, 2, 0]
       );
 
       const mockProfile = {
@@ -213,8 +214,8 @@ describe('Google Auth Service', () => {
     it('should handle pending admin approval', async () => {
       // Create a pending account that needs admin approval
       await pool.execute(
-        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Area_id, Roles, IsEmailVerified, IsAdminVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ['adminpending.user', 'hashedpass', 'AdminPending', 'User', 'adminpending@example.com', TEST_AREA_ID, 2, 1, 0]
+        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, IsEmailVerified, IsAdminVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        ['adminpending.user', 'hashedpass', 'AdminPending', 'User', 'adminpending@example.com', TEST_BARANGAY_ID, 2, 1, 0]
       );
 
       const mockProfile = {
