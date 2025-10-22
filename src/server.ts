@@ -67,7 +67,10 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // ✅ Allow your frontend
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: FRONTEND_ORIGINS_ARRAY,  // Allows origins from env.ts
+  credentials: true,  // If using cookies/sessions
+}));
 
 // Remove the app.options('*' / '/*') call (path-to-regexp rejects '*').
 // Provide a simple OPTIONS responder so preflight requests are answered.
