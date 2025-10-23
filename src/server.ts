@@ -22,6 +22,8 @@ import adminRoutes from './Routes/adminRoutes.js';
 import rewardRoutes from "./Routes/rewardRoutes.js";
 import profileRoutes from './Routes/profileRoutes.js';
 import moduleRoutes from './Routes/moduleRoutes.js';
+import areaRoutes from "./Routes/areaRoutes";
+import operatorRoutes from "./Routes/operatorRoutes";
 import { authorizeByModulePath } from './middleware/authorize.js';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
@@ -92,6 +94,8 @@ app.use('/api/rewards', rewardRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/auth', googleAuthRoutes);
+app.use("/api/areas", areaRoutes);
+app.use("/api/operators", operatorRoutes);
 
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
