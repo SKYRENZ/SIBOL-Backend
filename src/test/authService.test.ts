@@ -9,6 +9,11 @@ jest.mock('../utils/emailService', () => ({
   sendVerificationEmail: jest.fn().mockResolvedValue({
     success: true,
     messageId: 'mock-message-id'
+  }),
+  // mock reset email used by password-reset flows
+  sendResetEmail: jest.fn().mockResolvedValue({
+    success: true,
+    messageId: 'mock-reset-message-id'
   })
 }));
 
