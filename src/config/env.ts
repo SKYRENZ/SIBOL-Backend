@@ -31,6 +31,10 @@ export const config = {
   // Email / OAuth / Auth
   EMAIL_USER: getOptionalEnv('EMAIL_USER', ''),
   EMAIL_PASSWORD: getOptionalEnv('EMAIL_PASSWORD', ''),
+  EMAIL_FROM: getOptionalEnv('EMAIL_FROM', ''),
+  EMAIL_SMTP_HOST: getOptionalEnv('EMAIL_SMTP_HOST', ''),
+  EMAIL_SMTP_PORT: getOptionalEnv('EMAIL_SMTP_PORT', ''),
+  SENDGRID_API_KEY: getOptionalEnv('SENDGRID_API_KEY', ''),
   GOOGLE_CLIENT_ID: getOptionalEnv('GOOGLE_CLIENT_ID', ''),
   GOOGLE_CLIENT_SECRET: getOptionalEnv('GOOGLE_CLIENT_SECRET', ''),
 
