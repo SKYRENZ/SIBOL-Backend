@@ -50,7 +50,7 @@ export async function registerUser(
     );
 
     if (existingPending.length > 0) {
-      throw new Error("Username or email already exists in pending accounts");
+      throw new Error("Name or email already exists in pending accounts");
     }
 
     // 3. Check if username/email already exists in active accounts_tbl/profile_tbl
@@ -62,7 +62,7 @@ export async function registerUser(
     );
 
     if (existingActive.length > 0) {
-      throw new Error("Username or email already exists");
+      throw new Error("Name or email already exists");
     }
 
     // 4. Generate and hash the password
@@ -128,7 +128,9 @@ export async function registerUser(
     if (process.env.NODE_ENV !== 'test') {
       console.error("❌ Registration Error:", error);
     }
-    throw new Error(`Registration failed: ${error}`);
+    // Preserve original Error message/object so caller sees "Username or email already exists"
+    if (error instanceof Error) throw error;
+    throw new Error(String(error));
   }
 }
 

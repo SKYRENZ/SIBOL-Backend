@@ -36,10 +36,14 @@ export async function register(req: Request, res: Response) {
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
   } catch (error: any) {
-    console.error('❌ Registration error:', error.message);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message 
+    // log full stack for debugging
+    console.error('❌ Registration error:', error?.stack ?? error);
+    const message = error?.message ?? String(error) ?? 'Registration failed';
+    // If message indicates a duplicate, return 409 Conflict so frontend can handle specifically
+    const statusCode = /exist/i.test(message) ? 409 : 400;
+    res.status(statusCode).json({
+      success: false,
+      error: message
     });
   }
 }
