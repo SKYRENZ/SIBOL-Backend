@@ -331,6 +331,9 @@ export async function createPasswordReset(email: string, code: string, expiratio
         'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
         [email, hashedCode, expiration]
     );
+
+    // return explicit result for tests and callers
+    return { success: true };
 };
 
 export async function verifyResetCode(email: string, code: string) {
