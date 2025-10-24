@@ -1,6 +1,26 @@
 import nodemailer from 'nodemailer';
 import config from '../config/env.js';
 
+// normalize frontend base and remove trailing slashes
+// use the existing config key (FRONT_END_PORT) — do not reference FRONT_END_URL
+const FRONTEND_BASE = (config.FRONT_END_PORT || 'http://localhost:5173').replace(/\/+$/, '');
+
+function buildFrontendUrl(path: string, params?: Record<string, string>) {
+  try {
+    // try using URL to produce a correct absolute URL
+    const url = new URL(path, FRONTEND_BASE);
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+    }
+    return url.toString();
+  } catch {
+    // fallback join without duplicate slashes
+    const cleanPath = (`/${path}`).replace(/\/+/g, '/').replace(/^\/+/, '/');
+    const qp = params ? `?${new URLSearchParams(params).toString()}` : '';
+    return `${FRONTEND_BASE}${cleanPath}${qp}`;
+  }
+}
+
 // Use explicit SMTP settings (works reliably with Gmail app passwords)
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -24,12 +44,12 @@ transporter.verify()
 
 // Single exported sendVerificationEmail implementation
 export async function sendVerificationEmail(email: string, verificationToken: string, firstName: string) {
-  const frontendUrl = config.FRONT_END_PORT;
-  const verificationUrl = `${frontendUrl}/email-verification?token=${verificationToken}`;
-  
+  const verificationUrl = buildFrontendUrl('/email-verification', { token: verificationToken });
+
   console.log('📧 Sending verification email to:', email);
   console.log('🔗 Verification URL:', verificationUrl);
-  console.log('🌐 Frontend URL from config:', frontendUrl);
+  // log the normalized frontend base (was using undefined `frontendUrl`)
+  console.log('🌐 Frontend URL from config:', FRONTEND_BASE);
   
   const mailOptions = {
     from: config.EMAIL_USER,
@@ -47,7 +67,7 @@ export async function sendVerificationEmail(email: string, verificationToken: st
           </p>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${verificationUrl}" 
+            <a href="${verificationUrl}" target="_blank" rel="noopener noreferrer"
                style="background-color: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold; font-size: 16px;">
               Verify Email Address
             </a>
