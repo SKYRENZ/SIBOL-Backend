@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import passport from '../services/googleauthService';
 import config from '../config/env.js';
+import jwt from 'jsonwebtoken';
 
 const RAW_FRONTEND = (config.FRONT_END_PORT ?? '').trim();
 const FRONTEND_BASE = (RAW_FRONTEND && RAW_FRONTEND !== '/' ? RAW_FRONTEND.replace(/\/+$/, '') : 'http://localhost:5173');
@@ -40,15 +41,36 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
           console.error('Login error:', loginErr);
           return res.redirect(buildFrontendUrl('/login', { error: 'login_failed' }));
         }
-        const userDataString = encodeURIComponent(JSON.stringify({
-          Account_id: user.Account_id,
-          Username: user.Username,
-          Roles: user.Roles,
-          FirstName: user.FirstName,
-          LastName: user.LastName,
-          Email: user.Email
-        }));
-        return res.redirect(buildFrontendUrl('/dashboard', { user: userDataString, auth: 'success' }));
+
+        // Create a JWT for the authenticated user and include it in the redirect.
+        // Keep token payload minimal (account id + roles) to avoid giant URLs.
+        try {
+          const secret = config.JWT_SECRET || 'changeme';
+          const payload: any = {
+            Account_id: user.Account_id ?? user.AccountId ?? user.id,
+            Roles: user.Roles ?? user.role ?? undefined,
+          };
+          const token = jwt.sign(payload, secret, { expiresIn: '7d' });
+
+          const userSafe = {
+            Account_id: user.Account_id,
+            Username: user.Username,
+            Roles: user.Roles,
+            FirstName: user.FirstName,
+            LastName: user.LastName,
+            Email: user.Email,
+          };
+
+          return res.redirect(buildFrontendUrl('/dashboard', {
+            token, // frontend will store this
+            user: encodeURIComponent(JSON.stringify(userSafe)),
+            auth: 'success'
+          }));
+        } catch (tokenErr) {
+          console.error('JWT creation failed:', tokenErr);
+          // fallback: redirect without token but notify frontend of failure
+          return res.redirect(buildFrontendUrl('/login', { error: 'token_failed' }));
+        }
       });
     } else if (info && typeof info === 'object') {
       const { message, email, redirectTo, firstName, lastName } = info as any;
