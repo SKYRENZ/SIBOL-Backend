@@ -2,7 +2,7 @@ import { pool } from '../config/db';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import * as emailService from '../utils/emailService';
-import config from '../config/env.js';
+import config from '../config/env';
 
 // DEFAULT_PASSWORD moved to config
 const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
