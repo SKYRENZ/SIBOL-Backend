@@ -203,21 +203,21 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
 
 export async function sendResetEmail(email: string, code: string) {
   const html = `
-    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px;">
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px; text-align: center;">
       <div style="text-align: center; margin-bottom: 18px;">
-        <div style="font-size: 22px; color: #0d6efd; display:flex; align-items:center; justify-content:center; gap:8px;">
-          <span style="font-size:20px">🔒</span>
-          <strong style="letter-spacing:0.2px;">Password Reset Request</strong>
+        <div style="font-size: 22px; color: #0d6efd; display:inline-block; vertical-align:middle; gap:8px;">
+          <span style="font-size:20px; display:inline-block; vertical-align:middle;">🔒</span>
+          <strong style="letter-spacing:0.2px; display:inline-block; vertical-align:middle;">Password Reset Request</strong>
         </div>
       </div>
 
-      <div style="border: 1px solid #c3e6cb; background: #ffffff; border-radius: 8px; padding: 20px 22px; margin-bottom: 18px;">
+      <div style="border: 1px solid #c3e6cb; background: #ffffff; border-radius: 8px; padding: 20px 22px; margin-bottom: 18px; text-align: center;">
         <p style="color: #333; font-size: 14px; margin: 0 0 16px 0;">
           You requested to reset your password for your SIBOL account. Please use the code below to proceed:
         </p>
 
-        <div style="display:flex; justify-content:center; margin: 14px 0;">
-          <div style="background:#f1f5f9; border-radius:8px; padding:12px 22px; font-family: monospace; font-size:28px; letter-spacing:6px; color:#0d6efd; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.02);">
+        <div style="margin: 14px 0;">
+          <div style="display:inline-block; margin:0 auto; background:#f1f5f9; border-radius:8px; padding:12px 22px; font-family: monospace; font-size:28px; letter-spacing:6px; color:#0d6efd; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.02);">
             ${code}
           </div>
         </div>
