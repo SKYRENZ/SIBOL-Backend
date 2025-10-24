@@ -12,6 +12,7 @@
     "test:log": "cross-env MOCK_SQL_LOG=true jest"
   },
   "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

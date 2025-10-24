@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService';
 import { pool } from '../config/db'; // Add this import
-import { sendResetEmail } from '../utils/emailService';
+import { sendResetEmail } from '../utils/emailService.js';
 import jwt from 'jsonwebtoken';
 import config from '../config/env.js';  // Add this import
 
@@ -186,49 +186,39 @@ export async function checkSSOEligibility(req: Request, res: Response) {
 export async function forgotPassword (req: Request, res: Response) {
   try {
     const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ success: false, error: 'Email is required' });
-    }
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
 
-    // Check if email exists
     const user = await authService.findProfileByEmail(email);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'Email not found' });
-    }
+    if (!user) return res.status(404).json({ success: false, error: 'Email not found' });
 
-    // Generate 6-digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // Set expiration (10 minutes from now)
     const expiration = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Store code (hashed) in DB - handle known service error (duplicate valid code)
     try {
       await authService.createPasswordReset(email, code, expiration);
     } catch (err: any) {
-      const msg = err?.message || 'Failed to create reset code';
-      // Known case from service: a valid reset code already exists
-      if (msg.includes('A valid reset code already exists')) {
-        return res.status(409).json({ success: false, error: msg });
-      }
-      // Bubble up other validation errors as 400
+      const msg = err?.message ?? String(err);
+      if (msg.includes('already exists')) return res.status(409).json({ success: false, error: msg });
       return res.status(400).json({ success: false, error: msg });
     }
 
-    // Send email (handle email sending errors separately)
-    try {
-      await sendResetEmail(email, code);
-    } catch (err: any) {
-      console.error('Failed to send reset email:', err);
-      // Optionally return 202 if you want to accept request but indicate email failure,
-      // here we return 500 so frontend can show an error.
-      return res.status(500).json({ success: false, error: 'Failed to send reset email' });
-    }
+    // respond immediately
+    res.status(200).json({ success: true, message: 'Reset code created. If your email is valid you will receive instructions shortly.' });
 
-    return res.status(200).json({ success: true, message: 'Reset code sent to email' });
+    // send email asynchronously, do NOT await — failures will be logged
+    void (async () => {
+      try {
+        await sendResetEmail(email, code);
+        console.log('✅ Background reset email sent for', email);
+      } catch (err: any) {
+        console.error('❌ Background sendResetEmail failed for', email, err?.message ?? err);
+        // optionally record failure for retry
+      }
+    })();
+
   } catch (err: any) {
     console.error('forgotPassword error:', err);
-    return res.status(500).json({ success: false, error: err?.message ?? 'Server error' });
+    res.status(500).json({ success: false, error: 'Server error' });
   }
 }
 
