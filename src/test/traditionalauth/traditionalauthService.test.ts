@@ -1,6 +1,6 @@
-import db from '../config/db';
-import { registerUser, checkAccountStatus } from '../services/authService';
-import { createSqlLogger } from './sqlLogger';
+import db from '../../config/db';
+import { registerUser, checkAccountStatus } from '../../services/authService';
+import { createSqlLogger } from '../sqlLogger';
 
 // Mock the email service to prevent actual email sending during tests
 jest.mock('../utils/emailService', () => ({

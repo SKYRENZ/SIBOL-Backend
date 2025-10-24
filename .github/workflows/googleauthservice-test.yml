@@ -109,4 +109,4 @@ jobs:
           GOOGLE_CLIENT_ID: test_client_id
           GOOGLE_CLIENT_SECRET: test_client_secret
           BACKEND_URL: http://localhost:3000
-        run: npx jest src/test/googleauthService.test.ts --runInBand
+        run: npx jest src/test/googleauth/SSOwaccountService.test.ts src/test/googleauth/SSOwoaccountService.test.ts --runInBand
