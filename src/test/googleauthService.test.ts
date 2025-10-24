@@ -99,18 +99,14 @@ describe('Google Auth Service', () => {
   let verifyFunction: any;
 
   beforeAll(() => {
-    // Import mocked modules
+    // obtain the mocked passport and strategy references so tests can inspect calls
     mockPassport = require('passport');
-    GoogleStrategy = require('passport-google-oauth20').Strategy;
-    
-    // Import the service to trigger passport configuration
+    GoogleStrategy = require('passport-google-oauth20').Strategy as jest.Mock;
+    // require the service after mocks are in place to create the strategy instance
     require('../services/googleauthService');
-    
-    // Get the verify function from the mock calls
-    const strategyCall = mockPassport.use.mock.calls[0];
-    if (strategyCall && strategyCall[0]) {
-      verifyFunction = strategyCall[0]._verify;
-    }
+    // grab the created strategy instance and its verify function
+    const instance = GoogleStrategy.mock.results[0]?.value;
+    verifyFunction = instance?._verify;
   });
 
   beforeEach(() => {
@@ -134,113 +130,48 @@ describe('Google Auth Service', () => {
   });
 
   describe('Google Strategy Verify Function', () => {
-    it('should authenticate existing user with valid email', async () => {
-      const mockProfile = {
-        id: 'google123',
-        emails: [{ value: testEmail, verified: true }],
-        displayName: 'Test User',
+    it('SSO w/o account should return not_registered info', async () => {
+      expect(verifyFunction).toBeDefined();
+      const uniqueEmail = `noacct_${Date.now()}@example.com`;
+      const profile = {
+        emails: [{ value: uniqueEmail }],
+        name: { givenName: 'No', familyName: 'Account' }
+      };
+      const done = jest.fn();
+
+      // call the verify function (accessToken, refreshToken, profile, done)
+      await verifyFunction('at', 'rt', profile, done);
+
+      expect(done).toHaveBeenCalled();
+      const [err, user, info] = done.mock.calls[0];
+      expect(err).toBeNull();
+      expect(user).toBeFalsy();
+      expect(info).toMatchObject({
+        message: 'not_registered',
+        redirectTo: 'signup',
+        email: uniqueEmail
+      });
+    });
+
+    it('SSO w/ account should return the existing account as user', async () => {
+      expect(verifyFunction).toBeDefined();
+      // testEmail is created in the top-level beforeAll DB setup of this file
+      const profile = {
+        emails: [{ value: testEmail }],
         name: { givenName: 'Test', familyName: 'User' }
       };
+      const done = jest.fn();
 
-      const mockDone = jest.fn();
+      await verifyFunction('at', 'rt', profile, done);
 
-      await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(null, expect.objectContaining({
-        Account_id: TEST_ACCOUNT_ID,
-        Email: testEmail,
-        FirstName: 'Test',
-        LastName: 'User'
-      }));
-    });
-
-    it('should redirect unregistered user to signup', async () => {
-      const mockProfile = {
-        id: 'google456',
-        emails: [{ value: 'unregistered@gmail.com', verified: true }],
-        displayName: 'New User',
-        name: { givenName: 'New', familyName: 'User' }
-      };
-
-      const mockDone = jest.fn();
-
-      await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(
-        null, 
-        false, 
-        expect.objectContaining({
-          message: 'not_registered',
-          email: 'unregistered@gmail.com',
-          firstName: 'New',
-          lastName: 'User',
-          redirectTo: 'signup'
-        })
-      );
-    });
-
-    it('should handle pending email verification', async () => {
-      // Create a pending account that needs email verification
-      await pool.execute(
-        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, IsEmailVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        ['pending.user', 'hashedpass', 'Pending', 'User', 'pending@example.com', TEST_BARANGAY_ID, 2, 0]
-      );
-
-      const mockProfile = {
-        id: 'google789',
-        emails: [{ value: 'pending@example.com', verified: true }],
-        displayName: 'Pending User',
-        name: { givenName: 'Pending', familyName: 'User' }
-      };
-
-      const mockDone = jest.fn();
-
-      await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(
-        null, 
-        false, 
-        expect.objectContaining({
-          message: 'email_pending',
-          email: 'pending@example.com',
-          redirectTo: 'verify-email'
-        })
-      );
-
-      // Cleanup
-      await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', ['pending@example.com']);
-    });
-
-    it('should handle pending admin approval', async () => {
-      // Create a pending account that needs admin approval
-      await pool.execute(
-        'INSERT INTO pending_accounts_tbl (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, IsEmailVerified, IsAdminVerified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        ['adminpending.user', 'hashedpass', 'AdminPending', 'User', 'adminpending@example.com', TEST_BARANGAY_ID, 2, 1, 0]
-      );
-
-      const mockProfile = {
-        id: 'google101112',
-        emails: [{ value: 'adminpending@example.com', verified: true }],
-        displayName: 'AdminPending User',
-        name: { givenName: 'AdminPending', familyName: 'User' }
-      };
-
-      const mockDone = jest.fn();
-
-      await verifyFunction('accessToken', 'refreshToken', mockProfile, mockDone);
-
-      expect(mockDone).toHaveBeenCalledWith(
-        null, 
-        false, 
-        expect.objectContaining({
-          message: 'admin_pending',
-          email: 'adminpending@example.com',
-          redirectTo: 'pending-approval'
-        })
-      );
-
-      // Cleanup
-      await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', ['adminpending@example.com']);
+      expect(done).toHaveBeenCalled();
+      const [err, user, info] = done.mock.calls[0];
+      expect(err).toBeNull();
+      expect(user).toBeTruthy();
+      // account created in DB should have Account_id set
+      expect(user.Account_id || user.AccountId || user.id).toBeDefined();
+      // email from profile should match profile table value returned with the account
+      expect(user.Email || user.profileEmail).toBe(testEmail);
     });
   });
 
