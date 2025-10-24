@@ -1,22 +1,35 @@
 import nodemailer from 'nodemailer';
-import config from '../config/env.js';  // Add this import
+import config from '../config/env.js';
 
-// Create transporter (using Gmail) - Fixed: createTransport not createTransporter
-const transporter = nodemailer.createTransport({  // Corrected from createTransporter
-  service: 'gmail',
+// Use explicit SMTP settings (works reliably with Gmail app passwords)
+const transporter = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // true for 465, false for 587
   auth: {
-    user: config.EMAIL_USER,  // Use config.EMAIL_USER
-    pass: config.EMAIL_PASSWORD  // Use config.EMAIL_PASSWORD
-  }
+    user: config.EMAIL_USER,
+    pass: config.EMAIL_PASSWORD,
+  },
+  tls: {
+    // Allow self-signed certs if your host uses them (optional)
+    rejectUnauthorized: false,
+  },
+  // pool: true, // uncomment if sending many emails
 });
 
+// Verify transporter at startup so failures show in logs
+transporter.verify()
+  .then(() => console.log('✅ SMTP transporter verified'))
+  .catch(err => console.error('❌ SMTP transporter verification failed:', err));
+
+// Single exported sendVerificationEmail implementation
 export async function sendVerificationEmail(email: string, verificationToken: string, firstName: string) {
-  const frontendUrl = config.FRONT_END_PORT;  // Use config.FRONT_END_PORT
+  const frontendUrl = config.FRONT_END_PORT;
   const verificationUrl = `${frontendUrl}/email-verification?token=${verificationToken}`;
   
   console.log('📧 Sending verification email to:', email);
   console.log('🔗 Verification URL:', verificationUrl);
-  console.log('🌐 Frontend URL from config:', frontendUrl);  // Updated log
+  console.log('🌐 Frontend URL from config:', frontendUrl);
   
   const mailOptions = {
     from: config.EMAIL_USER,
@@ -64,19 +77,15 @@ export async function sendVerificationEmail(email: string, verificationToken: st
 
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', info.messageId);
-    console.log('📋 Email details:', {
-      to: email,
-      subject: mailOptions.subject,
-      verificationUrl
-    });
+    console.log('✅ Verification email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error('❌ Email sending failed:', error);
-    throw new Error('Failed to send verification email');
+  } catch (error: any) {
+    console.error('❌ Verification email failed:', error);
+    throw new Error(error?.message ? `Failed to send verification email: ${error.message}` : 'Failed to send verification email');
   }
 }
 
+// Single exported sendWelcomeEmail implementation
 export async function sendWelcomeEmail(email: string, firstName: string, username: string, plainPassword?: string) {
   const frontendUrl = config.FRONT_END_PORT;
   const loginUrl = `${frontendUrl}/login`;
@@ -124,12 +133,13 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
     const info = await transporter.sendMail(mailOptions);
     console.log('✅ Welcome email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error('❌ Welcome email sending failed:', error);
-    throw new Error('Failed to send welcome email');
+  } catch (error: any) {
+    console.error('❌ Welcome email failed:', error);
+    throw new Error(error?.message ? `Failed to send welcome email: ${error.message}` : 'Failed to send welcome email');
   }
 }
 
+// Single exported sendResetEmail implementation
 export async function sendResetEmail(email: string, code: string) {
   const frontendUrl = config.FRONT_END_PORT;
   const resetUrl = `${frontendUrl}/reset-password`;
@@ -174,8 +184,8 @@ export async function sendResetEmail(email: string, code: string) {
     const info = await transporter.sendMail(mailOptions);
     console.log('✅ Password reset email sent:', info.messageId);
     return { success: true, messageId: info.messageId };
-  } catch (error) {
-    console.error('❌ Password reset email sending failed:', error);
-    throw new Error('Failed to send password reset email');
+  } catch (error: any) {
+    console.error('❌ Password reset email failed:', error);
+    throw new Error(error?.message ? `Failed to send password reset email: ${error.message}` : 'Failed to send password reset email');
   }
 }
