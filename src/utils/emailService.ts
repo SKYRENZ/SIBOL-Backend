@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import config from '../config/env.js';
+import config from '../config/env';
 import SendGrid from '@sendgrid/mail';
 
 // normalize frontend base and remove trailing slashes

@@ -54,7 +54,7 @@ describe('Google Auth Service - SSO w/o account', () => {
   beforeAll(() => {
     GoogleStrategy = require('passport-google-oauth20').Strategy as jest.Mock;
     // require the service after mocks are in place to create the strategy instance
-    require('../services/googleauthService');
+    require('../../services/googleauthService');
     const instance = GoogleStrategy.mock.results[0]?.value;
     verifyFunction = instance?._verify;
   });
