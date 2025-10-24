@@ -1,5 +1,5 @@
-import { pool } from '../../config/db';
-import { createSqlLogger } from "../sqlLogger";
+import { pool } from '../config/db';
+import { createSqlLogger } from "./sqlLogger";
 
 // Mock passport before importing the service
 jest.mock('passport', () => ({

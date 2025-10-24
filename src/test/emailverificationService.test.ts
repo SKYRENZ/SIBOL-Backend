@@ -1,5 +1,5 @@
-import { pool } from '../../config/db';
-import { verifyEmail } from '../../services/authService';
+import { pool } from '../config/db';
+import { verifyEmail } from '../services/authService';
 
 // Prevent any real emails (not required for verifyEmail but safe)
 jest.mock('../utils/emailService', () => ({

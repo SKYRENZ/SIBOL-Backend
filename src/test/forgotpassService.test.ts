@@ -1,11 +1,11 @@
-import { pool } from '../../config/db';
+import { pool } from '../config/db';
 import bcrypt from 'bcrypt';
 import {
   findProfileByEmail,
   createPasswordReset,
   verifyResetCode,
   resetPassword
-} from '../../services/authService';
+} from '../services/authService';
 
 // Prevent sending real emails during tests
 jest.mock('../utils/emailService', () => ({
