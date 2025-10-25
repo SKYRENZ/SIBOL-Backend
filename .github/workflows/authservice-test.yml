@@ -128,7 +128,7 @@ jobs:
           EMAIL_USER: test@example.com
           EMAIL_PASSWORD: test-password
           FRONT_END_PORT: http://localhost:3000
-        run: npx jest \
+        run: npx jest
           src/test/traditionalauth/traditionalauthService.test.ts
           src/test/traditionalauth/emailverificationService.test.ts
           src/test/traditionalauth/forgotpassService.test.ts
