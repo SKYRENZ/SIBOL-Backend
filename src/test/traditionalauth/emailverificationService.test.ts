@@ -34,7 +34,10 @@ describe('Email verification flow', () => {
     } catch (err) {
       // ignore cleanup errors in tests
     }
-    // Do not close pool here — shared test runner may reuse it
+    // Close the pool so Jest can exit
+    await pool.end();
+    // Do not close if other suites expect the same pool across parallel runs;
+    // if you keep tests run --runInBand you can safely close here.
   });
 
   it('verifies email with valid token', async () => {

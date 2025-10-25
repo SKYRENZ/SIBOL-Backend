@@ -43,6 +43,8 @@ describe('Forgot password flow', () => {
     } catch {
       // ignore cleanup errors
     }
+    // Close the pool so Jest can exit
+    await pool.end();
   });
 
   it('creates reset code, verifies it, and resets the password', async () => {
