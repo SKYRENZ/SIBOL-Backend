@@ -43,8 +43,10 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  // restore original execute (do not close shared pool here)
+  // restore original execute
   (pool as any).execute = _originalPoolExecute;
+  // close the pool so Jest can exit
+  await pool.end();
 });
 
 describe('Google Auth Service - SSO w/o account', () => {
