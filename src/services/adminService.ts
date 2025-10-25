@@ -168,10 +168,12 @@ export async function approveAccount(pendingId: number) {
 
     const pendingAccount = pendingRows[0];
 
-    // 2. Insert into accounts_tbl
+    // 2. Use configured DEFAULT_PASSWORD for approved accounts (hash for storage)
+    const usePassword = config.DEFAULT_PASSWORD;
+    const hashed = await bcrypt.hash(usePassword, 10);
     const [accountResult]: any = await conn.execute(
       "INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)",
-      [pendingAccount.Username, pendingAccount.Password, pendingAccount.Roles]
+      [pendingAccount.Username, hashed, pendingAccount.Roles]
     );
 
     const newAccountId = accountResult.insertId;
@@ -193,10 +195,12 @@ export async function approveAccount(pendingId: number) {
 
     // 5. Send welcome email (best-effort; do NOT fail the approval on email errors)
     try {
+      // include the default plaintext password in the welcome email
       await emailService.sendWelcomeEmail(
-        pendingAccount.Email, 
-        pendingAccount.FirstName, 
-        pendingAccount.Username
+        pendingAccount.Email,
+        pendingAccount.FirstName,
+        pendingAccount.Username,
+        usePassword
       );
     } catch (emailErr) {
       console.warn("Warning: failed to send welcome email (non-fatal):", emailErr);

@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import * as rewardService from "../services/rewardService.js";
+import * as rewardService from "../services/rewardService";
 
 export const createReward = async (req: Request, res: Response) => {
   try {

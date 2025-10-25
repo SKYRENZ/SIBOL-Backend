@@ -2,7 +2,7 @@ import { pool } from '../config/db';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import * as emailService from '../utils/emailService';
-import config from '../config/env.js';
+import config from '../config/env';
 
 // DEFAULT_PASSWORD moved to config
 const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
@@ -331,6 +331,9 @@ export async function createPasswordReset(email: string, code: string, expiratio
         'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
         [email, hashedCode, expiration]
     );
+
+    // return explicit result for tests and callers
+    return { success: true };
 };
 
 export async function verifyResetCode(email: string, code: string) {
