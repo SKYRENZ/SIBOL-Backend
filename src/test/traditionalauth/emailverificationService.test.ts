@@ -2,7 +2,7 @@ import { pool } from '../../config/db';
 import { verifyEmail } from '../../services/authService';
 
 // Prevent any real emails (not required for verifyEmail but safe)
-jest.mock('../utils/emailService', () => ({
+jest.mock('../../utils/emailService', () => ({
   sendVerificationEmail: jest.fn().mockResolvedValue({ success: true }),
   sendResetEmail: jest.fn().mockResolvedValue({ success: true })
 }));

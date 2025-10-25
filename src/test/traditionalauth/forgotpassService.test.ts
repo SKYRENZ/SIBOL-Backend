@@ -8,7 +8,7 @@ import {
 } from '../../services/authService';
 
 // Prevent sending real emails during tests
-jest.mock('../utils/emailService', () => ({
+jest.mock('../../utils/emailService', () => ({
   sendVerificationEmail: jest.fn().mockResolvedValue({ success: true }),
   sendResetEmail: jest.fn().mockResolvedValue({ success: true })
 }));
