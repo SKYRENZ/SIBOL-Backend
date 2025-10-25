@@ -1,6 +1,6 @@
 import express from "express";
-import * as rewardController from "../controllers/rewardController.js";
-import { isAdmin } from "../middleware/isAdmin.js"; // named export
+import * as rewardController from "../controllers/rewardController";
+import { isAdmin } from "../middleware/isAdmin"; // named export
 
 const router = express.Router();
 
