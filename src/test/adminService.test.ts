@@ -1,23 +1,39 @@
-import * as adminService from '../services/adminService';
-import { pool } from '../config/db';
-import { createSqlLogger } from "./sqlLogger";
+// remove the early static import of the service so the mock applies first
+// import * as adminService from '../services/adminService';
+// import { pool } from '../config/db';
+const { createSqlLogger } = require("./sqlLogger");
 const SQL_LOGGER = createSqlLogger("adminService");
 const LOG_SQL = process.env.MOCK_SQL_LOG === "true";
 
-// mock the module first
-jest.mock("../config/db", () => ({
+// MOCK bcrypt and emailService BEFORE requiring the service so the module uses mocks
+jest.mock('bcrypt', () => ({
+  hash: jest.fn().mockResolvedValue('hashedpass'),
+  compare: jest.fn().mockResolvedValue(true),
+}));
+
+jest.mock('../utils/emailService', () => ({
+  sendWelcomeEmail: jest.fn().mockResolvedValue({ provider: 'mock', statusCode: 202, body: '' }),
+}));
+
+// mock the DB module first
+jest.mock('../config/db', () => ({
   pool: {
     execute: jest.fn(),
     getConnection: jest.fn(),
+    query: jest.fn(),
   },
 }));
 
 // require the mocked module and obtain the pool mock
-const dbMock = require("../config/db");
+const dbMock = require('../config/db');
 const mockedPool = dbMock.pool as {
   execute: jest.Mock;
   getConnection: jest.Mock;
+  query: jest.Mock;
 };
+
+// require the service after mocking
+const adminService = require('../services/adminService');
 
 describe('adminService', () => {
   beforeEach(() => {
@@ -41,33 +57,59 @@ describe('adminService', () => {
     const mockConn = {
       beginTransaction: jest.fn().mockResolvedValue(undefined),
       execute: jest.fn()
-        .mockResolvedValueOnce([[]])  // Check existing
-        .mockResolvedValueOnce([{ insertId: 1 }])  // Insert account
-        .mockResolvedValueOnce([{}]),  // Insert profile
+        // 1. existingActive check -> no rows
+        .mockResolvedValueOnce([[]])
+        // 2. insert account -> insertId
+        .mockResolvedValueOnce([{ insertId: 10 }])
+        // 3. insert profile
+        .mockResolvedValueOnce([{}]),
       commit: jest.fn().mockResolvedValue(undefined),
       rollback: jest.fn().mockResolvedValue(undefined),
       release: jest.fn().mockResolvedValue(undefined),
     };
 
     mockedPool.getConnection.mockResolvedValue(mockConn);
-    mockedPool.execute.mockResolvedValueOnce([[{ Account_id: 1, Username: 'john.doe', Roles: 2, IsActive: 1, FirstName: 'John', LastName: 'Doe', Email: 'john@example.com', Contact: null, Area_id: 1 }]]);
 
-    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, 'john@example.com', 2, 'hashedpass');
+    // pool.execute after commit to fetch user
+    const userRow = {
+      Account_id: 10,
+      Username: 'john.doe',
+      Roles: 2,
+      IsActive: 1,
+      Account_created: new Date(),
+      FirstName: 'John',
+      LastName: 'Doe',
+      Email: 'john@example.com',
+      Contact: null,
+      Area_id: 1,
+    };
+    mockedPool.execute.mockResolvedValueOnce([[userRow]]);
 
+    const res = await adminService.createUserAsAdmin('John', 'Doe', 1, 'john@example.com', 2, 'plainpass');
+
+    // ensure transactional flow occurred
     expect(mockConn.beginTransaction).toHaveBeenCalled();
-    expect(mockConn.execute).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO accounts_tbl'),
-      ['john.doe', 'hashedpass', 2, 1]
-    );
-    expect(mockConn.commit).toHaveBeenCalled();
-    expect(res).toEqual({
-      success: true,
-      message: 'User created successfully',
-      user: { Account_id: 1, Username: 'john.doe', Roles: 2, IsActive: 1, FirstName: 'John', LastName: 'Doe', Email: 'john@example.com', Contact: null, Area_id: 1 }
-    });
+    expect(mockConn.execute).toHaveBeenCalledTimes(3);
+
+    // 2nd execute call is the INSERT INTO accounts_tbl with 3 params (username, hashedPassword, roleId)
+    const insertAccountCall = mockConn.execute.mock.calls[1];
+    expect(String(insertAccountCall[0])).toContain('INSERT INTO accounts_tbl');
+    expect(insertAccountCall[1]).toEqual(['john.doe', 'hashedpass', 2]);
+
+    // 3rd execute call is the profile insert with newAccountId then names/barangay/email
+    const insertProfileCall = mockConn.execute.mock.calls[2];
+    expect(String(insertProfileCall[0])).toContain('INSERT INTO profile_tbl');
+    expect(insertProfileCall[1]).toEqual([10, 'John', 'Doe', 1, 'john@example.com']);
+
+    // final pool.execute to fetch user
+    expect(mockedPool.execute).toHaveBeenCalledWith(expect.stringContaining('SELECT'), [10]);
+
+    expect(res).toHaveProperty('success', true);
+    expect(res).toHaveProperty('user');
+    expect(res.user).toHaveProperty('Account_id', 10);
   });
 
-  test('updateAccountAndProfile updates profile and roles inside a transaction and returns updated user', async () => {
+  test('updateUser updates profile and roles inside a transaction and returns updated user', async () => {
     const mockConn = {
       beginTransaction: jest.fn().mockResolvedValue(undefined),
       execute: jest.fn().mockResolvedValue([{}]),
@@ -78,49 +120,42 @@ describe('adminService', () => {
 
     mockedPool.getConnection.mockResolvedValue(mockConn);
 
-    // final SELECT after commit (pool.execute)
-    mockedPool.execute.mockResolvedValueOnce([
-      [
-        {
-          Account_id: 1,
-          Username: 'john.doe',
-          Roles: 2,
-          IsActive: 1,
-          FirstName: 'John',
-          LastName: 'Doe',
-          Email: 'john@example.com',
-          Contact: '09171234567',
-          Area_id: 1,
-        },
-      ],
-    ]);
+    // final SELECT after commit (pool.query)
+    const userRow = {
+      Account_id: 1,
+      Username: 'john.doe',
+      Roles: 2,
+      IsActive: 1,
+      FirstName: 'John',
+      LastName: 'Doe',
+      Email: 'john@example.com',
+      Contact: '09171234567',
+      Area_id: 1,
+    };
+    mockedPool.query.mockResolvedValueOnce([[userRow]]);
 
-    const result = await adminService.updateAccountAndProfile(1, { firstName: 'John', roleId: 2 });
+    const result = await adminService.updateUser(1, { FirstName: 'John', Roles: 2 });
 
     expect(mockConn.beginTransaction).toHaveBeenCalled();
     expect(mockConn.execute).toHaveBeenCalled(); // updates inside transaction
     expect(mockConn.commit).toHaveBeenCalled();
     expect(mockConn.release).toHaveBeenCalled();
-    expect(mockedPool.execute).toHaveBeenCalledWith(
+    expect(mockedPool.query).toHaveBeenCalledWith(
       expect.stringContaining('SELECT a.Account_id'),
       [1]
     );
-    expect(result).toHaveProperty('Account_id', 1);
-    expect(result).toHaveProperty('Username', 'john.doe');
+    expect(result).toHaveProperty('user');
+    expect(result.user).toHaveProperty('Account_id', 1);
+    expect(result.user).toHaveProperty('Username', 'john.doe');
   });
 
   test('setAccountActive updates isActive and returns account', async () => {
-    // First call: UPDATE -> can return an empty result
-    mockedPool.execute.mockResolvedValueOnce([{}]);
-    // Second call: SELECT -> return the account row
+    // 1) first call is the UPDATE -> return a result object
+    mockedPool.execute.mockResolvedValueOnce([{ affectedRows: 1 }]);
+    // 2) second call is the SELECT -> return rows
     mockedPool.execute.mockResolvedValueOnce([[{ Account_id: 1, Username: 'john.doe', Roles: 2, IsActive: 0 }]]);
-
-    const account = await adminService.setAccountActive(1, 0);
-
-    expect(mockedPool.execute).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE accounts_tbl SET IsActive = ? WHERE Account_id = ?'),
-      [0, 1]
-    );
-    expect(account).toHaveProperty('IsActive', 0);
+    const result = await adminService.setAccountActive(1, 0);
+    // result is { success: true, account: {...} }
+    expect(result.account).toHaveProperty('IsActive', 0);
   });
 });

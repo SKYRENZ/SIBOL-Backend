@@ -1,7 +1,7 @@
 import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
 import { pool } from '../config/db';
-import config from '../config/env.js';
+import config from '../config/env';
 
 /**
  * Create a user directly as admin.
