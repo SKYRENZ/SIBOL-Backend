@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService';
 import { pool } from '../config/db'; // Add this import
-import { sendResetEmail } from '../utils/emailService.js';
+import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
-import config from '../config/env.js';  // Add this import
+import config from '../config/env';  // Add this import
 
 const SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
 const JWT_SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET

@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import passport from '../services/googleauthService';
-import config from '../config/env.js';
+import config from '../config/env';
 import jwt from 'jsonwebtoken';
 
 const RAW_FRONTEND = (config.FRONT_END_PORT ?? '').trim();
