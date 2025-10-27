@@ -26,6 +26,7 @@ import areaRoutes from "./Routes/areaRoutes";
 import operatorRoutes from "./Routes/operatorRoutes";
 import filtersRoutes from './Routes/filtersRoutes';
 import { authorizeByModulePath } from './middleware/authorize.js';
+import qrRoutes from './Routes/qrRoutes';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -98,6 +99,7 @@ app.use('/api/auth', googleAuthRoutes);
 app.use("/api/areas", areaRoutes);
 app.use("/api/operators", operatorRoutes);
 app.use('/api/filters', filtersRoutes);
+app.use('/qr', qrRoutes);
 
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
