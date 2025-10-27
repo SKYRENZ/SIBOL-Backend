@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { pool } from '../config/db';
-import config from '../config/env.js';
+import config from '../config/env';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   // normalize header and log for debugging

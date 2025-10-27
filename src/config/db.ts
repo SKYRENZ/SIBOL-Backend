@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
-import config from './env.js';
+import config from './env';
+
 
 // Replace direct process.env usage
 const DB_HOST = process.env.DB_HOST ?? config.DB_HOST ?? 'localhost';

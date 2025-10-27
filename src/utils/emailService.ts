@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import config from '../config/env.js';
+import config from '../config/env';
 import SendGrid from '@sendgrid/mail';
 
 // normalize frontend base and remove trailing slashes
@@ -202,11 +202,38 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
 }
 
 export async function sendResetEmail(email: string, code: string) {
-  const resetUrl = buildFrontendUrl('/reset-password');
-  const html = `<p>Your password reset code is <strong>${code}</strong>.</p>
-                <p>Open reset page: <a href="${resetUrl}">${resetUrl}</a></p>`;
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px; text-align: center;">
+      <div style="text-align: center; margin-bottom: 18px;">
+        <div style="font-size: 22px; color: #0d6efd; display:inline-block; vertical-align:middle; gap:8px;">
+          <span style="font-size:20px; display:inline-block; vertical-align:middle;">🔒</span>
+          <strong style="letter-spacing:0.2px; display:inline-block; vertical-align:middle;">Password Reset Request</strong>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #c3e6cb; background: #ffffff; border-radius: 8px; padding: 20px 22px; margin-bottom: 18px; text-align: center;">
+        <p style="color: #333; font-size: 14px; margin: 0 0 16px 0;">
+          You requested to reset your password for your SIBOL account. Please use the code below to proceed:
+        </p>
+
+        <div style="margin: 14px 0;">
+          <div style="display:inline-block; margin:0 auto; background:#f1f5f9; border-radius:8px; padding:12px 22px; font-family: monospace; font-size:28px; letter-spacing:6px; color:#0d6efd; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.02);">
+            ${code}
+          </div>
+        </div>
+
+        <p style="color: #dc3545; font-size: 13.5px; margin: 12px 0 0 0;">
+          ⚠️ This code will expire in 10 minutes and can only be used once.
+        </p>
+      </div>
+
+      <p style="font-size: 12px; color: #6c757d; text-align:center; margin-top: 6px;">
+        If you did not request a password reset, please ignore this email.
+      </p>
+    </div>
+  `;
   try {
-    const info = await sendEmail({ to: email, subject: 'SIBOL - Password Reset Request', html });
+    const info = await sendEmail({ to: email, subject: 'SIBOL - Password Reset Code', html });
     console.log('✅ Password reset email queued/sent:', email, info);
     return { success: true, info };
   } catch (err: any) {
