@@ -439,6 +439,14 @@ export async function createEmailVerification(email: string) {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('Invalid email');
   }
+
+  // clean up expired verification codes (global cleanup)
+  try {
+    await pool.execute(`DELETE FROM email_verification_tbl WHERE Expiration <= NOW()`);
+  } catch (cleanupErr) {
+    console.warn('Failed to cleanup expired email verification entries:', cleanupErr);
+  }
+
   // generate 6-digit code
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10m
@@ -462,6 +470,14 @@ export async function createEmailVerification(email: string) {
 
 export async function verifyEmailCode(email: string, code: string) {
   if (!email || !code) throw new Error('Email and code required');
+
+  // remove expired entries before attempting verification (keeps queries fast and consistent)
+  try {
+    await pool.execute(`DELETE FROM email_verification_tbl WHERE Expiration <= NOW()`);
+  } catch (cleanupErr) {
+    console.warn('Failed to cleanup expired email verification entries before verify:', cleanupErr);
+  }
+
   const [rows]: any = await pool.execute(
     `SELECT * FROM email_verification_tbl WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() ORDER BY Created_at DESC LIMIT 1`,
     [email]
