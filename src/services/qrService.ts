@@ -1,4 +1,5 @@
 import db from '../config/db';
+import * as conversionService from './conversionService';
 
 export function calculatePointsFromWeight(weight: number): number {
     // conversion: 2 kg -> 10 points => 5 points per kg
@@ -34,8 +35,14 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
 export async function processQrScan(qr: string, weight: number) {
     const accountId = await getAccountIdByQr(qr);
     if (!accountId) return { found: false };
-    const awarded = calculatePointsFromWeight(weight);
-    if (awarded <= 0) return { found: true, awarded: 0, totalPoints: await getCurrentPoints(accountId) };
+
+    const pointsPerKg = await conversionService.getPointsPerKg();
+    const awarded = conversionService.calculatePointsFromWeight(weight, pointsPerKg);
+
+    if (awarded <= 0) {
+        const total = await getCurrentPoints(accountId);
+        return { found: true, awarded: 0, totalPoints: total, accountId };
+    }
 
     const totalPoints = await addPointsToAccount(accountId, awarded);
     return { found: true, awarded, totalPoints, accountId };
