@@ -13,6 +13,12 @@ export async function getConversion(req: Request, res: Response) {
 
 export async function updateConversion(req: Request, res: Response) {
   try {
+    // require authenticated user
+    const user = (req as any).user;
+    if (!user?.Account_id) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
     const { pointsPerKg, remark } = req.body as { pointsPerKg?: number; remark?: string };
 
     if (pointsPerKg == null || !Number.isFinite(pointsPerKg) || pointsPerKg <= 0) {
@@ -22,10 +28,9 @@ export async function updateConversion(req: Request, res: Response) {
       return res.status(400).json({ message: 'Remark is required (min 3 chars)' });
     }
 
-    // optional: use authenticated user id if available
-    const changedBy = (req as any).user?.Account_id ?? null;
+    const changedBy = Number(user.Account_id);
 
-    const updated = await conversionService.setPointsPerKg(Number(pointsPerKg), remark, changedBy ?? undefined);
+    const updated = await conversionService.setPointsPerKg(Number(pointsPerKg), remark.trim(), changedBy);
     return res.status(200).json({ pointsPerKg: updated });
   } catch (err) {
     console.error('updateConversion error', err);
