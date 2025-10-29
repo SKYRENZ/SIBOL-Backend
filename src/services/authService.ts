@@ -30,7 +30,8 @@ export async function registerUser(
   email: string,
   roleId: number,
   password: string | undefined,
-  isSSO: boolean
+  isSSO: boolean,
+  sendMethod: 'link' | 'code' = 'link' // NEW optional param - defaults to link (web)
 ) {
   const finalPassword = password && password.length > 0 ? password : DEFAULT_PASSWORD;
 
@@ -77,12 +78,12 @@ export async function registerUser(
       throw new Error("Password hashing failed");
     }
 
-    // 5. Generate verification token (only for non-SSO users)
+    // 5. Generate verification token (only for non-SSO users) when using link flow
     let verificationToken = null;
     let tokenExpiration = null;
     let isEmailVerified = isSSO ? 1 : 0;  // SSO users have pre-verified emails
 
-    if (!isSSO) {
+    if (!isSSO && sendMethod === 'link') {
       verificationToken = crypto.randomBytes(32).toString('hex');
       tokenExpiration = new Date();
       tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
@@ -96,10 +97,17 @@ export async function registerUser(
       [username, hashedPassword, firstName, lastName, email, barangayId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
-    // 7. Send verification email (only for non-SSO users and only if not in test environment)
+    // 7. Send verification (only for non-SSO users and only if not in test environment)
     if (!isSSO && process.env.NODE_ENV !== 'test') {
       try {
-        await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+        if (sendMethod === 'link') {
+          // original link-based email
+          await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+        } else {
+          // code-based flow for mobile: create a verification code and send code email
+          // createEmailVerification inserts code into email_verification_tbl and will trigger sending
+          await createEmailVerification(email);
+        }
       } catch (emailError) {
         console.warn('⚠️ Email sending failed, but registration completed:', emailError);
       }
@@ -108,11 +116,15 @@ export async function registerUser(
     // 8. Return registration data
     const responseMessage = isSSO 
       ? "Registration successful. Your account is pending admin approval."
-      : "Registration successful. Please check your email to verify your account.";
+      : sendMethod === 'code'
+        ? "Registration successful. A verification code was sent to your email."
+        : "Registration successful. Please check your email to verify your account.";
 
     const responseNote = isSSO 
       ? "Email already verified via Google. Waiting for admin approval."
-      : "Verification email sent. Check your inbox.";
+      : sendMethod === 'code'
+        ? "Verification code sent. Check your inbox."
+        : "Verification email sent. Check your inbox.";
 
     return {
       success: true,
@@ -437,9 +449,9 @@ export async function createEmailVerification(email: string) {
     [email, hashed, expiration]
   );
 
-  // send email (reuse sendResetEmail which shows a code layout)
+  // send code email using verification-code template
   try {
-    await emailService.sendResetEmail(email, code);
+    await emailService.sendVerificationCodeEmail(email, code);
   } catch (err) {
     console.warn('Email send failed (non-blocking):', err);
   }
