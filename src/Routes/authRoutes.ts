@@ -36,4 +36,9 @@ router.post('/forgot-password', authController.forgotPassword);
 // PROTECTED ones should use middleware individually
 // router.get('/me', authenticate, getMe);
 
+// POST /api/auth/send-verification-code
+router.post('/send-verification-code', authController.sendVerificationCode);
+// GET /api/auth/verify-email-code
+router.get('/verify-email-code', authController.verifyVerificationCode);
+
 export default router;

@@ -422,3 +422,48 @@ export async function getBarangays() {
   );
   return rows;
 }
+
+export async function createEmailVerification(email: string) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email');
+  }
+  // generate 6-digit code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10m
+  const hashed = await bcrypt.hash(code, 10);
+
+  await pool.execute(
+    `INSERT INTO email_verification_tbl (Email, Verification_code, Expiration) VALUES (?, ?, ?)`,
+    [email, hashed, expiration]
+  );
+
+  // send email (reuse sendResetEmail which shows a code layout)
+  try {
+    await emailService.sendResetEmail(email, code);
+  } catch (err) {
+    console.warn('Email send failed (non-blocking):', err);
+  }
+
+  // in non-prod return debugCode so mobile dev can test
+  return { success: true, debugCode: process.env.NODE_ENV !== 'production' ? code : undefined };
+}
+
+export async function verifyEmailCode(email: string, code: string) {
+  if (!email || !code) throw new Error('Email and code required');
+  const [rows]: any = await pool.execute(
+    `SELECT * FROM email_verification_tbl WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() ORDER BY Created_at DESC LIMIT 1`,
+    [email]
+  );
+  if (!rows.length) throw new Error('No valid code found');
+  const row = rows[0];
+  const match = await bcrypt.compare(code, row.Verification_code);
+  if (!match) throw new Error('Invalid code');
+
+  // mark used
+  await pool.execute(`UPDATE email_verification_tbl SET IsUsed = 1 WHERE Verification_id = ?`, [row.Verification_id]);
+
+  // also mark pending_accounts_tbl as email verified if exists
+  await pool.execute(`UPDATE pending_accounts_tbl SET IsEmailVerified = 1 WHERE Email = ?`, [email]);
+
+  return { success: true };
+}
