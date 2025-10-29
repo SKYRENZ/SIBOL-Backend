@@ -38,7 +38,7 @@ router.post('/forgot-password', authController.forgotPassword);
 
 // POST /api/auth/send-verification-code
 router.post('/send-verification-code', authController.sendVerificationCode);
-// GET /api/auth/verify-email-code
-router.get('/verify-email-code', authController.verifyVerificationCode);
+// POST /api/auth/verify-email-code (client sends { email, code })
+router.post('/verify-email-code', authController.verifyVerificationCode);
 
 export default router;
