@@ -241,3 +241,45 @@ export async function sendResetEmail(email: string, code: string) {
     throw new Error(err?.message ?? 'Failed to send password reset email');
   }
 }
+
+export async function sendVerificationCodeEmail(email: string, code: string, firstName = '') {
+  const displayName = firstName ? ` ${firstName}` : '';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px; text-align: center;">
+      <div style="text-align: center; margin-bottom: 18px;">
+        <div style="font-size: 22px; color: #0d6efd; display:inline-block; vertical-align:middle; gap:8px;">
+          <span style="font-size:20px; display:inline-block; vertical-align:middle;">✅</span>
+          <strong style="letter-spacing:0.2px; display:inline-block; vertical-align:middle;">Email Verification${displayName}</strong>
+        </div>
+      </div>
+
+      <div style="border: 1px solid #e2e8f0; background: #ffffff; border-radius: 8px; padding: 20px 22px; margin-bottom: 18px; text-align: center;">
+        <p style="color: #333; font-size: 14px; margin: 0 0 16px 0;">
+          Use the verification code below to confirm your email address for your SIBOL account.
+        </p>
+
+        <div style="margin: 14px 0;">
+          <div style="display:inline-block; margin:0 auto; background:#f1f5f9; border-radius:8px; padding:12px 22px; font-family: monospace; font-size:28px; letter-spacing:6px; color:#0d6efd; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.02);">
+            ${code}
+          </div>
+        </div>
+
+        <p style="color: #6c757d; font-size: 13.5px; margin: 12px 0 0 0;">
+          This code will expire in 10 minutes and can only be used once.
+        </p>
+      </div>
+
+      <p style="font-size: 12px; color: #6c757d; text-align:center; margin-top: 6px;">
+        If you did not request this verification, please ignore this email.
+      </p>
+    </div>
+  `;
+  try {
+    const info = await sendEmail({ to: email, subject: 'SIBOL - Email Verification Code', html });
+    console.log('✅ Verification code email queued/sent:', email, info);
+    return { success: true, info };
+  } catch (err: any) {
+    console.error('❌ Verification code email sending failed:', err?.message ?? err);
+    throw new Error(err?.message ?? 'Failed to send verification code email');
+  }
+}

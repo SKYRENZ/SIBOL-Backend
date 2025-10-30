@@ -22,6 +22,15 @@ export async function register(req: Request, res: Response) {
       return res.status(400).json({ success: false, error: 'barangayId is required' });
     }
 
+    // Detect client type (prefer explicit header/body flag; fall back to User-Agent heuristic)
+    const explicitClientHeader = (req.headers['x-client-type'] as string) || (req.body?.client as string);
+    const ua = (req.headers['user-agent'] as string) || '';
+    const isMobileClient = !!explicitClientHeader
+      ? /mobile|mobi|react-native|expo|android|ios/i.test(explicitClientHeader)
+      : /okhttp|react-native|expo|android|iphone|ipad|mobile|iOS|Android/i.test(ua);
+
+    const sendMethod: 'link' | 'code' = isMobileClient ? 'code' : 'link';
+
     // Pass undefined for password so the service will generate one, then pass isSSO as the final flag
     const result = await authService.registerUser(
       firstName,
@@ -30,7 +39,8 @@ export async function register(req: Request, res: Response) {
       email,
       Number(roleId),
       undefined,
-      Boolean(isSSO || false)
+      Boolean(isSSO || false),
+      sendMethod
     );
     
     console.log('✅ Registration successful:', result);
@@ -250,5 +260,27 @@ export async function getBarangays(req: Request, res: Response) {
   } catch (err: any) {
     console.error('getBarangays error:', err);
     return res.status(500).json({ success: false, error: 'Failed to load barangays' });
+  }
+}
+
+export async function sendVerificationCode(req: Request, res: Response) {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+    const result = await authService.createEmailVerification(email);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message ?? String(err) });
+  }
+}
+
+export async function verifyVerificationCode(req: Request, res: Response) {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) return res.status(400).json({ success: false, error: 'Email and code required' });
+    await authService.verifyEmailCode(email, code);
+    res.json({ success: true, message: 'Email verified' });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err?.message ?? String(err) });
   }
 }

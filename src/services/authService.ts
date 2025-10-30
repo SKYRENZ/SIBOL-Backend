@@ -30,7 +30,8 @@ export async function registerUser(
   email: string,
   roleId: number,
   password: string | undefined,
-  isSSO: boolean
+  isSSO: boolean,
+  sendMethod: 'link' | 'code' = 'link' // NEW optional param - defaults to link (web)
 ) {
   const finalPassword = password && password.length > 0 ? password : DEFAULT_PASSWORD;
 
@@ -77,12 +78,12 @@ export async function registerUser(
       throw new Error("Password hashing failed");
     }
 
-    // 5. Generate verification token (only for non-SSO users)
+    // 5. Generate verification token (only for non-SSO users) when using link flow
     let verificationToken = null;
     let tokenExpiration = null;
     let isEmailVerified = isSSO ? 1 : 0;  // SSO users have pre-verified emails
 
-    if (!isSSO) {
+    if (!isSSO && sendMethod === 'link') {
       verificationToken = crypto.randomBytes(32).toString('hex');
       tokenExpiration = new Date();
       tokenExpiration.setHours(tokenExpiration.getHours() + TOKEN_EXPIRATION_HOURS);
@@ -96,10 +97,17 @@ export async function registerUser(
       [username, hashedPassword, firstName, lastName, email, barangayId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
-    // 7. Send verification email (only for non-SSO users and only if not in test environment)
+    // 7. Send verification (only for non-SSO users and only if not in test environment)
     if (!isSSO && process.env.NODE_ENV !== 'test') {
       try {
-        await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+        if (sendMethod === 'link') {
+          // original link-based email
+          await emailService.sendVerificationEmail(email, verificationToken!, firstName);
+        } else {
+          // code-based flow for mobile: create a verification code and send code email
+          // createEmailVerification inserts code into email_verification_tbl and will trigger sending
+          await createEmailVerification(email);
+        }
       } catch (emailError) {
         console.warn('⚠️ Email sending failed, but registration completed:', emailError);
       }
@@ -108,11 +116,15 @@ export async function registerUser(
     // 8. Return registration data
     const responseMessage = isSSO 
       ? "Registration successful. Your account is pending admin approval."
-      : "Registration successful. Please check your email to verify your account.";
+      : sendMethod === 'code'
+        ? "Registration successful. A verification code was sent to your email."
+        : "Registration successful. Please check your email to verify your account.";
 
     const responseNote = isSSO 
       ? "Email already verified via Google. Waiting for admin approval."
-      : "Verification email sent. Check your inbox.";
+      : sendMethod === 'code'
+        ? "Verification code sent. Check your inbox."
+        : "Verification email sent. Check your inbox.";
 
     return {
       success: true,
@@ -421,4 +433,65 @@ export async function getBarangays() {
      ORDER BY Barangay_Name`
   );
   return rows;
+}
+
+export async function createEmailVerification(email: string) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email');
+  }
+
+  // clean up expired verification codes (global cleanup)
+  try {
+    await pool.execute(`DELETE FROM email_verification_tbl WHERE Expiration <= NOW()`);
+  } catch (cleanupErr) {
+    console.warn('Failed to cleanup expired email verification entries:', cleanupErr);
+  }
+
+  // generate 6-digit code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiration = new Date(Date.now() + 10 * 60 * 1000); // 10m
+  const hashed = await bcrypt.hash(code, 10);
+
+  await pool.execute(
+    `INSERT INTO email_verification_tbl (Email, Verification_code, Expiration) VALUES (?, ?, ?)`,
+    [email, hashed, expiration]
+  );
+
+  // send code email using verification-code template
+  try {
+    await emailService.sendVerificationCodeEmail(email, code);
+  } catch (err) {
+    console.warn('Email send failed (non-blocking):', err);
+  }
+
+  // in non-prod return debugCode so mobile dev can test
+  return { success: true, debugCode: process.env.NODE_ENV !== 'production' ? code : undefined };
+}
+
+export async function verifyEmailCode(email: string, code: string) {
+  if (!email || !code) throw new Error('Email and code required');
+
+  // remove expired entries before attempting verification (keeps queries fast and consistent)
+  try {
+    await pool.execute(`DELETE FROM email_verification_tbl WHERE Expiration <= NOW()`);
+  } catch (cleanupErr) {
+    console.warn('Failed to cleanup expired email verification entries before verify:', cleanupErr);
+  }
+
+  const [rows]: any = await pool.execute(
+    `SELECT * FROM email_verification_tbl WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() ORDER BY Created_at DESC LIMIT 1`,
+    [email]
+  );
+  if (!rows.length) throw new Error('No valid code found');
+  const row = rows[0];
+  const match = await bcrypt.compare(code, row.Verification_code);
+  if (!match) throw new Error('Invalid code');
+
+  // mark used
+  await pool.execute(`UPDATE email_verification_tbl SET IsUsed = 1 WHERE Verification_id = ?`, [row.Verification_id]);
+
+  // also mark pending_accounts_tbl as email verified if exists
+  await pool.execute(`UPDATE pending_accounts_tbl SET IsEmailVerified = 1 WHERE Email = ?`, [email]);
+
+  return { success: true };
 }

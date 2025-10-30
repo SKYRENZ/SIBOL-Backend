@@ -15,10 +15,15 @@ export const config = {
   NODE_ENV: getOptionalEnv('NODE_ENV', 'development'),
   PORT: parseInt(getOptionalEnv('PORT', '5000'), 10),
   BACKEND_URL: getOptionalEnv('BACKEND_URL', `http://localhost:${process.env.PORT || 5000}`),
+  MOBILE_APP_PORT: getOptionalEnv('MOBILE_APP_PORT', '8081'),
   FRONT_END_PORT: getOptionalEnv('FRONT_END_PORT', 'https://sibolsprout.netlify.app'),
 
   // Comma-separated list of allowed frontend origins (for dev + prod)
-  FRONT_END_ORIGINS: getOptionalEnv('FRONT_END_ORIGINS', 'http://localhost:5173,https://sibolsprout.netlify.app'),
+  // include the expo/web dev origin by default
+  FRONT_END_ORIGINS: getOptionalEnv(
+    'FRONT_END_ORIGINS',
+    `http://localhost:5173,http://localhost:8081,https://sibolsprout.netlify.app`
+  ),
 
   // DB
   DB_HOST: getOptionalEnv('DB_HOST', ''),

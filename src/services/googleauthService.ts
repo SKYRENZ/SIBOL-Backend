@@ -91,8 +91,13 @@ if (CLIENT_ID && CLIENT_SECRET) {
           return done(null, false, { message: 'not_registered', redirectTo: 'signup', email, firstName, lastName });
         }
 
-        // Account exists -> allow login
-        // Optional: check IsActive / Roles etc. if needed
+        // NEW: if an account exists but is not active (waiting admin approval), redirect to pending page
+        const isActiveFlag = Number(account.IsActive ?? account.is_active ?? 0);
+        if (isNaN(isActiveFlag) || isActiveFlag === 0) {
+          return done(null, false, { message: 'admin_pending', email, redirectTo: 'pending-approval' });
+        }
+
+        // Account exists and is active -> allow login
         return done(null, account);
       } catch (err) {
         return done(err as any);

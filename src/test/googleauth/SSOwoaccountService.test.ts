@@ -91,4 +91,42 @@ describe('Google Auth Service - SSO w/o account', () => {
       lastName: 'User'
     });
   });
+
+  it('SSO with pending-account (email verified but admin approval pending) should return admin_pending info', async () => {
+    expect(verifyFunction).toBeDefined();
+
+    const pendingEmail = `sso_pending_${Date.now()}@example.com`;
+
+    // clean any previous data just in case
+    await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [pendingEmail]).catch(() => {});
+
+    // insert a pending account row: email verified but not admin-approved
+    await pool.execute(
+      `INSERT INTO pending_accounts_tbl
+        (Username, Password, FirstName, LastName, Email, Barangay_id, Roles, IsEmailVerified, IsAdminVerified)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [pendingEmail.split('@')[0], 'pwd', 'Pending', 'User', pendingEmail, null, 2, 1, 0]
+    );
+
+    const profile = {
+      emails: [{ value: pendingEmail }],
+      name: { givenName: 'Pending', familyName: 'User' }
+    };
+    const done = jest.fn();
+
+    await verifyFunction('accessToken', 'refreshToken', profile, done);
+
+    expect(done).toHaveBeenCalled();
+    const [err, user, info] = done.mock.calls[0];
+    expect(err).toBeNull();
+    expect(user).toBeFalsy();
+    expect(info).toMatchObject({
+      message: 'admin_pending',
+      redirectTo: 'pending-approval',
+      email: pendingEmail
+    });
+
+    // cleanup
+    await pool.execute('DELETE FROM pending_accounts_tbl WHERE Email = ?', [pendingEmail]).catch(() => {});
+  });
 });
