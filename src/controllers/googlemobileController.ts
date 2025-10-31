@@ -1,24 +1,50 @@
 import { Request, Response } from 'express';
-import googleMobileService from '../services/googlemobileService';
-import jwt from 'jsonwebtoken';
-import config from '../config/env';
+import * as googleService from '../services/googlemobileService';
 
 export async function googleMobileSignIn(req: Request, res: Response) {
   const { idToken } = req.body;
   if (!idToken) return res.status(400).json({ error: 'idToken required' });
 
   try {
-    const { account, payload } = await googleMobileService.verifyIdTokenAndFindUser(idToken);
+    const result = await googleService.verifyIdTokenAndFindUser(idToken);
 
-    if (!account) {
-      return res.status(404).json({ message: 'not_registered', email: payload?.email });
+    switch (result.status) {
+      case 'success':
+        // normal SSO: return token + user
+        return res.json({ success: true, token: result.token, user: result.user });
+
+      case 'pending':
+        // account found but not approved
+        return res.json({
+          success: true,
+          redirectTo: 'pending-approval',
+          email: result.email,
+          message: 'Account pending admin approval',
+        });
+
+      case 'verify':
+        // pending record exists but email not yet verified -> require verify flow
+        return res.json({
+          success: true,
+          redirectTo: 'verify-email',
+          email: result.email,
+          message: 'Please verify your email to continue',
+        });
+
+      case 'signup':
+      default:
+        // not registered -> prompt signup / sign-in page
+        return res.json({
+          success: true,
+          redirectTo: 'signup',
+          email: result.email,
+          firstName: result.firstName,
+          lastName: result.lastName,
+          message: 'Complete your registration to continue with Google Sign-In',
+        });
     }
-
-    const token = jwt.sign({ Account_id: account.Account_id, Roles: account.Roles }, config.JWT_SECRET, { expiresIn: config.JWT_TTL || '7d' });
-    const user = { Account_id: account.Account_id, Username: account.Username, Roles: account.Roles, Email: payload?.email };
-    return res.json({ token, user });
   } catch (err: any) {
     console.error('googleMobileSignIn error', err);
-    return res.status(400).json({ error: err.message || 'Invalid idToken' });
+    return res.status(500).json({ success: false, error: 'server_error', message: err?.message });
   }
 }
