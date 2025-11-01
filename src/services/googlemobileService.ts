@@ -3,7 +3,11 @@ import { OAuth2Client } from 'google-auth-library';
 import pool from '../config/db';
 import jwt from 'jsonwebtoken';
 
-const client = new OAuth2Client(config.GOOGLE_CLIENT_ID);
+// Support both web and Android client IDs
+const WEB_CLIENT_ID = config.GOOGLE_CLIENT_ID;
+const ANDROID_CLIENT_ID = config.GOOGLE_ANDROID_CLIENT_ID || WEB_CLIENT_ID;
+// const client = new OAuth2Client(config.GOOGLE_CLIENT_ID);
+const client = new OAuth2Client(WEB_CLIENT_ID);
 
 /**
  * Verify the idToken with Google, then find the account in DB.
@@ -16,9 +20,10 @@ export async function verifyIdTokenAndFindUser(idToken: string) {
   if (!idToken) throw new Error('idToken required');
 
   // verify id token with google
+  // Accept both web and Android client IDs as valid audiences
   const ticket = await client.verifyIdToken({
     idToken,
-    audience: config.GOOGLE_CLIENT_ID,
+    audience: [WEB_CLIENT_ID, ANDROID_CLIENT_ID].filter(Boolean), // array of valid audiences
   });
   // ticket.getPayload() has weak typing in google-auth-library — cast to any for property access
   const payload = (ticket.getPayload() || {}) as any;
