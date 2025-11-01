@@ -3,114 +3,138 @@ import { OAuth2Client } from 'google-auth-library';
 import pool from '../config/db';
 import jwt from 'jsonwebtoken';
 
-// Support both web and Android client IDs
-const WEB_CLIENT_ID = config.GOOGLE_CLIENT_ID;
-const ANDROID_CLIENT_ID = config.GOOGLE_ANDROID_CLIENT_ID || WEB_CLIENT_ID;
-// const client = new OAuth2Client(config.GOOGLE_CLIENT_ID);
-const client = new OAuth2Client(WEB_CLIENT_ID);
+const GOOGLE_ANDROID_CLIENT_ID = process.env.GOOGLE_ANDROID_CLIENT_ID || '';
+const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+const androidClient = new OAuth2Client(GOOGLE_ANDROID_CLIENT_ID);
+const webClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
 
 /**
- * Verify the idToken with Google, then find the account in DB.
- * Returns:
- *  - { status: 'success', token, user }            -> account exists & approved
- *  - { status: 'pending', email }                  -> account exists but not approved
- *  - { status: 'signup', email, firstName, lastName } -> no account found
+ * Verify Google ID token and return payload
  */
-export async function verifyIdTokenAndFindUser(idToken: string) {
-  if (!idToken) throw new Error('idToken required');
-
-  // verify id token with google
-  // Accept both web and Android client IDs as valid audiences
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: [WEB_CLIENT_ID, ANDROID_CLIENT_ID].filter(Boolean), // array of valid audiences
-  });
-  // ticket.getPayload() has weak typing in google-auth-library — cast to any for property access
-  const payload = (ticket.getPayload() || {}) as any;
-  const email = (payload.email || '').toLowerCase();
-  const firstName = payload.given_name || payload?.givenName || '';
-  const lastName = payload.family_name || payload?.familyName || '';
-  const sub = payload.sub || payload?.sub;
-
-  if (!email) {
-    throw new Error('Google token did not contain an email');
-  }
-
-  // FIRST: check pending_accounts_tbl for this email (mirror web flow)
+export async function verifyGoogleIdToken(idToken: string) {
+  // Try Android client first, then web client
+  let ticket;
   try {
-    const [pendingRows]: any = await pool.query(
-      `SELECT * FROM pending_accounts_tbl WHERE LOWER(Email) = ? LIMIT 1`,
-      [email]
-    );
-    if (pendingRows && pendingRows.length > 0) {
-      const pending = pendingRows[0];
-      const isEmailVerified = !!Number(pending.IsEmailVerified);
-      const isAdminVerified = !!Number(pending.IsAdminVerified);
-
-      // Not email-verified yet -> require email verification
-      if (!isEmailVerified) {
-        return { status: 'verify', email, firstName, lastName, sub };
-      }
-
-      // Email verified but admin approval pending -> pending
-      if (!isAdminVerified) {
-        return { status: 'pending', email, firstName, lastName, sub };
-      }
-      // If pending record exists and is fully approved, fall through to account lookup
-    }
+    ticket = await androidClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_ANDROID_CLIENT_ID,
+    });
+    console.log('[GoogleMobile Service] Verified with Android client');
   } catch (err) {
-    // warn and continue — fallback to account lookup
-    console.warn('googleMobileService: pending lookup failed', err);
+    console.log('[GoogleMobile Service] Android client failed, trying web client...');
+    ticket = await webClient.verifyIdToken({
+      idToken,
+      audience: GOOGLE_WEB_CLIENT_ID,
+    });
+    console.log('[GoogleMobile Service] Verified with Web client');
   }
 
-  // find account by profile email
+  const payload = ticket.getPayload();
+  
+  if (!payload || !payload.email) {
+    throw new Error('Invalid token payload - no email found');
+  }
+
+  return {
+    email: payload.email,
+    firstName: payload.given_name || '',
+    lastName: payload.family_name || '',
+    picture: payload.picture,
+    sub: payload.sub,
+  };
+}
+
+/**
+ * Find user account by email
+ */
+export async function findUserByEmail(email: string) {
   const [rows]: any = await pool.query(
-    `SELECT a.*, p.FirstName, p.LastName, p.Email AS profileEmail
+    `SELECT a.*, p.FirstName, p.LastName, p.Email 
      FROM accounts_tbl a
-     LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
-     WHERE LOWER(p.Email) = ? LIMIT 1`,
+     JOIN profile_tbl p ON a.Account_id = p.Account_id
+     WHERE LOWER(p.Email) = LOWER(?)
+     LIMIT 1`,
     [email]
   );
 
-  const account = rows?.[0] ?? null;
-
-  if (!account) {
-    // Not registered -> prompt signup
-    return { status: 'signup', email, firstName, lastName, sub };
-  }
-
-  // Determine "approved" flag heuristically (cover common column names)
-  const isApproved =
-    // explicit columns
-    (typeof account.IsApproved !== 'undefined' ? Boolean(account.IsApproved) :
-    (typeof account.Approved !== 'undefined' ? Boolean(account.Approved) :
-    (typeof account.Active !== 'undefined' ? Boolean(account.Active) :
-    // fallback: if Roles exists and > 0 assume approved
-    (typeof account.Roles !== 'undefined' ? Number(account.Roles) > 0 : true))));
-
-  if (!isApproved) {
-    return { status: 'pending', email };
-  }
-
-  // Build JWT and user payload
-  const payloadJwt: any = {
-    Account_id: account.Account_id ?? account.AccountId ?? account.id,
-    Roles: account.Roles ?? account.role ?? 0,
-  };
-  // jwt.sign typing expects jwt.Secret; ensure we pass a string and cast as jwt.Secret
-  const secretStr = String(config.JWT_SECRET ?? 'changeme');
-  const token = jwt.sign(payloadJwt, secretStr as jwt.Secret, { expiresIn: config.JWT_TTL ?? '7d' } as jwt.SignOptions);
-
-  const userSafe = {
-    Account_id: account.Account_id,
-    Username: account.Username,
-    Roles: account.Roles,
-    FirstName: account.FirstName,
-    LastName: account.LastName,
-    Email: account.profileEmail ?? email,
-  };
-
-  return { status: 'success', token, user: userSafe };
+  return rows.length > 0 ? rows[0] : null;
 }
 
-export default { verifyIdTokenAndFindUser };
+/**
+ * Check if user account is active/approved
+ */
+export function isAccountActive(user: any): boolean {
+  // Check IsActive column (your DB uses this)
+  return user.IsActive === 1 || user.IsActive === true;
+}
+
+/**
+ * Generate JWT token for user
+ */
+export function generateUserToken(user: any): string {
+  const token = jwt.sign(
+    {
+      Account_id: user.Account_id,
+      Roles: user.Roles,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  return token;
+}
+
+/**
+ * Map user role ID to role name
+ */
+export function mapRoleName(roleId: number): string {
+  // Based on your DB schema
+  if (roleId === 1) return 'admin';
+  if (roleId === 3) return 'operator';
+  return 'user'; // default fallback
+}
+
+/**
+ * Format user data for response
+ */
+export function formatUserResponse(user: any) {
+  return {
+    id: user.Account_id,
+    email: user.Email,
+    firstName: user.FirstName,
+    lastName: user.LastName,
+    role: mapRoleName(user.Roles),
+  };
+}
+
+/**
+ * Exchange Google authorization code for ID token
+ */
+export async function exchangeCodeForToken(code: string): Promise<string> {
+  const oauth2Client = new OAuth2Client(
+    GOOGLE_ANDROID_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    'postmessage' // Special redirect URI for mobile apps
+  );
+
+  const { tokens } = await oauth2Client.getToken(code);
+  
+  if (!tokens.id_token) {
+    throw new Error('No ID token received from Google');
+  }
+
+  return tokens.id_token;
+}
+
+export default {
+  verifyGoogleIdToken,
+  findUserByEmail,
+  isAccountActive,
+  generateUserToken,
+  mapRoleName,
+  formatUserResponse,
+  exchangeCodeForToken,
+};

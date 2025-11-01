@@ -1,8 +1,12 @@
 import { Router } from 'express';
-import * as googleController from '../controllers/googlemobileController';
+import { handleGoogleAuth, handleGoogleCodeAuth } from '../controllers/googlemobileController';
 
 const router = Router();
 
-router.post('/sso-google', googleController.googleMobileSignIn);
+// POST /api/auth/sso-google - Direct ID token authentication
+router.post('/sso-google', handleGoogleAuth);
+
+// POST /api/auth/sso-google-code - Authorization code flow
+router.post('/sso-google-code', handleGoogleCodeAuth);
 
 export default router;
