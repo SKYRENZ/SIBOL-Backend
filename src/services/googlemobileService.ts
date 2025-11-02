@@ -48,7 +48,7 @@ export async function verifyGoogleIdToken(idToken: string) {
 }
 
 /**
- * Find user account by email
+ * Find user account by email in active accounts
  */
 export async function findUserByEmail(email: string) {
   const [rows]: any = await pool.query(
@@ -56,6 +56,20 @@ export async function findUserByEmail(email: string) {
      FROM accounts_tbl a
      JOIN profile_tbl p ON a.Account_id = p.Account_id
      WHERE LOWER(p.Email) = LOWER(?)
+     LIMIT 1`,
+    [email]
+  );
+
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/**
+ * NEW: Check if email exists in pending accounts
+ */
+export async function findPendingAccountByEmail(email: string) {
+  const [rows]: any = await pool.query(
+    `SELECT * FROM pending_accounts_tbl 
+     WHERE LOWER(Email) = LOWER(?)
      LIMIT 1`,
     [email]
   );
@@ -132,6 +146,7 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
 export default {
   verifyGoogleIdToken,
   findUserByEmail,
+  findPendingAccountByEmail, // ADD THIS
   isAccountActive,
   generateUserToken,
   mapRoleName,
