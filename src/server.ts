@@ -13,6 +13,7 @@ import { authenticate } from './middleware/authenticate.js';
 import session from 'express-session';
 import passport from './services/googleauthService';
 import googleAuthRoutes from './Routes/googleauthRoutes';
+import googleMobileRoutes from './Routes/googlemobileRoutes';
 // replace incorrect imports that import services as routers:
 import authRoutes from "./Routes/authRoutes.js";
 import machineRoutes from './Routes/machineRoutes.js';
@@ -91,6 +92,8 @@ app.use(express.json());
 // mount feature routers
 app.use('/api/auth', authRoutes);  // Mount auth routes first
 app.use('/api/machines', machineRoutes);
+// mount mobile SSO endpoint (POST /api/auth/sso-google)
+app.use('/api/auth', googleMobileRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use('/api/rewards', rewardRoutes);

@@ -41,6 +41,7 @@ export const config = {
   EMAIL_SMTP_PORT: getOptionalEnv('EMAIL_SMTP_PORT', ''),
   SENDGRID_API_KEY: getOptionalEnv('SENDGRID_API_KEY', ''),
   GOOGLE_CLIENT_ID: getOptionalEnv('GOOGLE_CLIENT_ID', ''),
+  GOOGLE_ANDROID_CLIENT_ID: getOptionalEnv('GOOGLE_ANDROID_CLIENT_ID', ''),
   GOOGLE_CLIENT_SECRET: getOptionalEnv('GOOGLE_CLIENT_SECRET', ''),
 
   // Secrets (require in production)
