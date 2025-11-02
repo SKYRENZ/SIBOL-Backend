@@ -1,4 +1,5 @@
 import pool from "../config/db";
+import { getProfileByAccountId } from "./profileService";
 import type { Schedule } from "../models/types";
 
 async function getCollectorUsername(accountId: number): Promise<string | null> {
@@ -12,12 +13,11 @@ async function getCollectorUsername(accountId: number): Promise<string | null> {
 export async function createSchedule(data: Schedule): Promise<Schedule> {
   const collector = (await getCollectorUsername(data.Account_id)) ?? "";
   const [result]: any = await pool.query(
-    `INSERT INTO schedule_tbl (Account_id, Collector, Contact, Area, sched_stat_id, Date_of_collection)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO schedule_tbl (Account_id, Collector, Area, sched_stat_id, Date_of_collection)
+     VALUES (?, ?, ?, ?, ?)`,
     [
       data.Account_id,
       collector,
-      data.Contact,
       data.Area,
       data.sched_stat_id,
       data.Date_of_collection,
@@ -44,12 +44,11 @@ export async function updateSchedule(
 ): Promise<Schedule | null> {
   const collector = (await getCollectorUsername(data.Account_id)) ?? "";
   await pool.query(
-    `UPDATE schedule_tbl SET Account_id=?, Collector=?, Contact=?, Area=?, sched_stat_id=?, Date_of_collection=?
+    `UPDATE schedule_tbl SET Account_id=?, Collector=?, Area=?, sched_stat_id=?, Date_of_collection=?
      WHERE Schedule_id=?`,
     [
       data.Account_id,
       collector,
-      data.Contact,
       data.Area,
       data.sched_stat_id,
       data.Date_of_collection,
@@ -66,5 +65,24 @@ export async function deleteSchedule(id: number): Promise<{ deleted: boolean }> 
 
 export async function listSchedules(): Promise<Schedule[]> {
   const [rows] = await pool.query<any[]>("SELECT * FROM schedule_tbl");
-  return rows;
+  
+  // Enrich with contact from profile_tbl
+  const enriched = await Promise.all(
+    rows.map(async (row: any) => {
+      try {
+        const profile = await getProfileByAccountId(row.Account_id);
+        return {
+          ...row,
+          Contact: profile?.Contact ?? '',
+        };
+      } catch {
+        return {
+          ...row,
+          Contact: '',
+        };
+      }
+    })
+  );
+  
+  return enriched;
 }
