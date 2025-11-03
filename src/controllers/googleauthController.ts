@@ -15,7 +15,6 @@ function buildFrontendUrl(path: string, params?: Record<string, string>) {
     }
     return url.toString();
   } catch {
-    // fallback
     const cleanPath = (`/${path}`).replace(/\/+/g, '/');
     const qp = params ? `?${new URLSearchParams(params).toString()}` : '';
     return `${FRONTEND_BASE}${cleanPath}${qp}`;
@@ -23,11 +22,9 @@ function buildFrontendUrl(path: string, params?: Record<string, string>) {
 }
 
 export async function googleAuthInit(req: Request, res: Response, next: NextFunction) {
-  // invoke passport middleware
   return passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 }
 
-// use the helper for redirects
 export async function googleAuthCallback(req: Request, res: Response, next: NextFunction) {
   return passport.authenticate('google', (err: any, user: any, info: any) => {
     if (err) {
@@ -79,7 +76,10 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
         }
       });
     } else if (info && typeof info === 'object') {
-      const { message, email, redirectTo, firstName, lastName } = info as any;
+      const { message, email, redirectTo, firstName, lastName, username } = info as any;
+      
+      console.log('📤 Redirecting with info:', { message, email, redirectTo, username });
+      
       const params: Record<string, string> = {
         message: message || '',
         email: email || '',
@@ -91,9 +91,11 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
         if (lastName) params.lastName = lastName;
       } else if (redirectTo === 'verify-email') {
         params.message = 'email_pending';
+        if (username) params.username = username;
       } else if (redirectTo === 'pending-approval') {
         params.message = 'admin_pending';
         params.sso = 'true';
+        if (username) params.username = username; // IMPORTANT: Pass username
       } else {
         params.auth = 'fail';
       }

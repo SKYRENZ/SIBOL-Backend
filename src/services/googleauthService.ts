@@ -3,7 +3,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import jwt from 'jsonwebtoken';
 import config from '../config/env';
 import { pool } from '../config/db';
-import * as authService from './authService'; // optional, if you have helper functions
+import * as authService from './authService';
 
 const CLIENT_ID = config.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = config.GOOGLE_CLIENT_SECRET;
@@ -26,7 +26,7 @@ passport.deserializeUser(async (id: any, done) => {
     const [rows]: any = await pool.query(
       `SELECT a.*, p.FirstName, p.LastName, p.Email AS profileEmail
        FROM accounts_tbl a
-       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+       LEFT JOIN profile_tbl p ON p.Account_id = p.Account_id
        WHERE a.Account_id = ? LIMIT 1`,
       [Number(id)]
     );
@@ -52,9 +52,16 @@ if (CLIENT_ID && CLIENT_SECRET) {
         const lastName = profile.name?.familyName || '';
 
         if (!email) {
-          // no email from Google -> treat as not registered (frontend should handle)
-          return done(null, false, { redirectTo: 'signup', message: 'no_email', email: '', firstName, lastName });
+          return done(null, false, { 
+            redirectTo: 'signup', 
+            message: 'no_email', 
+            email: '', 
+            firstName, 
+            lastName 
+          });
         }
+
+        console.log('🔍 Google SSO - Checking for email:', email);
 
         // 1) Check pending accounts first
         const [pendingRows]: any = await pool.query(
@@ -64,42 +71,82 @@ if (CLIENT_ID && CLIENT_SECRET) {
 
         if (pendingRows && pendingRows.length > 0) {
           const pending = pendingRows[0];
-          // email not yet verified
+          console.log('📋 Found in pending_accounts_tbl:', {
+            email: pending.Email,
+            username: pending.Username,
+            isEmailVerified: pending.IsEmailVerified,
+            isAdminVerified: pending.IsAdminVerified
+          });
+          
+          // Email not yet verified
           if (!pending.IsEmailVerified || Number(pending.IsEmailVerified) === 0) {
-            return done(null, false, { message: 'email_pending', email, redirectTo: 'verify-email' });
+            console.log('📧 Email not verified - redirecting to verify-email');
+            return done(null, false, { 
+              message: 'email_pending', 
+              email, 
+              username: pending.Username,
+              redirectTo: 'verify-email' 
+            });
           }
-          // email verified but admin approval pending
+          
+          // Email verified but admin approval pending
           if (!pending.IsAdminVerified || Number(pending.IsAdminVerified) === 0) {
-            return done(null, false, { message: 'admin_pending', email, redirectTo: 'pending-approval' });
+            console.log('⏳ Admin approval pending - redirecting to pending-approval');
+            return done(null, false, { 
+              message: 'admin_pending', 
+              email, 
+              username: pending.Username,
+              redirectTo: 'pending-approval'
+            });
           }
-          // If pending record exists and is fully approved, fall through to account lookup
+          
+          console.log('✅ Both verified in pending table, checking accounts_tbl...');
         }
 
-        // 2) Lookup account by email (profile table) or by username (email local-part)
-        const usernameCandidate = email.split('@')[0];
+        // 2) Lookup active account by email (profile table)
         const [rows]: any = await pool.query(
           `SELECT a.*, p.FirstName, p.LastName, p.Email AS Email
            FROM accounts_tbl a
            LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
-           WHERE p.Email = ? OR a.Username = ? LIMIT 1`,
-          [email, usernameCandidate]
+           WHERE p.Email = ? LIMIT 1`,
+          [email]
         );
         const account = rows?.[0] ?? null;
 
         if (!account) {
-          // no account in system -> redirect to signup (SSO signup flow)
-          return done(null, false, { message: 'not_registered', redirectTo: 'signup', email, firstName, lastName });
+          console.log('❌ No account found - redirecting to signup');
+          return done(null, false, { 
+            message: 'not_registered', 
+            redirectTo: 'signup', 
+            email, 
+            firstName, 
+            lastName 
+          });
         }
 
-        // NEW: if an account exists but is not active (waiting admin approval), redirect to pending page
+        console.log('👤 Account found:', {
+          accountId: account.Account_id,
+          username: account.Username,
+          isActive: account.IsActive
+        });
+
+        // Check if account is active
         const isActiveFlag = Number(account.IsActive ?? account.is_active ?? 0);
         if (isNaN(isActiveFlag) || isActiveFlag === 0) {
-          return done(null, false, { message: 'admin_pending', email, redirectTo: 'pending-approval' });
+          console.log('⏳ Account inactive - redirecting to pending-approval');
+          return done(null, false, { 
+            message: 'admin_pending', 
+            email,
+            username: account.Username,
+            redirectTo: 'pending-approval'
+          });
         }
 
         // Account exists and is active -> allow login
+        console.log('✅ Account active - allowing login');
         return done(null, account);
       } catch (err) {
+        console.error('❌ Google auth error:', err);
         return done(err as any);
       }
     }
