@@ -29,7 +29,7 @@ import filtersRoutes from './Routes/filtersRoutes';
 import { authorizeByModulePath } from './middleware/authorize.js';
 import qrRoutes from './Routes/qrRoutes';
 import conversionRoutes from './Routes/conversionRoutes';
-
+import path from "path";
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -106,6 +106,12 @@ app.use('/api/filters', filtersRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/conversion', conversionRoutes);
 
+app.use(
+  "/uploads",
+  express.static(path.resolve(process.cwd(), "uploads"), {
+    fallthrough: false,
+  })
+);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 

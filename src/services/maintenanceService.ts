@@ -55,6 +55,7 @@ export async function createTicket(data: {
   created_by: number;         // account id of creator (operator)
   due_date?: string | null;
   attachment?: string | null;
+  attachment_folder?: string | null;
 }): Promise<MaintenanceTicket> {
   // ensure creator is Operator, Barangay_staff, or Admin
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [data.created_by]);
@@ -142,21 +143,72 @@ export async function cancelTicket(requestId: number, actorAccountId: number): P
   return updated[0];
 }
 
+export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number } = {}): Promise<MaintenanceTicket[]> {
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (filters.status) {
+    conditions.push("s.Status = ?");
+    params.push(filters.status);
+  }
+  if (filters.assigned_to !== undefined) {
+    conditions.push("m.Assigned_to = ?");
+    params.push(filters.assigned_to);
+  }
+  if (filters.created_by !== undefined) {
+    conditions.push("m.Created_by = ?");
+    params.push(filters.created_by);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const sql = `
+    SELECT
+      m.*,
+      COALESCE(p.Priority, m.Priority_Id) AS PriorityName,
+      s.Status AS Status
+    FROM maintenance_tbl m
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    ${whereClause}
+    ORDER BY m.Request_Id DESC
+  `;
+
+  try {
+    const [rows] = await pool.query<Row[]>(sql, params);
+    return rows;
+  } catch (err: any) {
+    console.error("listTickets SQL error:", err, { sql, params });
+    throw { status: 500, message: "Database query failed" };
+  }
+}
+
 export async function getTicketById(requestId: number): Promise<MaintenanceTicket> {
-  const [rows] = await pool.query<Row[]>("SELECT m.*, s.Status as StatusName, p.Priority as PriorityName FROM maintenance_tbl m LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id WHERE Request_Id = ?", [requestId]);
+  const sql = `
+    SELECT
+      m.*,
+      COALESCE(p.Priority, m.Priority_Id) AS PriorityName,
+      s.Status AS Status
+    FROM maintenance_tbl m
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    WHERE m.Request_Id = ?
+  `;
+  const [rows] = await pool.query<Row[]>(sql, [requestId]);
   if (!rows.length) throw { status: 404, message: "Request not found" };
   return rows[0];
 }
 
-export async function listTickets(filters: { status?: string | undefined; assigned_to?: number | undefined; created_by?: number | undefined } = {}): Promise<MaintenanceTicket[]> {
-  const conditions: string[] = [];
-  const params: any[] = [];
-  if (filters.status) { conditions.push("s.Status = ?"); params.push(filters.status); }
-  if (filters.assigned_to) { conditions.push("m.Assigned_to = ?"); params.push(filters.assigned_to); }
-  if (filters.created_by) { conditions.push("m.Created_by = ?"); params.push(filters.created_by); }
-
-  const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-  const sql = `SELECT m.*, s.Status as StatusName, p.Priority as PriorityName FROM maintenance_tbl m LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id ${where} ORDER BY m.Request_date DESC`;
-  const [rows] = await pool.query<Row[]>(sql, params);
-  return rows;
+export async function listOperatorsForAssignment(): Promise<Array<{ account_id: number; display_name: string }>> {
+  const sql = `
+    SELECT Account_id, Username
+    FROM accounts_tbl
+    WHERE Roles = ?
+    ORDER BY Username
+  `;
+  const [rows] = await pool.query<Row[]>(sql, [ROLE_OPERATOR]);
+  return rows.map((row) => ({
+    account_id: row.Account_id,
+    display_name: row.Username || `Operator #${row.Account_id}`,
+  }));
 }

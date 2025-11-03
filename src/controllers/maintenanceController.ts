@@ -1,10 +1,61 @@
 import * as service from "../services/maintenanceService.js";
 import type { Request, Response } from "express";
+import { normalizeAttachmentFolder } from "../middleware/maintenanceUpload.js";
 
 export async function createTicket(req: Request, res: Response) {
   try {
-    // expected body: { title, details?, priority?, created_by, due_date?, attachment? }
-    const ticket = await service.createTicket(req.body);
+    const {
+      title,
+      details,
+      priority,
+      created_by,
+      due_date,
+      attachment,
+      attachment_folder,
+    } = req.body as Record<string, any>;
+
+    if (!title || !String(title).trim()) {
+      return res.status(400).json({ message: "Title is required" });
+    }
+
+    const creatorId = Number(created_by);
+    if (!Number.isFinite(creatorId)) {
+      return res.status(400).json({ message: "created_by is required" });
+    }
+
+    const castReq = req as Request & {
+      file?: Express.Multer.File;
+      sanitizedAttachmentFolder?: string;
+    };
+
+    const uploadedFile = castReq.file ?? null;
+    const folderFromMiddleware = castReq.sanitizedAttachmentFolder;
+    const normalizedFolder = uploadedFile
+      ? normalizeAttachmentFolder(folderFromMiddleware ?? (attachment_folder as string | undefined))
+      : typeof attachment_folder === "string" && attachment_folder.trim()
+      ? normalizeAttachmentFolder(attachment_folder, "")
+      : null;
+
+    const storedAttachment = uploadedFile
+      ? `/uploads/${normalizedFolder ? `${normalizedFolder}/` : ""}${uploadedFile.filename}`
+      : attachment ?? null;
+
+    const payload: Parameters<typeof service.createTicket>[0] = {
+      title: String(title).trim(),
+      created_by: creatorId,
+    };
+
+    const detailText =
+      typeof details === "string" && details.trim() ? String(details).trim() : undefined;
+    if (detailText) payload.details = detailText;
+
+    if (priority) payload.priority = priority;
+    if (typeof due_date === "string" && due_date.trim()) payload.due_date = due_date;
+    if (due_date === null) payload.due_date = null;
+    if (storedAttachment) payload.attachment = storedAttachment;
+    if (normalizedFolder) payload.attachment_folder = normalizedFolder;
+
+    const ticket = await service.createTicket(payload);
     return res.status(201).json(ticket);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -79,14 +130,27 @@ export async function getTicket(req: Request, res: Response) {
 
 export async function listTickets(req: Request, res: Response) {
   try {
-    const filters = {
-      status: req.query.status as string | undefined,
-      assigned_to: req.query.assigned_to ? Number(req.query.assigned_to) : undefined,
-      created_by: req.query.created_by ? Number(req.query.created_by) : undefined,
-    };
-    const rows = await service.listTickets(filters);
-    return res.json(rows);
+    const { status, assigned_to, created_by } = req.query;
+    const filters: any = {};
+    if (status) filters.status = status;
+    if (assigned_to) filters.assigned_to = Number(assigned_to);
+    if (created_by) filters.created_by = Number(created_by);
+
+    console.log('[listTickets] filters:', filters);
+    const tickets = await service.listTickets(filters);
+    console.log('[listTickets] result count:', tickets.length);
+    return res.json(tickets);
   } catch (err: any) {
-    return res.status(500).json({ message: "Server error" });
+    console.error('[listTickets] error:', err);
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function listOperators(_req: Request, res: Response) {
+  try {
+    const operators = await service.listOperatorsForAssignment();
+    return res.json(operators);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
 }
