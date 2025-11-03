@@ -288,3 +288,39 @@ export async function verifyVerificationCode(req: Request, res: Response) {
     res.status(400).json({ success: false, error: err?.message ?? String(err) });
   }
 }
+
+export async function verifyToken(req: Request, res: Response) {
+  try {
+    // The authenticate middleware already validated the token
+    // and attached the user to req.user
+    const tokenUser = (req as any).user;
+    
+    if (!tokenUser || !tokenUser.Account_id) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'Invalid token payload' 
+      });
+    }
+
+    // Fetch fresh user data from database to ensure account is still active
+    const user = await authService.getUserById(tokenUser.Account_id);
+
+    if (!user) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'Account not found or inactive' 
+      });
+    }
+
+    res.json({ 
+      valid: true, 
+      user: user
+    });
+  } catch (error: any) {
+    console.error('Token verification error:', error);
+    res.status(500).json({ 
+      valid: false, 
+      error: 'Server error during verification' 
+    });
+  }
+}

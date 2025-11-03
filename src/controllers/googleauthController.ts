@@ -32,18 +32,22 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
   return passport.authenticate('google', (err: any, user: any, info: any) => {
     if (err) {
       console.error('Passport error:', err);
-      return res.redirect(buildFrontendUrl('/login', { error: 'server_error' }));
+      return res.redirect(buildFrontendUrl('/auth/callback', { 
+        error: 'server_error',
+        auth: 'fail'
+      }));
     }
 
     if (user) {
       req.logIn(user, (loginErr: any) => {
         if (loginErr) {
           console.error('Login error:', loginErr);
-          return res.redirect(buildFrontendUrl('/login', { error: 'login_failed' }));
+          return res.redirect(buildFrontendUrl('/auth/callback', { 
+            error: 'login_failed',
+            auth: 'fail'
+          }));
         }
 
-        // Create a JWT for the authenticated user and include it in the redirect.
-        // Keep token payload minimal (account id + roles) to avoid giant URLs.
         try {
           const secret = config.JWT_SECRET || 'changeme';
           const payload: any = {
@@ -61,38 +65,46 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
             Email: user.Email,
           };
 
-          return res.redirect(buildFrontendUrl('/dashboard', {
-            token, // frontend will store this
+          return res.redirect(buildFrontendUrl('/auth/callback', {
+            token,
             user: encodeURIComponent(JSON.stringify(userSafe)),
             auth: 'success'
           }));
         } catch (tokenErr) {
           console.error('JWT creation failed:', tokenErr);
-          // fallback: redirect without token but notify frontend of failure
-          return res.redirect(buildFrontendUrl('/login', { error: 'token_failed' }));
+          return res.redirect(buildFrontendUrl('/auth/callback', { 
+            error: 'token_failed',
+            auth: 'fail'
+          }));
         }
       });
     } else if (info && typeof info === 'object') {
       const { message, email, redirectTo, firstName, lastName } = info as any;
-      switch (redirectTo) {
-        case 'signup': {
-          return res.redirect(buildFrontendUrl('/signup', {
-            sso: 'google',
-            email: email || '',
-            firstName: firstName || '',
-            lastName: lastName || '',
-            message: message || 'Complete your registration to continue with Google Sign-In'
-          }));
-        }
-        case 'verify-email':
-          return res.redirect(buildFrontendUrl('/email-verification', { email: email || '', message: message || '' }));
-        case 'pending-approval':
-          return res.redirect(buildFrontendUrl('/pending-approval', { email: email || '', message: message || '' }));
-        default:
-          return res.redirect(buildFrontendUrl('/login', { error: 'auth_failed', message: message || 'Authentication failed' }));
+      const params: Record<string, string> = {
+        message: message || '',
+        email: email || '',
+      };
+      
+      if (redirectTo === 'signup') {
+        params.sso = 'google';
+        if (firstName) params.firstName = firstName;
+        if (lastName) params.lastName = lastName;
+      } else if (redirectTo === 'verify-email') {
+        params.message = 'email_pending';
+      } else if (redirectTo === 'pending-approval') {
+        params.message = 'admin_pending';
+        params.sso = 'true';
+      } else {
+        params.auth = 'fail';
       }
+      
+      return res.redirect(buildFrontendUrl('/auth/callback', params));
     } else {
-      return res.redirect(buildFrontendUrl('/login', { error: 'auth_failed', message: 'Google authentication failed' }));
+      return res.redirect(buildFrontendUrl('/auth/callback', { 
+        error: 'auth_failed',
+        auth: 'fail',
+        message: 'Google authentication failed' 
+      }));
     }
   })(req, res, next);
 }

@@ -495,3 +495,23 @@ export async function verifyEmailCode(email: string, code: string) {
 
   return { success: true };
 }
+
+// NEW: Get user by ID (admin or self)
+export async function getUserById(accountId: number) {
+  const [rows]: any = await pool.execute(
+    `SELECT a.Account_id, a.Username, a.Roles, a.IsActive,
+            p.FirstName, p.LastName, p.Email
+     FROM accounts_tbl a
+     LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+     WHERE a.Account_id = ? AND a.IsActive = 1`,
+    [accountId]
+  );
+
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const user = rows[0];
+  delete (user as any).Password; // Safety check
+  return user;
+}

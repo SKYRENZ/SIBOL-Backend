@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as authController from '../controllers/authController';
+import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
 
@@ -40,5 +41,8 @@ router.post('/forgot-password', authController.forgotPassword);
 router.post('/send-verification-code', authController.sendVerificationCode);
 // POST /api/auth/verify-email-code (client sends { email, code })
 router.post('/verify-email-code', authController.verifyVerificationCode);
+
+// Token verification endpoint (PROTECTED)
+router.get('/verify', authenticate, authController.verifyToken);
 
 export default router;
