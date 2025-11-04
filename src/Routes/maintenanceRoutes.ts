@@ -31,6 +31,7 @@ router.put("/:id/ongoing", ctrl.markOnGoing);
  * - assigned operator marks task finished and requests staff verification
  */
 router.put("/:id/for-verification", ctrl.operatorMarkForVerification);
+router.put("/:id/mark-for-verification", ctrl.operatorMarkForVerification); // Add this alias
 
 /**
  * PUT /api/maintenance/:id/verify
@@ -38,6 +39,14 @@ router.put("/:id/for-verification", ctrl.operatorMarkForVerification);
  * - Barangay_staff verifies completion -> final Completed status
  */
 router.put("/:id/verify", ctrl.staffVerifyCompletion);
+router.put("/:id/verify-completion", ctrl.staffVerifyCompletion); // Add this alias
+
+/**
+ * PUT /api/maintenance/:id/remarks
+ * body: { remarks }
+ * - Add remarks to the maintenance ticket
+ */
+router.put("/:id/remarks", ctrl.addRemarks); // Add this new endpoint
 
 /**
  * PUT /api/maintenance/:id/cancel
