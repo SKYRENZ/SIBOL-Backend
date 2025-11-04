@@ -7,14 +7,22 @@ const ROLE_OPERATOR = 3;
 const ROLE_ADMIN = 1;
 const ROLE_STAFF = 2;
 
-export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null): Promise<MaintenanceTicket> {
+export async function acceptAndAssign(
+  requestId: number,
+  staffAccountId: number,
+  assignToAccountId: number,
+  options: { priority?: string; due_date: string; attachment?: string }
+): Promise<MaintenanceTicket> {
   // Validate staff account exists and is Barangay_staff or Admin
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
   if (!acctRows.length) throw { status: 404, message: "Staff account not found" };
   
   const role = acctRows[0].Roles;
   if (![ROLE_ADMIN, ROLE_STAFF].includes(role)) {
-    throw { status: 403, message: "Only Barangay_staff and Admin can accept/assign maintenance requests" };
+    throw {
+      status: 403,
+      message: "Only Barangay_staff and Admin can accept/assign maintenance requests",
+    };
   }
 
   // Check if ticket exists and is in 'Requested' status
@@ -28,10 +36,25 @@ export async function acceptAndAssign(requestId: number, staffAccountId: number,
 
   // Update ticket status to pending
   const pendingStatusId = await getStatusIdByName("Pending");
-  const sql = `UPDATE maintenance_tbl 
-    SET Main_stat_id = ?, Assigned_to = ? 
-    WHERE Request_Id = ?`;
-  const params = [pendingStatusId, assignToAccountId || null, requestId];
+  const updates: string[] = ["Main_stat_id = ?", "Assigned_to = ?", "Due_date = ?"];
+  const params: any[] = [pendingStatusId, assignToAccountId, options.due_date || null];
+
+  if (options.priority) {
+    const priorityId = await getPriorityIdByName(options.priority);
+    if (!priorityId) throw { status: 400, message: "Invalid priority" };
+    updates.push("Priority_Id = ?");
+    params.push(priorityId);
+  }
+
+  if (options.attachment !== undefined) {
+    updates.push("Attachment = ?");
+    params.push(options.attachment);
+  }
+
+  updates.push("Updated_at = NOW()");
+  params.push(requestId);
+
+  const sql = `UPDATE maintenance_tbl SET ${updates.join(", ")} WHERE Request_Id = ?`;
   await pool.query(sql, params);
 
   const [rows] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
@@ -211,4 +234,39 @@ export async function listOperatorsForAssignment(): Promise<Array<{ account_id: 
     account_id: row.Account_id,
     display_name: row.Username || `Operator #${row.Account_id}`,
   }));
+}
+
+export async function addRemarks(
+  requestId: number,
+  remarks?: string,
+  attachment?: string
+): Promise<MaintenanceTicket> {
+  const updates: string[] = [];
+  const params: any[] = [];
+
+  if (remarks !== undefined) {
+    updates.push("Remarks = ?");
+    params.push(remarks || null);
+  }
+
+  if (attachment !== undefined) {
+    updates.push("Attachment = ?");
+    params.push(attachment);
+  }
+
+  if (!updates.length) {
+    return await getTicketById(requestId);
+  }
+
+  updates.push("Updated_at = NOW()");
+  params.push(requestId);
+
+  const sql = `UPDATE maintenance_tbl SET ${updates.join(", ")} WHERE Request_Id = ?`;
+  await pool.query(sql, params);
+
+  const [rows] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
+  return rows[0];
 }

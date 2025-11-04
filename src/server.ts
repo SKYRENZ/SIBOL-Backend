@@ -88,7 +88,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
-
+app.use(express.urlencoded({ extended: true }));
 // mount feature routers
 app.use('/api/auth', authRoutes);  // Mount auth routes first
 app.use('/api/machines', machineRoutes);

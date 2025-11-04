@@ -22,7 +22,7 @@ router.get("/priorities", async (req, res) => {
  * body: { title, details?, priority?, created_by, due_date?, attachment? }
  * - Only Operator (role 3) should create (service enforces)
  */
-router.post("/", maintenanceUpload.single("attachment"), ctrl.createTicket);
+router.post("/", maintenanceUpload.any(), ctrl.createTicket);
 
 /**
  * PUT /api/maintenance/:id/accept
@@ -30,7 +30,14 @@ router.post("/", maintenanceUpload.single("attachment"), ctrl.createTicket);
  * - staff_account_id: account id of Barangay_staff performing acceptance
  * - assign_to: account id of Operator to assign (optional)
  */
-router.put("/:id/accept", ctrl.acceptAndAssign);
+router.put("/:id/accept", maintenanceUpload.any(), ctrl.acceptAndAssign);
+
+/**
+ * PUT /api/maintenance/:id/remarks
+ * body: { ticket_id, remarks, actor_account_id }
+ * - add remarks to ticket (Ongoing, For Verification, or Completed status)
+ */
+router.put("/:id/remarks", maintenanceUpload.any(), ctrl.addRemarks);
 
 /**
  * PUT /api/maintenance/:id/ongoing

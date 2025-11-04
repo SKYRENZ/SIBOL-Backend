@@ -1,32 +1,54 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import type { Request } from "express";
 
-const UPLOAD_ROOT = path.resolve(process.cwd(), "uploads");
-
-export function normalizeAttachmentFolder(input?: string | null, fallback = "maintenance") {
-  const trimmed = input?.trim();
-  if (!trimmed) return fallback;
-  return trimmed
-    .split(/[\\/]/)
-    .filter((segment) => segment && segment !== "." && segment !== "..")
-    .join("/");
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 const storage = multer.diskStorage({
-  destination: (req: Request, _file: Express.Multer.File, cb) => {
-    const castReq = req as Request & { sanitizedAttachmentFolder?: string };
-    const folder = normalizeAttachmentFolder(req.body?.attachment_folder as string | undefined);
-    const dest = path.join(UPLOAD_ROOT, folder);
-    fs.mkdirSync(dest, { recursive: true });
-    castReq.sanitizedAttachmentFolder = folder;
-    cb(null, dest);
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
   },
-  filename: (_req: Request, file: Express.Multer.File, cb) => {
-    const safeName = file.originalname.replace(/\s+/g, "_");
-    cb(null, `${Date.now()}_${safeName}`);
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
   },
 });
 
-export const maintenanceUpload = multer({ storage });
+const fileFilter = (req: any, file: any, cb: any) => {
+  // Allow common image and document types
+  const allowedMimes = [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ];
+  
+  if (allowedMimes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error("Invalid file type"));
+  }
+};
+
+export const maintenanceUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
+
+export function normalizeAttachmentFolder(folderPath?: string, defaultFolder = "maintenance"): string {
+  if (!folderPath || !folderPath.trim()) return defaultFolder;
+  
+  const normalized = folderPath
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .toLowerCase();
+  
+  return normalized || defaultFolder;
+}
