@@ -1,28 +1,24 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/authService';
-import { pool } from '../config/db'; // Add this import
+import { pool } from '../config/db';
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
-import config from '../config/env';  // Add this import
+import config from '../config/env';
 
-const SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
-const JWT_SECRET = config.JWT_SECRET;  // Use config.JWT_SECRET
-
+const SECRET = config.JWT_SECRET;
+const JWT_SECRET = config.JWT_SECRET;
 
 export async function register(req: Request, res: Response) {
   try {
     console.log('📝 Registration request received:', req.body);
     
-    // NOTE: use barangayId (new DB column) instead of areaId
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
-    // support legacy areaId if caller still sends it
     const finalBarangayId = barangayId ?? areaId;
 
     if (!finalBarangayId) {
       return res.status(400).json({ success: false, error: 'barangayId is required' });
     }
 
-    // Detect client type (prefer explicit header/body flag; fall back to User-Agent heuristic)
     const explicitClientHeader = (req.headers['x-client-type'] as string) || (req.body?.client as string);
     const ua = (req.headers['user-agent'] as string) || '';
     const isMobileClient = !!explicitClientHeader
@@ -31,7 +27,6 @@ export async function register(req: Request, res: Response) {
 
     const sendMethod: 'link' | 'code' = isMobileClient ? 'code' : 'link';
 
-    // Pass undefined for password so the service will generate one, then pass isSSO as the final flag
     const result = await authService.registerUser(
       firstName,
       lastName,
@@ -46,10 +41,8 @@ export async function register(req: Request, res: Response) {
     console.log('✅ Registration successful:', result);
     res.status(201).json(result);
   } catch (error: any) {
-    // log full stack for debugging
     console.error('❌ Registration error:', error?.stack ?? error);
     const message = error?.message ?? String(error) ?? 'Registration failed';
-    // If message indicates a duplicate, return 409 Conflict so frontend can handle specifically
     const statusCode = /exist/i.test(message) ? 409 : 400;
     res.status(statusCode).json({
       success: false,
@@ -58,7 +51,6 @@ export async function register(req: Request, res: Response) {
   }
 }
 
-// ✅ NEW: Email verification endpoint
 export async function verifyEmail(req: Request, res: Response) {
   try {
     const { token } = req.params;
@@ -72,10 +64,8 @@ export async function verifyEmail(req: Request, res: Response) {
     
     const result = await authService.verifyEmail(token);
     
-    // You could redirect to a success page instead of JSON response
     res.status(200).json(result);
   } catch (error: any) {
-    // You could redirect to an error page instead of JSON response
     res.status(400).json({ 
       success: false, 
       error: error.message 
@@ -83,7 +73,6 @@ export async function verifyEmail(req: Request, res: Response) {
   }
 }
 
-// ✅ NEW: Resend verification email
 export async function resendVerification(req: Request, res: Response) {
   try {
     const { email } = req.body;
@@ -106,7 +95,6 @@ export async function resendVerification(req: Request, res: Response) {
   }
 }
 
-// ✅ NEW: Check account status
 export async function checkStatus(req: Request, res: Response) {
   try {
     const { username } = req.params;
@@ -136,7 +124,6 @@ export const login = async (req: Request, res: Response) => {
     const user = rows?.[0];
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    // verify password (bcrypt if available, fallback to plain compare)
     let isValid = false;
     try {
       const bcrypt = await import('bcrypt');
@@ -146,7 +133,6 @@ export const login = async (req: Request, res: Response) => {
     }
     if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    // include Account_id and Roles in token payload so authenticate middleware can resolve user
     const payload = { Account_id: user.Account_id, Roles: user.Roles, Username: user.Username };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
@@ -155,7 +141,6 @@ export const login = async (req: Request, res: Response) => {
 
     return res.json({ token, user: safeUser });
   } catch (err: any) {
-    // <-- changed: log full stack for dev:local debugging
     console.error('login error:', err?.stack ?? err);
     return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
   }
@@ -196,10 +181,22 @@ export async function checkSSOEligibility(req: Request, res: Response) {
 export async function forgotPassword (req: Request, res: Response) {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+    if (!email) {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    // Validate email format
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'Invalid email format' });
+    }
 
     const user = await authService.findProfileByEmail(email);
-    if (!user) return res.status(404).json({ success: false, error: 'Email not found' });
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'No account found with that email address. Please check your email and try again.' 
+      });
+    }
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const expiration = new Date(Date.now() + 10 * 60 * 1000);
@@ -208,27 +205,35 @@ export async function forgotPassword (req: Request, res: Response) {
       await authService.createPasswordReset(email, code, expiration);
     } catch (err: any) {
       const msg = err?.message ?? String(err);
-      if (msg.includes('already exists')) return res.status(409).json({ success: false, error: msg });
+      if (msg.includes('already exists')) {
+        return res.status(409).json({ 
+          success: false, 
+          error: 'A reset code was recently sent to this email. Please check your inbox or wait a few minutes before requesting another code.' 
+        });
+      }
       return res.status(400).json({ success: false, error: msg });
     }
 
-    // respond immediately
-    res.status(200).json({ success: true, message: 'Reset code created. If your email is valid you will receive instructions shortly.' });
-
-    // send email asynchronously, do NOT await — failures will be logged
+    // Send email asynchronously
     void (async () => {
       try {
         await sendResetEmail(email, code);
         console.log('✅ Background reset email sent for', email);
       } catch (err: any) {
         console.error('❌ Background sendResetEmail failed for', email, err?.message ?? err);
-        // optionally record failure for retry
       }
     })();
 
+    // Respond with success
+    res.status(200).json({ 
+      success: true, 
+      message: 'Reset code sent successfully. Please check your email.',
+      debugCode: process.env.NODE_ENV !== 'production' ? code : undefined
+    });
+
   } catch (err: any) {
     console.error('forgotPassword error:', err);
-    res.status(500).json({ success: false, error: 'Server error' });
+    res.status(500).json({ success: false, error: 'Server error. Please try again later.' });
   }
 }
 
@@ -252,7 +257,6 @@ export async function resetPassword(req: Request, res: Response) {
     }
 }
 
-// New: return barangay list from DB for sign-up dropdown
 export async function getBarangays(req: Request, res: Response) {
   try {
     const rows = await authService.getBarangays();
@@ -282,5 +286,41 @@ export async function verifyVerificationCode(req: Request, res: Response) {
     res.json({ success: true, message: 'Email verified' });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err?.message ?? String(err) });
+  }
+}
+
+export async function verifyToken(req: Request, res: Response) {
+  try {
+    // The authenticate middleware already validated the token
+    // and attached the user to req.user
+    const tokenUser = (req as any).user;
+    
+    if (!tokenUser || !tokenUser.Account_id) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'Invalid token payload' 
+      });
+    }
+
+    // Fetch fresh user data from database to ensure account is still active
+    const user = await authService.getUserById(tokenUser.Account_id);
+
+    if (!user) {
+      return res.status(401).json({ 
+        valid: false, 
+        error: 'Account not found or inactive' 
+      });
+    }
+
+    res.json({ 
+      valid: true, 
+      user: user
+    });
+  } catch (error: any) {
+    console.error('Token verification error:', error);
+    res.status(500).json({ 
+      valid: false, 
+      error: 'Server error during verification' 
+    });
   }
 }
