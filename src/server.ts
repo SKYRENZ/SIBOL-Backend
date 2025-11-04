@@ -107,7 +107,7 @@ app.use('/api/machines', machineRoutes);
 app.use('/api/auth', googleMobileRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
-app.use('/api/rewards', rewardRoutes);
+app.use('/api/rewards', rewardRoutes); // ✅ Now has auth internally
 app.use('/api/profile', profileRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/auth', googleAuthRoutes);
@@ -120,8 +120,8 @@ app.use('/api/conversion', conversionRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
-// mount auth globally (optional)
-app.use(authenticate);  // Apply global auth middleware AFTER public routes
+// ❌ REMOVE THIS LINE - it's causing issues
+// app.use(authenticate);  // Don't apply global auth middleware
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
