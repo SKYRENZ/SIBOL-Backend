@@ -56,6 +56,22 @@ export async function staffVerifyCompletion(req: Request, res: Response) {
   }
 }
 
+export async function addRemarks(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const remarks = req.body.remarks;
+    
+    if (!remarks || typeof remarks !== 'string') {
+      return res.status(400).json({ message: "Remarks is required" });
+    }
+    
+    const updated = await service.addRemarksToTicket(requestId, remarks);
+    return res.json(updated);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
 export async function cancelTicket(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
@@ -79,11 +95,20 @@ export async function getTicket(req: Request, res: Response) {
 
 export async function listTickets(req: Request, res: Response) {
   try {
-    const filters = {
-      status: req.query.status as string | undefined,
-      assigned_to: req.query.assigned_to ? Number(req.query.assigned_to) : undefined,
-      created_by: req.query.created_by ? Number(req.query.created_by) : undefined,
-    };
+    const filters: { status?: string; assigned_to?: number; created_by?: number } = {};
+    
+    if (req.query.status) {
+      filters.status = req.query.status as string;
+    }
+    
+    if (req.query.assigned_to) {
+      filters.assigned_to = Number(req.query.assigned_to);
+    }
+    
+    if (req.query.created_by) {
+      filters.created_by = Number(req.query.created_by);
+    }
+    
     const rows = await service.listTickets(filters);
     return res.json(rows);
   } catch (err: any) {

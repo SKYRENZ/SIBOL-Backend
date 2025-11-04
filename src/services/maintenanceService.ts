@@ -1,10 +1,10 @@
-import pool from "../config/db";
-import type { MaintenanceTicket } from "../models/types";
+import pool from "../config/db.js";
 
 type Row = any;
 
-const ROLE_OPERATOR = 3;
+const ROLE_ADMIN = 1;
 const ROLE_STAFF = 2;
+const ROLE_OPERATOR = 3;
 
 async function getStatusIdByName(name: string) {
   const [rows] = await pool.query<Row[]>("SELECT Main_stat_id FROM maintenance_status_tbl WHERE Status = ?", [name]);
@@ -19,24 +19,29 @@ async function getPriorityIdByName(name: string) {
 export async function createTicket(data: {
   title: string;
   details?: string;
-  priority?: string;           // 'Critical' | 'Urgent' | 'Mild' or priority id
-  created_by: number;         // account id of creator (operator)
+  priority?: string;
+  created_by: number;
   due_date?: string | null;
   attachment?: string | null;
-}): Promise<MaintenanceTicket> {
-  // ensure creator is Operator
+}): Promise<any> {
+  // Verify account exists and get role
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [data.created_by]);
-  if (!acctRows.length) throw { status: 404, message: "Creator account not found" };
-  if (acctRows[0].Roles !== ROLE_OPERATOR) throw { status: 403, message: "Only Operator can create maintenance requests" };
+  if (!acctRows.length) throw { status: 404, message: "Account not found" };
+  
+  const role = acctRows[0].Roles;
+  
+  // Allow Admin, Staff, and Operator to create tickets
+  if (role !== ROLE_ADMIN && role !== ROLE_STAFF && role !== ROLE_OPERATOR) {
+    throw { status: 403, message: "Only Admin, Staff, or Operators can create maintenance tickets" };
+  }
 
   // resolve priority id
   let priorityId: number | null = null;
   if (data.priority) {
-    if (typeof data.priority === "string") {
+    if (['Critical', 'Urgent', 'Mild'].includes(data.priority)) {
       priorityId = await getPriorityIdByName(data.priority);
-      if (!priorityId) throw { status: 400, message: "Invalid priority" };
     } else {
-      priorityId = data.priority as unknown as number;
+      priorityId = Number(data.priority);
     }
   }
 
@@ -46,105 +51,180 @@ export async function createTicket(data: {
     (Title, Details, Priority_Id, Created_by, Due_date, Attachment, Main_stat_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)`;
   const params = [data.title, data.details || null, priorityId, data.created_by, data.due_date || null, data.attachment || null, requestedStatusId];
+  
   const [result] = await pool.query(sql, params);
   const insertId = (result as any).insertId;
-  const [rows] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [insertId]);
-  return rows[0];
+
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [insertId]);
+  return ticket[0];
 }
 
-export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null): Promise<MaintenanceTicket> {
-  // Only Barangay_staff (role 2) can accept and assign
-  const [staffRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
-  if (!staffRows.length) throw { status: 404, message: "Staff account not found" };
-  if (staffRows[0].Roles !== ROLE_STAFF) throw { status: 403, message: "Only Barangay_staff can accept/assign" };
-
-  // If assignTo provided, ensure it's an Operator
-  if (assignToAccountId) {
-    const [opRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [assignToAccountId]);
-    if (!opRows.length) throw { status: 404, message: "Assigned operator not found" };
-    if (opRows[0].Roles !== ROLE_OPERATOR) throw { status: 403, message: "Assigned user must be an Operator" };
+export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null): Promise<any> {
+  // Verify staff/admin role
+  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
+  if (!acctRows.length) throw { status: 404, message: "Staff account not found" };
+  
+  const role = acctRows[0].Roles;
+  if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
+    throw { status: 403, message: "Only Barangay Staff or Admin can accept tickets" };
   }
 
-  // set status to Pending or On-going. We'll set to "On-going" if assigned, otherwise "Pending"
-  const statusName = assignToAccountId ? "On-going" : "Pending";
-  const statusId = await getStatusIdByName(statusName);
-  if (!statusId) throw { status: 500, message: "Status not configured" };
+  // Verify ticket exists and is in Requested status
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?", [statusId, assignToAccountId, requestId]);
-  const [rows] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  return rows[0];
-}
+  const onGoingStatusId = await getStatusIdByName("On-going");
 
-export async function markOnGoingByOperator(requestId: number, operatorAccountId: number): Promise<MaintenanceTicket> {
-  // ensure operator is assigned to this ticket
-  const [rows] = await pool.query<Row[]>("SELECT Assigned_to FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  if (!rows.length) throw { status: 404, message: "Request not found" };
-  const assigned = rows[0].Assigned_to;
-  if (assigned !== operatorAccountId) throw { status: 403, message: "Only the assigned Operator can update this ticket" };
+  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?", [onGoingStatusId, assignToAccountId, requestId]);
 
-  const statusId = await getStatusIdByName("On-going");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [statusId, requestId]);
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
 }
 
-export async function operatorMarkForVerification(requestId: number, operatorAccountId: number): Promise<MaintenanceTicket> {
-  // ensure operator is assigned
-  const [rows] = await pool.query<Row[]>("SELECT Assigned_to FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  if (!rows.length) throw { status: 404, message: "Request not found" };
-  const assigned = rows[0].Assigned_to;
-  if (assigned !== operatorAccountId) throw { status: 403, message: "Only the assigned Operator can set verification" };
+export async function markOnGoingByOperator(requestId: number, operatorAccountId: number): Promise<any> {
+  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [operatorAccountId]);
+  if (!acctRows.length) throw { status: 404, message: "Operator account not found" };
+  if (acctRows[0].Roles !== ROLE_OPERATOR) throw { status: 403, message: "Only Operators can mark as On-going" };
 
-  const statusId = await getStatusIdByName("For Verification");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [statusId, requestId]);
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+  if (ticket[0].Assigned_to !== operatorAccountId) throw { status: 403, message: "Only assigned operator can mark as On-going" };
+
+  const onGoingStatusId = await getStatusIdByName("On-going");
+
+  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [onGoingStatusId, requestId]);
+
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
 }
 
-export async function staffVerifyCompletion(requestId: number, staffAccountId: number): Promise<MaintenanceTicket> {
-  // only staff can finalize to Completed
-  const [staffRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
-  if (!staffRows.length) throw { status: 404, message: "Staff account not found" };
-  if (staffRows[0].Roles !== ROLE_STAFF) throw { status: 403, message: "Only Barangay_staff can verify completion" };
+export async function operatorMarkForVerification(requestId: number, operatorAccountId: number): Promise<any> {
+  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [operatorAccountId]);
+  if (!acctRows.length) throw { status: 404, message: "Operator account not found" };
+  if (acctRows[0].Roles !== ROLE_OPERATOR) throw { status: 403, message: "Only Operators can mark for verification" };
 
-  const statusId = await getStatusIdByName("Completed");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [statusId, requestId]);
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+  if (ticket[0].Assigned_to !== operatorAccountId) throw { status: 403, message: "Only assigned operator can mark for verification" };
+
+  const forVerificationStatusId = await getStatusIdByName("For Verification");
+  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [forVerificationStatusId, requestId]);
+
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
 }
 
-export async function cancelTicket(requestId: number, actorAccountId: number): Promise<MaintenanceTicket> {
-  // allow either creator (operator) or staff to cancel
-  const [rows] = await pool.query<Row[]>("SELECT Created_by FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  if (!rows.length) throw { status: 404, message: "Request not found" };
-  const creator = rows[0].Created_by;
+export async function staffVerifyCompletion(requestId: number, staffAccountId: number): Promise<any> {
+  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
+  if (!acctRows.length) throw { status: 404, message: "Staff account not found" };
+  
+  const role = acctRows[0].Roles;
+  if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
+    throw { status: 403, message: "Only Barangay Staff or Admin can verify completion" };
+  }
 
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const completedStatusId = await getStatusIdByName("Completed");
+  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Completed_at = NOW() WHERE Request_Id = ?", [completedStatusId, requestId]);
+
+  const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  return updated[0];
+}
+
+export async function cancelTicket(requestId: number, actorAccountId: number): Promise<any> {
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [actorAccountId]);
   if (!acctRows.length) throw { status: 404, message: "Account not found" };
-  const role = acctRows[0].Roles;
-  if (actorAccountId !== creator && role !== ROLE_STAFF) throw { status: 403, message: "Only creator or Barangay_staff can cancel" };
 
-  const statusId = await getStatusIdByName("Cancelled");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [statusId, requestId]);
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const role = acctRows[0].Roles;
+  const isCreator = ticket[0].Created_by === actorAccountId;
+  const canCancel = isCreator || role === ROLE_STAFF || role === ROLE_ADMIN;
+
+  if (!canCancel) {
+    throw { status: 403, message: "Only creator, staff, or admin can cancel tickets" };
+  }
+
+  const cancelledStatusId = await getStatusIdByName("Cancelled");
+  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [cancelledStatusId, requestId]);
+
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
 }
 
-export async function getTicketById(requestId: number): Promise<MaintenanceTicket> {
-  const [rows] = await pool.query<Row[]>("SELECT m.*, s.Status as StatusName, p.Priority as PriorityName FROM maintenance_tbl m LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id WHERE Request_Id = ?", [requestId]);
-  if (!rows.length) throw { status: 404, message: "Request not found" };
-  return rows[0];
+export async function getTicketById(requestId: number): Promise<any> {
+  const sql = `
+    SELECT 
+      m.*, 
+      p.Priority, 
+      s.Status 
+    FROM maintenance_tbl m
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    WHERE m.Request_Id = ?
+  `;
+  const [ticket] = await pool.query<Row[]>(sql, [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+  return ticket[0];
 }
 
-export async function listTickets(filters: { status?: string | undefined; assigned_to?: number | undefined; created_by?: number | undefined } = {}): Promise<MaintenanceTicket[]> {
-  const conditions: string[] = [];
+export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number } = {}): Promise<any[]> {
+  let sql = `
+    SELECT 
+      m.*, 
+      p.Priority, 
+      s.Status,
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName
+    FROM maintenance_tbl m
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    WHERE 1=1
+  `;
   const params: any[] = [];
-  if (filters.status) { conditions.push("s.Status = ?"); params.push(filters.status); }
-  if (filters.assigned_to) { conditions.push("m.Assigned_to = ?"); params.push(filters.assigned_to); }
-  if (filters.created_by) { conditions.push("m.Created_by = ?"); params.push(filters.created_by); }
 
-  const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-  const sql = `SELECT m.*, s.Status as StatusName, p.Priority as PriorityName FROM maintenance_tbl m LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id ${where} ORDER BY m.Request_date DESC`;
+  if (filters.status) {
+    const statusNames = filters.status.split(',');
+    const statusIds = await Promise.all(statusNames.map(name => getStatusIdByName(name.trim())));
+    const validStatusIds = statusIds.filter(id => id !== null);
+
+    if (validStatusIds.length > 0) {
+      sql += ` AND m.Main_stat_id IN (?)`;
+      params.push(validStatusIds);
+    }
+  }
+
+  if (typeof filters.assigned_to === "number") {
+    sql += " AND m.Assigned_to = ?";
+    params.push(filters.assigned_to);
+  }
+
+  if (typeof filters.created_by === "number") {
+    sql += " AND m.Created_by = ?";
+    params.push(filters.created_by);
+  }
+
+  sql += " ORDER BY m.Request_date DESC";
+
   const [rows] = await pool.query<Row[]>(sql, params);
   return rows;
+}
+
+export async function addRemarksToTicket(requestId: number, remarks: string): Promise<any> {
+  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const existingRemarks = ticket[0].Remarks || '';
+  const timestamp = new Date().toISOString();
+  const newRemarks = existingRemarks 
+    ? `${existingRemarks}\n[${timestamp}] ${remarks}`
+    : `[${timestamp}] ${remarks}`;
+
+  await pool.query("UPDATE maintenance_tbl SET Remarks = ? WHERE Request_Id = ?", [newRemarks, requestId]);
+  
+  const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  return updated[0];
 }
