@@ -45,4 +45,7 @@ router.post('/verify-email-code', authController.verifyVerificationCode);
 // Token verification endpoint (PROTECTED)
 router.get('/verify', authenticate, authController.verifyToken);
 
+// POST /api/auth/change-password (PROTECTED)
+router.post('/change-password', authenticate, authController.changePassword);
+
 export default router;
