@@ -87,6 +87,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add this middleware BEFORE your routes
+app.use((req, res, next) => {
+  // Prevent caching of HTML pages
+  if (req.path.endsWith('.html') || req.path === '/' || req.path.startsWith('/login') || req.path.startsWith('/signup')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.json());
 
 // mount feature routers
