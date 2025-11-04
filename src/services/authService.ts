@@ -499,7 +499,7 @@ export async function verifyEmailCode(email: string, code: string) {
 // NEW: Get user by ID (admin or self)
 export async function getUserById(accountId: number) {
   const [rows]: any = await pool.execute(
-    `SELECT a.Account_id, a.Username, a.Roles, a.IsActive,
+    `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.IsFirstLogin,
             p.FirstName, p.LastName, p.Email
      FROM accounts_tbl a
      LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
@@ -514,4 +514,48 @@ export async function getUserById(accountId: number) {
   const user = rows[0];
   delete (user as any).Password; // Safety check
   return user;
+}
+
+// NEW: Change user password
+export async function changeUserPassword(
+  accountId: number,
+  currentPassword: string,
+  newPassword: string
+) {
+  try {
+    // Get current user data
+    const [rows]: any = await pool.execute(
+      'SELECT Password FROM accounts_tbl WHERE Account_id = ? AND IsActive = 1',
+      [accountId]
+    );
+
+    if (!rows || rows.length === 0) {
+      throw new Error('Account not found');
+    }
+
+    const user = rows[0];
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, user.Password);
+    if (!isValid) {
+      throw new Error('Current password is incorrect');
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and clear first login flag
+    await pool.execute(
+      'UPDATE accounts_tbl SET Password = ?, IsFirstLogin = 0 WHERE Account_id = ?',
+      [hashedPassword, accountId]
+    );
+
+    return { 
+      success: true, 
+      message: 'Password changed successfully' 
+    };
+  } catch (error: any) {
+    console.error('changeUserPassword error:', error);
+    throw error;
+  }
 }

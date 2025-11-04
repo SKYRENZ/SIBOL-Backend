@@ -3,6 +3,7 @@ import * as authService from '../services/authService';
 import { pool } from '../config/db';
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt'; // ✅ ADD THIS LINE
 import config from '../config/env';
 
 const SECRET = config.JWT_SECRET;
@@ -120,24 +121,43 @@ export async function checkStatus(req: Request, res: Response) {
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    const [rows]: any = await pool.query('SELECT * FROM accounts_tbl WHERE Username = ? LIMIT 1', [username]);
+    
+    // ✅ SELECT IsFirstLogin from database
+    const [rows]: any = await pool.query(
+      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1', 
+      [username]
+    );
+    
     const user = rows?.[0];
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
+    // Verify password
     let isValid = false;
     try {
-      const bcrypt = await import('bcrypt');
       isValid = await bcrypt.compare(password, user.Password);
     } catch {
-      isValid = password === user.Password;
+      isValid = false;
     }
     if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const payload = { Account_id: user.Account_id, Roles: user.Roles, Username: user.Username };
+    // ✅ Create JWT with IsFirstLogin
+    const payload = { 
+      Account_id: user.Account_id, 
+      Roles: user.Roles, 
+      Username: user.Username,
+      IsFirstLogin: user.IsFirstLogin
+    };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    const safeUser = { ...user };
-    delete (safeUser as any).Password;
+    // ✅ FIX: Include IsFirstLogin in the response user object
+    const safeUser = { 
+      Account_id: user.Account_id,
+      Username: user.Username,
+      Roles: user.Roles,
+      IsFirstLogin: user.IsFirstLogin  // ✅ CRITICAL: This must be included
+    };
+
+    console.log('🔐 Login successful - User data being sent:', safeUser); // ✅ Debug log
 
     return res.json({ token, user: safeUser });
   } catch (err: any) {
@@ -302,25 +322,71 @@ export async function verifyToken(req: Request, res: Response) {
       });
     }
 
-    // Fetch fresh user data from database to ensure account is still active
-    const user = await authService.getUserById(tokenUser.Account_id);
+    // Fetch fresh user data from database - NOW INCLUDING IsFirstLogin
+    const [rows]: any = await pool.execute(
+      `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.IsFirstLogin,
+              p.FirstName, p.LastName, p.Email
+       FROM accounts_tbl a
+       LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+       WHERE a.Account_id = ? AND a.IsActive = 1`,
+      [tokenUser.Account_id]
+    );
 
-    if (!user) {
+    if (!rows || rows.length === 0) {
       return res.status(401).json({ 
         valid: false, 
         error: 'Account not found or inactive' 
       });
     }
 
+    const user = rows[0];
+    delete (user as any).Password; // Safety check
+
     res.json({ 
       valid: true, 
-      user: user
+      user: user // ✅ Now includes IsFirstLogin
     });
   } catch (error: any) {
     console.error('Token verification error:', error);
     res.status(500).json({ 
       valid: false, 
       error: 'Server error during verification' 
+    });
+  }
+}
+
+export async function changePassword(req: Request, res: Response) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const user = (req as any).user; // From authenticate middleware
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Current password and new password are required' 
+      });
+    }
+
+    // Validate new password strength
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol' 
+      });
+    }
+
+    const result = await authService.changeUserPassword(
+      user.Account_id,
+      currentPassword,
+      newPassword
+    );
+
+    res.json(result);
+  } catch (error: any) {
+    console.error('changePassword error:', error);
+    res.status(400).json({ 
+      success: false, 
+      error: error.message || 'Failed to change password' 
     });
   }
 }
