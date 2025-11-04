@@ -1,14 +1,28 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/maintenanceController.js";
+import { maintenanceUpload } from "../middleware/maintenanceUpload.js";
+import pool from "../config/db.js";
 
 const router = Router();
+
+/**
+ * GET /api/maintenance/priorities
+ */
+router.get("/priorities", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT Priority_id, Priority FROM maintenance_priority_tbl ORDER BY Priority");
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 /**
  * POST /api/maintenance
  * body: { title, details?, priority?, created_by, due_date?, attachment? }
  * - Only Operator (role 3) should create (service enforces)
  */
-router.post("/", ctrl.createTicket);
+router.post("/", maintenanceUpload.any(), ctrl.createTicket);
 
 /**
  * PUT /api/maintenance/:id/accept
@@ -16,7 +30,14 @@ router.post("/", ctrl.createTicket);
  * - staff_account_id: account id of Barangay_staff performing acceptance
  * - assign_to: account id of Operator to assign (optional)
  */
-router.put("/:id/accept", ctrl.acceptAndAssign);
+router.put("/:id/accept", maintenanceUpload.any(), ctrl.acceptAndAssign);
+
+/**
+ * PUT /api/maintenance/:id/remarks
+ * body: { ticket_id, remarks, actor_account_id }
+ * - add remarks to ticket (Ongoing, For Verification, or Completed status)
+ */
+router.put("/:id/remarks", maintenanceUpload.any(), ctrl.addRemarks);
 
 /**
  * PUT /api/maintenance/:id/ongoing
@@ -45,6 +66,12 @@ router.put("/:id/verify", ctrl.staffVerifyCompletion);
  * - creator (operator) or staff can cancel
  */
 router.put("/:id/cancel", ctrl.cancelTicket);
+
+/**
+ * GET /api/maintenance/operators
+ * - get list of operators for assignment
+ */
+router.get("/operators", ctrl.listOperators);
 
 /**
  * GET /api/maintenance/:id
