@@ -88,6 +88,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// Add this middleware BEFORE your routes
+app.use((req, res, next) => {
+  // Prevent caching of HTML pages
+  if (req.path.endsWith('.html') || req.path === '/' || req.path.startsWith('/login') || req.path.startsWith('/signup')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.json());
 
 // mount feature routers
@@ -97,7 +108,7 @@ app.use('/api/machines', machineRoutes);
 app.use('/api/auth', googleMobileRoutes);
 app.use("/api/schedules", scheduleRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
-app.use('/api/rewards', rewardRoutes);
+app.use('/api/rewards', rewardRoutes); // ✅ Now has auth internally
 app.use('/api/profile', profileRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/auth', googleAuthRoutes);
@@ -111,8 +122,8 @@ app.use('/api/waste-containers', wasteContainerRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
-// mount auth globally (optional)
-app.use(authenticate);  // Apply global auth middleware AFTER public routes
+// ❌ REMOVE THIS LINE - it's causing issues
+// app.use(authenticate);  // Don't apply global auth middleware
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
