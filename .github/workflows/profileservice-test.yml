@@ -2,11 +2,17 @@ name: Profile Service Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/profileService.ts'
       - 'src/test/profileService.test.ts'
       - '.github/workflows/profileservice-test.yml'
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/profileService.ts'
       - 'src/test/profileService.test.ts'

@@ -2,10 +2,16 @@ name: Module Controller Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/**'
       - '.github/workflows/modulecontroller-test.yml'
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/**'
 
