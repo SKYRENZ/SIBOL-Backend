@@ -4,22 +4,21 @@ import { pool } from '../config/db';
 import config from '../config/env';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
-  // normalize header and log for debugging
-  const authHeader = (req.headers.authorization || '').toString();
-
-
-  // accept "Bearer <token>" case-insensitive and tolerate extra whitespace
-  const parts = authHeader.trim().split(/\s+/);
-  // parts[0] may be undefined (TS treats index access as T | undefined)
-  const token = parts.length === 2 && /^bearer$/i.test(parts[0] ?? '') ? parts[1] : null;
+  // ✅ Try to get token from cookie first, then fall back to Authorization header
+  let token = req.cookies?.token;
+  
+  if (!token) {
+    const authHeader = (req.headers.authorization || '').toString();
+    const parts = authHeader.trim().split(/\s+/);
+    token = parts.length === 2 && /^bearer$/i.test(parts[0] ?? '') ? parts[1] : null;
+  }
 
   if (!token) {
     console.warn('[authenticate] no token found on request', {
       url: req.originalUrl,
       method: req.method,
-      headersPreview: Object.keys(req.headers)
-        .filter(k => ['authorization', 'cookie'].includes(k))
-        .reduce((acc, k) => ({ ...acc, [k]: (req.headers as any)[k] }), {}),
+      hasCookie: !!req.cookies?.token,
+      hasAuthHeader: !!req.headers.authorization
     });
     return res.status(401).json({ message: 'Authentication required' });
   }
@@ -27,7 +26,6 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   try {
     const SECRET = process.env.JWT_SECRET ?? config?.JWT_SECRET ?? 'changeme';
     const payload = jwt.verify(token, SECRET as string) as any;
-
 
     const accountId = payload.Account_id ?? payload.accountId ?? payload.id ?? payload.sub;
     if (!accountId) {

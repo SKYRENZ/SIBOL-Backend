@@ -4,6 +4,7 @@ dotenv.config();  // Must be before other imports
 import express from "express";
 import type { Request, Response } from "express";
 import cors from "cors";
+import cookieParser from 'cookie-parser'; // ✅ ADD THIS
 import config, { FRONTEND_ORIGINS_ARRAY } from './config/env.js';
 console.log('Server starting', { NODE_ENV: config.NODE_ENV, DB_HOST: config.DB_HOST, DB_NAME: config.DB_NAME });
 
@@ -60,7 +61,10 @@ const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT
 // trust proxy so secure cookies work behind Render's proxy
 app.set('trust proxy', 1);
 
-// Add session middleware before passport
+// ✅ Add cookie-parser middleware BEFORE routes
+app.use(cookieParser());
+
+// Session middleware
 app.use(session({
   secret: config.SESSION_SECRET,  // Use config.SESSION_SECRET
   resave: false,
@@ -75,10 +79,10 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ Allow your frontend
+// CORS - allow credentials
 app.use(cors({
-  origin: FRONTEND_ORIGINS_ARRAY,  // Allows origins from env.ts
-  credentials: true,  // If using cookies/sessions
+  origin: FRONTEND_ORIGINS_ARRAY,
+  credentials: true, // ✅ Important for cookies
 }));
 
 // Remove the app.options('*' / '/*') call (path-to-regexp rejects '*').

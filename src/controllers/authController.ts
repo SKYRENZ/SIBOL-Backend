@@ -122,7 +122,6 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
     
-    // ✅ SELECT IsFirstLogin from database
     const [rows]: any = await pool.query(
       'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1', 
       [username]
@@ -131,7 +130,6 @@ export const login = async (req: Request, res: Response) => {
     const user = rows?.[0];
     if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    // Verify password
     let isValid = false;
     try {
       isValid = await bcrypt.compare(password, user.Password);
@@ -140,7 +138,6 @@ export const login = async (req: Request, res: Response) => {
     }
     if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    // ✅ Create JWT with IsFirstLogin
     const payload = { 
       Account_id: user.Account_id, 
       Roles: user.Roles, 
@@ -149,17 +146,26 @@ export const login = async (req: Request, res: Response) => {
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // ✅ FIX: Include IsFirstLogin in the response user object
+    // ✅ Set HTTP-only cookie instead of sending token in response
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/'
+    });
+
     const safeUser = { 
       Account_id: user.Account_id,
       Username: user.Username,
       Roles: user.Roles,
-      IsFirstLogin: user.IsFirstLogin  // ✅ CRITICAL: This must be included
+      IsFirstLogin: user.IsFirstLogin
     };
 
-    console.log('🔐 Login successful - User data being sent:', safeUser); // ✅ Debug log
+    console.log('🔐 Login successful - User data being sent:', safeUser);
 
-    return res.json({ token, user: safeUser });
+    // ❌ Don't send token in response body
+    return res.json({ user: safeUser });
   } catch (err: any) {
     console.error('login error:', err?.stack ?? err);
     return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
