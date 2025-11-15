@@ -3,10 +3,8 @@ import * as authService from '../services/authService';
 import { pool } from '../config/db';
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt'; // ✅ ADD THIS LINE
 import config from '../config/env';
 
-const SECRET = config.JWT_SECRET;
 const JWT_SECRET = config.JWT_SECRET;
 
 export async function register(req: Request, res: Response) {
@@ -118,26 +116,20 @@ export async function checkStatus(req: Request, res: Response) {
   }
 }
 
+// ✅ REFACTORED: Now uses authService.loginUser()
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    
-    const [rows]: any = await pool.query(
-      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1', 
-      [username]
-    );
-    
-    const user = rows?.[0];
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
 
-    let isValid = false;
-    try {
-      isValid = await bcrypt.compare(password, user.Password);
-    } catch {
-      isValid = false;
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Username and password are required' });
     }
-    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
 
+    // Call service to authenticate user
+    const user = await authService.loginUser(username, password);
+
+    // Generate JWT token
     const payload = { 
       Account_id: user.Account_id, 
       Roles: user.Roles, 
@@ -146,7 +138,7 @@ export const login = async (req: Request, res: Response) => {
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // ✅ Set HTTP-only cookie instead of sending token in response
+    // Set HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
@@ -155,20 +147,16 @@ export const login = async (req: Request, res: Response) => {
       path: '/'
     });
 
-    const safeUser = { 
-      Account_id: user.Account_id,
-      Username: user.Username,
-      Roles: user.Roles,
-      IsFirstLogin: user.IsFirstLogin
-    };
+    console.log('🔐 Login successful - User data being sent:', user);
 
-    console.log('🔐 Login successful - User data being sent:', safeUser);
-
-    // ❌ Don't send token in response body
-    return res.json({ user: safeUser });
+    // Return user data (no token in response body)
+    return res.json({ user });
   } catch (err: any) {
     console.error('login error:', err?.stack ?? err);
-    return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
+    const statusCode = err.message === 'Invalid credentials' ? 401 : 500;
+    return res.status(statusCode).json({ 
+      message: err.message || 'Login failed'
+    });
   }
 };
 
@@ -177,30 +165,36 @@ export async function checkSSOEligibility(req: Request, res: Response) {
     const { email } = req.body;
     
     if (!email) {
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email is required' 
+      });
     }
 
-    const [userRows]: any = await pool.execute(`
-      SELECT Account_id, Username, Roles, FirstName, LastName, Email 
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id 
-      WHERE p.Email = ? AND a.IsActive = 1
-    `, [email]);
+    // ✅ Call service layer
+    const result = await authService.checkSSOEligibility(email);
 
-    if (userRows.length === 0) {
+    if (!result.canSSO) {
       return res.status(404).json({ 
-        message: 'Email not found in system',
-        canSSO: false 
+        success: false,
+        canSSO: false,
+        message: result.message
       });
     }
 
     return res.json({
+      success: true,
       canSSO: true,
-      message: 'Eligible for SSO'
+      message: result.message
     });
 
-  } catch (error) {
-    return res.status(500).json({ message: 'Server error' });
+  } catch (error: any) {
+    console.error('checkSSOEligibility error:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Server error',
+      error: error.message 
+    });
   }
 }
 
@@ -328,7 +322,7 @@ export async function verifyToken(req: Request, res: Response) {
       });
     }
 
-    // Fetch fresh user data from database - NOW INCLUDING IsFirstLogin
+    // Fetch fresh user data from database
     const [rows]: any = await pool.execute(
       `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.IsFirstLogin,
               p.FirstName, p.LastName, p.Email
@@ -350,7 +344,7 @@ export async function verifyToken(req: Request, res: Response) {
 
     res.json({ 
       valid: true, 
-      user: user // ✅ Now includes IsFirstLogin
+      user: user
     });
   } catch (error: any) {
     console.error('Token verification error:', error);

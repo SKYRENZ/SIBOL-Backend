@@ -559,3 +559,71 @@ export async function changeUserPassword(
     throw error;
   }
 }
+
+// NEW: Login user and return user data (for cookie-based auth)
+export async function loginUser(username: string, password: string) {
+  try {
+    // 1. Fetch user from database
+    const [rows]: any = await pool.execute(
+      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1',
+      [username]
+    );
+
+    const user = rows?.[0];
+    if (!user) {
+      throw new Error('Invalid credentials');
+    }
+
+    // 2. Verify password
+    let isValid = false;
+    try {
+      isValid = await bcrypt.compare(password, user.Password);
+    } catch {
+      isValid = false;
+    }
+
+    if (!isValid) {
+      throw new Error('Invalid credentials');
+    }
+
+    // 3. Return user data (without password)
+    return {
+      Account_id: user.Account_id,
+      Username: user.Username,
+      Roles: user.Roles,
+      IsFirstLogin: user.IsFirstLogin
+    };
+  } catch (error) {
+    console.error('Login service error:', error);
+    throw error;
+  }
+}
+
+// NEW: Check if email is eligible for SSO
+export async function checkSSOEligibility(email: string) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+
+  const [userRows]: any = await pool.execute(
+    `SELECT a.Account_id, a.Username, a.Roles, 
+            p.FirstName, p.LastName, p.Email 
+     FROM accounts_tbl a 
+     JOIN profile_tbl p ON a.Account_id = p.Account_id 
+     WHERE p.Email = ? AND a.IsActive = 1`,
+    [email]
+  );
+
+  if (userRows.length === 0) {
+    return {
+      canSSO: false,
+      message: 'Email not found in system'
+    };
+  }
+
+  return {
+    canSSO: true,
+    message: 'Eligible for SSO',
+    user: userRows[0]
+  };
+}
