@@ -627,3 +627,50 @@ export async function checkSSOEligibility(email: string) {
     user: userRows[0]
   };
 }
+
+// NEW: Get queue position for pending account
+export async function getQueuePosition(email: string) {
+  try {
+    // ✅ FIXED: Query pending_accounts_tbl instead of accounts_tbl
+    // pending accounts are in pending_accounts_tbl, not accounts_tbl
+    const [pendingAccounts]: any = await pool.execute(
+      `SELECT Pending_id, Email, Username, Created_at
+       FROM pending_accounts_tbl
+       WHERE IsEmailVerified = 1 AND IsAdminVerified = 0
+       ORDER BY Created_at ASC`
+    );
+
+    // Find the position of the user in the queue
+    const position = pendingAccounts.findIndex((acc: any) => acc.Email.toLowerCase() === email.toLowerCase());
+    
+    if (position === -1) {
+      throw new Error('Account not found in pending queue');
+    }
+
+    return {
+      position: position + 1, // 1-indexed
+      totalPending: pendingAccounts.length,
+      estimatedWaitTime: calculateEstimatedWaitTime(position + 1)
+    };
+  } catch (error) {
+    console.error('getQueuePosition error:', error);
+    throw error;
+  }
+}
+
+// Helper function to estimate wait time
+function calculateEstimatedWaitTime(position: number): string {
+  // Assuming admins process ~5 accounts per day
+  const accountsPerDay = 5;
+  const daysToWait = Math.ceil(position / accountsPerDay);
+  
+  if (daysToWait === 0 || daysToWait === 1) {
+    return 'within 24 hours';
+  } else if (daysToWait <= 3) {
+    return `${daysToWait} days`;
+  } else if (daysToWait <= 7) {
+    return 'about a week';
+  } else {
+    return `${Math.ceil(daysToWait / 7)} weeks`;
+  }
+}

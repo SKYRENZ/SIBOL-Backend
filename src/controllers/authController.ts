@@ -390,3 +390,38 @@ export async function changePassword(req: Request, res: Response) {
     });
   }
 }
+
+// NEW: Get queue position
+export async function getQueuePosition(req: Request, res: Response) {
+  try {
+    const { email } = req.query;
+    
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is required' 
+      });
+    }
+
+    const queueInfo = await authService.getQueuePosition(email);
+
+    res.json({ 
+      success: true, 
+      ...queueInfo 
+    });
+  } catch (error: any) {
+    console.error('getQueuePosition error:', error);
+    
+    if (error.message === 'Account not found in pending queue') {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Account not found or already approved' 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get queue position' 
+    });
+  }
+}
