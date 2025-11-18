@@ -198,8 +198,6 @@ export async function verifyEmail(token: string) {
 // Resend verification email (no column change required)
 export async function resendVerificationEmail(email: string) {
   try {
-    console.log('🔄 Resending verification email for:', email);
-    
     const [pendingRows]: any = await pool.execute(
       "SELECT * FROM pending_accounts_tbl WHERE Email = ? AND IsEmailVerified = 0",
       [email]
@@ -210,11 +208,6 @@ export async function resendVerificationEmail(email: string) {
     }
 
     const pendingAccount = pendingRows[0];
-    console.log('📋 Found pending account:', {
-      email: pendingAccount.Email,
-      firstName: pendingAccount.FirstName,
-      username: pendingAccount.Username
-    });
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiration = new Date();
@@ -224,20 +217,13 @@ export async function resendVerificationEmail(email: string) {
       "UPDATE pending_accounts_tbl SET Verification_token = ?, Token_expiration = ? WHERE Email = ?",
       [verificationToken, tokenExpiration, email]
     );
-    
-    console.log('✅ Updated verification token in database');
 
     if (process.env.NODE_ENV !== 'test') {
       try {
-        console.log('📧 Sending verification email...');
         await emailService.sendVerificationEmail(email, verificationToken, pendingAccount.FirstName);
-        console.log('✅ Verification email sent successfully');
       } catch (emailError) {
-        console.error('❌ Failed to send verification email:', emailError);
-        console.warn('⚠️ Email sending failed, but token was updated in database');
+        // Silent fail
       }
-    } else {
-      console.log('🧪 Test environment - skipping email send');
     }
 
     return {
@@ -247,7 +233,6 @@ export async function resendVerificationEmail(email: string) {
       email
     };
   } catch (error) {
-    console.error("❌ Resend Verification Error:", error);
     throw new Error(`Failed to resend verification: ${error}`);
   }
 }

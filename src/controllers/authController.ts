@@ -9,7 +9,7 @@ const JWT_SECRET = config.JWT_SECRET;
 
 export async function register(req: Request, res: Response) {
   try {
-    console.log('📝 Registration request received:', req.body);
+    // ✅ REMOVED: console.log('📝 Registration request received:', req.body);
     
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
     const finalBarangayId = barangayId ?? areaId;
@@ -37,10 +37,9 @@ export async function register(req: Request, res: Response) {
       sendMethod
     );
     
-    console.log('✅ Registration successful:', result);
+    // ✅ REMOVED: console.log('✅ Registration successful:', result);
     res.status(201).json(result);
   } catch (error: any) {
-    console.error('❌ Registration error:', error?.stack ?? error);
     const message = error?.message ?? String(error) ?? 'Registration failed';
     const statusCode = /exist/i.test(message) ? 409 : 400;
     res.status(statusCode).json({
@@ -121,15 +120,12 @@ export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
 
-    // Validate input
     if (!username || !password) {
       return res.status(400).json({ message: 'Username and password are required' });
     }
 
-    // Call service to authenticate user
     const user = await authService.loginUser(username, password);
 
-    // Generate JWT token
     const payload = { 
       Account_id: user.Account_id, 
       Roles: user.Roles, 
@@ -138,21 +134,18 @@ export const login = async (req: Request, res: Response) => {
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // Set HTTP-only cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
       sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/'
     });
 
-    console.log('🔐 Login successful - User data being sent:', user);
+    // ✅ REMOVED: console.log('🔐 Login successful - User data being sent:', user);
 
-    // Return user data (no token in response body)
     return res.json({ user });
   } catch (err: any) {
-    console.error('login error:', err?.stack ?? err);
     const statusCode = err.message === 'Invalid credentials' ? 401 : 500;
     return res.status(statusCode).json({ 
       message: err.message || 'Login failed'
