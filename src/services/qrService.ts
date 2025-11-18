@@ -28,24 +28,16 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
     return (Array.isArray(rows) && rows[0]) ? Number(rows[0].Points) : 0;
 }
 
-/**
- * High-level operation for scanning QR and awarding points.
- * Returns { awarded, totalPoints, accountId } or throws on error / not found.
- */
-export async function processQrScan(qr: string, weight: number) {
-    const accountId = await getAccountIdByQr(qr);
-    if (!accountId) return { found: false };
-
+export async function awardPointsForAccount(accountId: number, weight: number) {
     const pointsPerKg = await conversionService.getPointsPerKg();
     const awarded = conversionService.calculatePointsFromWeight(weight, pointsPerKg);
 
     if (awarded <= 0) {
-        const total = await getCurrentPoints(accountId);
-        return { found: true, awarded: 0, totalPoints: total, accountId };
+        return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
     const totalPoints = await addPointsToAccount(accountId, awarded);
-    return { found: true, awarded, totalPoints, accountId };
+    return { awarded, totalPoints };
 }
 
 async function getCurrentPoints(accountId: number): Promise<number> {

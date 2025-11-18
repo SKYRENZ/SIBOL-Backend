@@ -1,26 +1,30 @@
 import { Request, Response } from 'express';
-import { processQrScan } from '../services/qrService';
+import { awardPointsForAccount } from '../services/qrService';
 
 // POST /qr/scan
 export async function scanQr(req: Request, res: Response) {
     try {
-        const { qr, weight } = req.body as { qr?: string; weight?: number };
+        const user = (req as any).user;
+        if (!user?.Account_id) {
+            return res.status(401).json({ message: 'Authentication required' });
+        }
 
+        const { qr, weight } = req.body as { qr?: string; weight?: number };
         if (!qr || typeof qr !== 'string') {
             return res.status(400).json({ message: 'Missing or invalid qr' });
         }
-        if (weight == null || !Number.isInteger(weight) || weight < 0) {
-            return res.status(400).json({ message: 'Missing or invalid weight (integer kg expected)' });
+        if (weight == null || !Number.isFinite(weight) || weight <= 0) {
+            return res.status(400).json({ message: 'Missing or invalid weight (positive number expected)' });
         }
 
-        const result = await processQrScan(qr, weight);
-        if (!result.found) return res.status(404).json({ message: 'QR not linked to any account' });
+        const accountId = Number(user.Account_id);
+        const { awarded, totalPoints } = await awardPointsForAccount(accountId, Number(weight));
 
         return res.status(200).json({
             message: 'Scan processed',
-            awarded: result.awarded,
-            totalPoints: result.totalPoints,
-            accountId: result.accountId ?? null
+            awarded,
+            totalPoints,
+            accountId,
         });
     } catch (err) {
         console.error('scanQr error', err);
