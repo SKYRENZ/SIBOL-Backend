@@ -202,6 +202,9 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
 }
 
 export async function sendResetEmail(email: string, code: string) {
+  // ✅ Add link to forgot password page with email prefilled
+  const resetUrl = buildFrontendUrl('/forgot-password', { email, step: 'verify' });
+  
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px; text-align: center;">
       <div style="text-align: center; margin-bottom: 18px;">
@@ -226,6 +229,21 @@ export async function sendResetEmail(email: string, code: string) {
           ⚠️ This code will expire in 10 minutes and can only be used once.
         </p>
       </div>
+
+      <!-- ✅ NEW: Add button to reset password page -->
+      <div style="text-align: center; margin: 20px 0;">
+        <a href="${resetUrl}" 
+           style="display: inline-block; background-color: #28a745; color: white; padding: 12px 32px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">
+          Reset Password
+        </a>
+      </div>
+
+      <p style="font-size: 12px; color: #6c757d; text-align:center; margin-top: 16px;">
+        Or copy and paste this link into your browser:
+      </p>
+      <p style="word-break: break-all; color: #007bff; background-color: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+        ${resetUrl}
+      </p>
 
       <p style="font-size: 12px; color: #6c757d; text-align:center; margin-top: 6px;">
         If you did not request a password reset, please ignore this email.

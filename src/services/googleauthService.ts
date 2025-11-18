@@ -10,8 +10,7 @@ const CLIENT_SECRET = config.GOOGLE_CLIENT_SECRET;
 const BACKEND_URL = config.BACKEND_URL;
 const CALLBACK_URL = `${BACKEND_URL}/api/auth/google/callback`;
 
-console.log('GOOGLE_CLIENT_ID:', CLIENT_ID);
-console.log('GOOGLE_CALLBACK:', CALLBACK_URL);
+// ✅ REMOVED: console.log statements for credentials
 
 // serialize only the account id into session
 passport.serializeUser((user: any, done) => {
@@ -61,9 +60,8 @@ if (CLIENT_ID && CLIENT_SECRET) {
           });
         }
 
-        console.log('🔍 Google SSO - Checking for email:', email);
+        // ✅ REMOVED: All console.log debugging statements
 
-        // 1) Check pending accounts first
         const [pendingRows]: any = await pool.query(
           `SELECT * FROM pending_accounts_tbl WHERE Email = ? LIMIT 1`,
           [email]
@@ -71,16 +69,8 @@ if (CLIENT_ID && CLIENT_SECRET) {
 
         if (pendingRows && pendingRows.length > 0) {
           const pending = pendingRows[0];
-          console.log('📋 Found in pending_accounts_tbl:', {
-            email: pending.Email,
-            username: pending.Username,
-            isEmailVerified: pending.IsEmailVerified,
-            isAdminVerified: pending.IsAdminVerified
-          });
           
-          // Email not yet verified
           if (!pending.IsEmailVerified || Number(pending.IsEmailVerified) === 0) {
-            console.log('📧 Email not verified - redirecting to verify-email');
             return done(null, false, { 
               message: 'email_pending', 
               email, 
@@ -89,9 +79,7 @@ if (CLIENT_ID && CLIENT_SECRET) {
             });
           }
           
-          // Email verified but admin approval pending
           if (!pending.IsAdminVerified || Number(pending.IsAdminVerified) === 0) {
-            console.log('⏳ Admin approval pending - redirecting to pending-approval');
             return done(null, false, { 
               message: 'admin_pending', 
               email, 
@@ -99,11 +87,8 @@ if (CLIENT_ID && CLIENT_SECRET) {
               redirectTo: 'pending-approval'
             });
           }
-          
-          console.log('✅ Both verified in pending table, checking accounts_tbl...');
         }
 
-        // 2) Lookup active account by email (profile table)
         const [rows]: any = await pool.query(
           `SELECT a.*, p.FirstName, p.LastName, p.Email AS Email
            FROM accounts_tbl a
@@ -114,7 +99,6 @@ if (CLIENT_ID && CLIENT_SECRET) {
         const account = rows?.[0] ?? null;
 
         if (!account) {
-          console.log('❌ No account found - redirecting to signup');
           return done(null, false, { 
             message: 'not_registered', 
             redirectTo: 'signup', 
@@ -124,16 +108,8 @@ if (CLIENT_ID && CLIENT_SECRET) {
           });
         }
 
-        console.log('👤 Account found:', {
-          accountId: account.Account_id,
-          username: account.Username,
-          isActive: account.IsActive
-        });
-
-        // Check if account is active
         const isActiveFlag = Number(account.IsActive ?? account.is_active ?? 0);
         if (isNaN(isActiveFlag) || isActiveFlag === 0) {
-          console.log('⏳ Account inactive - redirecting to pending-approval');
           return done(null, false, { 
             message: 'admin_pending', 
             email,
@@ -142,17 +118,12 @@ if (CLIENT_ID && CLIENT_SECRET) {
           });
         }
 
-        // Account exists and is active -> allow login
-        console.log('✅ Account active - allowing login');
         return done(null, account);
       } catch (err) {
-        console.error('❌ Google auth error:', err);
         return done(err as any);
       }
     }
   ));
-} else {
-  console.warn('Google OAuth credentials missing; Google strategy not registered.');
 }
 
 export default passport;
