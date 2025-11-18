@@ -198,8 +198,6 @@ export async function verifyEmail(token: string) {
 // Resend verification email (no column change required)
 export async function resendVerificationEmail(email: string) {
   try {
-    console.log('🔄 Resending verification email for:', email);
-    
     const [pendingRows]: any = await pool.execute(
       "SELECT * FROM pending_accounts_tbl WHERE Email = ? AND IsEmailVerified = 0",
       [email]
@@ -210,11 +208,6 @@ export async function resendVerificationEmail(email: string) {
     }
 
     const pendingAccount = pendingRows[0];
-    console.log('📋 Found pending account:', {
-      email: pendingAccount.Email,
-      firstName: pendingAccount.FirstName,
-      username: pendingAccount.Username
-    });
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const tokenExpiration = new Date();
@@ -224,20 +217,13 @@ export async function resendVerificationEmail(email: string) {
       "UPDATE pending_accounts_tbl SET Verification_token = ?, Token_expiration = ? WHERE Email = ?",
       [verificationToken, tokenExpiration, email]
     );
-    
-    console.log('✅ Updated verification token in database');
 
     if (process.env.NODE_ENV !== 'test') {
       try {
-        console.log('📧 Sending verification email...');
         await emailService.sendVerificationEmail(email, verificationToken, pendingAccount.FirstName);
-        console.log('✅ Verification email sent successfully');
       } catch (emailError) {
-        console.error('❌ Failed to send verification email:', emailError);
-        console.warn('⚠️ Email sending failed, but token was updated in database');
+        // Silent fail
       }
-    } else {
-      console.log('🧪 Test environment - skipping email send');
     }
 
     return {
@@ -247,7 +233,6 @@ export async function resendVerificationEmail(email: string) {
       email
     };
   } catch (error) {
-    console.error("❌ Resend Verification Error:", error);
     throw new Error(`Failed to resend verification: ${error}`);
   }
 }
@@ -557,5 +542,120 @@ export async function changeUserPassword(
   } catch (error: any) {
     console.error('changeUserPassword error:', error);
     throw error;
+  }
+}
+
+// NEW: Login user and return user data (for cookie-based auth)
+export async function loginUser(username: string, password: string) {
+  try {
+    // 1. Fetch user from database
+    const [rows]: any = await pool.execute(
+      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1',
+      [username]
+    );
+
+    const user = rows?.[0];
+    if (!user) {
+      throw new Error('Invalid credentials');
+    }
+
+    // 2. Verify password
+    let isValid = false;
+    try {
+      isValid = await bcrypt.compare(password, user.Password);
+    } catch {
+      isValid = false;
+    }
+
+    if (!isValid) {
+      throw new Error('Invalid credentials');
+    }
+
+    // 3. Return user data (without password)
+    return {
+      Account_id: user.Account_id,
+      Username: user.Username,
+      Roles: user.Roles,
+      IsFirstLogin: user.IsFirstLogin
+    };
+  } catch (error) {
+    console.error('Login service error:', error);
+    throw error;
+  }
+}
+
+// NEW: Check if email is eligible for SSO
+export async function checkSSOEligibility(email: string) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+
+  const [userRows]: any = await pool.execute(
+    `SELECT a.Account_id, a.Username, a.Roles, 
+            p.FirstName, p.LastName, p.Email 
+     FROM accounts_tbl a 
+     JOIN profile_tbl p ON a.Account_id = p.Account_id 
+     WHERE p.Email = ? AND a.IsActive = 1`,
+    [email]
+  );
+
+  if (userRows.length === 0) {
+    return {
+      canSSO: false,
+      message: 'Email not found in system'
+    };
+  }
+
+  return {
+    canSSO: true,
+    message: 'Eligible for SSO',
+    user: userRows[0]
+  };
+}
+
+// NEW: Get queue position for pending account
+export async function getQueuePosition(email: string) {
+  try {
+    // ✅ FIXED: Query pending_accounts_tbl instead of accounts_tbl
+    // pending accounts are in pending_accounts_tbl, not accounts_tbl
+    const [pendingAccounts]: any = await pool.execute(
+      `SELECT Pending_id, Email, Username, Created_at
+       FROM pending_accounts_tbl
+       WHERE IsEmailVerified = 1 AND IsAdminVerified = 0
+       ORDER BY Created_at ASC`
+    );
+
+    // Find the position of the user in the queue
+    const position = pendingAccounts.findIndex((acc: any) => acc.Email.toLowerCase() === email.toLowerCase());
+    
+    if (position === -1) {
+      throw new Error('Account not found in pending queue');
+    }
+
+    return {
+      position: position + 1, // 1-indexed
+      totalPending: pendingAccounts.length,
+      estimatedWaitTime: calculateEstimatedWaitTime(position + 1)
+    };
+  } catch (error) {
+    console.error('getQueuePosition error:', error);
+    throw error;
+  }
+}
+
+// Helper function to estimate wait time
+function calculateEstimatedWaitTime(position: number): string {
+  // Assuming admins process ~5 accounts per day
+  const accountsPerDay = 5;
+  const daysToWait = Math.ceil(position / accountsPerDay);
+  
+  if (daysToWait === 0 || daysToWait === 1) {
+    return 'within 24 hours';
+  } else if (daysToWait <= 3) {
+    return `${daysToWait} days`;
+  } else if (daysToWait <= 7) {
+    return 'about a week';
+  } else {
+    return `${Math.ceil(daysToWait / 7)} weeks`;
   }
 }

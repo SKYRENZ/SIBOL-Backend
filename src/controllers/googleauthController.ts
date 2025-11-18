@@ -50,8 +50,18 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
           const payload: any = {
             Account_id: user.Account_id ?? user.AccountId ?? user.id,
             Roles: user.Roles ?? user.role ?? undefined,
+            IsFirstLogin: user.IsFirstLogin
           };
           const token = jwt.sign(payload, secret, { expiresIn: '7d' });
+
+          // ✅ Set HTTP-only cookie
+          res.cookie('token', token, {
+            httpOnly: true,
+            secure: config.NODE_ENV === 'production',
+            sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/'
+          });
 
           const userSafe = {
             Account_id: user.Account_id,
@@ -60,10 +70,11 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
             FirstName: user.FirstName,
             LastName: user.LastName,
             Email: user.Email,
+            IsFirstLogin: user.IsFirstLogin
           };
 
+          // ❌ Don't send token in URL, just user data
           return res.redirect(buildFrontendUrl('/auth/callback', {
-            token,
             user: encodeURIComponent(JSON.stringify(userSafe)),
             auth: 'success'
           }));
@@ -77,8 +88,6 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
       });
     } else if (info && typeof info === 'object') {
       const { message, email, redirectTo, firstName, lastName, username } = info as any;
-      
-      console.log('📤 Redirecting with info:', { message, email, redirectTo, username });
       
       const params: Record<string, string> = {
         message: message || '',
@@ -95,7 +104,7 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
       } else if (redirectTo === 'pending-approval') {
         params.message = 'admin_pending';
         params.sso = 'true';
-        if (username) params.username = username; // IMPORTANT: Pass username
+        if (username) params.username = username;
       } else {
         params.auth = 'fail';
       }
@@ -111,19 +120,29 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
   })(req, res, next);
 }
 
-export async function getMe(req: Request, res: Response) {
-  if (req.user) {
-    return res.json({ success: true, user: req.user });
-  }
-  return res.status(401).json({ success: false, message: 'Not authenticated' });
-}
-
+// ✅ Add logout endpoint to clear cookie
 export async function logout(req: Request, res: Response) {
   req.logout((err: any) => {
     if (err) {
       console.error('Logout error:', err);
       return res.status(500).json({ success: false, message: 'Logout failed' });
     }
+    
+    // Clear the token cookie
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+      path: '/'
+    });
+    
     return res.json({ success: true, message: 'Logged out successfully' });
   });
+}
+
+export async function getMe(req: Request, res: Response) {
+  if (req.user) {
+    return res.json({ success: true, user: req.user });
+  }
+  return res.status(401).json({ success: false, message: 'Not authenticated' });
 }

@@ -48,4 +48,7 @@ router.get('/verify', authenticate, authController.verifyToken);
 // POST /api/auth/change-password (PROTECTED)
 router.post('/change-password', authenticate, authController.changePassword);
 
+// GET /api/auth/queue-position - Get queue position for pending account
+router.get('/queue-position', authController.getQueuePosition);
+
 export default router;
