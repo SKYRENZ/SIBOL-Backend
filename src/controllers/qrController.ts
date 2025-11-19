@@ -18,7 +18,9 @@ export async function scanQr(req: Request, res: Response) {
         }
 
         const accountId = Number(user.Account_id);
-        const { awarded, totalPoints } = await awardPointsForAccount(accountId, Number(weight));
+        
+        // ✅ Pass qrCode to the service function
+        const { awarded, totalPoints } = await awardPointsForAccount(accountId, Number(weight), qr);
 
         return res.status(200).json({
             message: 'Scan processed',
@@ -26,8 +28,17 @@ export async function scanQr(req: Request, res: Response) {
             totalPoints,
             accountId,
         });
-    } catch (err) {
+    } catch (err: any) {
         console.error('scanQr error', err);
+        
+        // ✅ Handle duplicate QR error specifically
+        if (err.message === 'QR_ALREADY_SCANNED') {
+            return res.status(400).json({ 
+                message: 'QR code already scanned',
+                error: 'This QR code has already been used'
+            });
+        }
+        
         return res.status(500).json({ message: 'Internal server error' });
     }
 }

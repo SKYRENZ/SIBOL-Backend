@@ -16,6 +16,31 @@ export async function getAccountIdByQr(qr: string): Promise<number | null> {
     return rows[0].Account_id ?? null;
 }
 
+// ✅ NEW: Check if QR was already scanned by this user
+export async function isQRAlreadyScanned(qrCode: string, accountId: number): Promise<boolean> {
+    const [rows]: any = await db.execute(
+        `SELECT COUNT(*) as count 
+         FROM qr_scans_tbl 
+         WHERE QR_code = ? AND Account_id = ? AND IsUsed = 1`,
+        [qrCode, accountId]
+    );
+    return (Array.isArray(rows) && rows[0]) ? rows[0].count > 0 : false;
+}
+
+// ✅ NEW: Record a QR scan in the history table
+export async function recordQRScan(
+    qrCode: string, 
+    accountId: number, 
+    weight: number, 
+    pointsAwarded: number
+): Promise<void> {
+    await db.execute(
+        `INSERT INTO qr_scans_tbl (QR_code, Account_id, Weight, Points_awarded, IsUsed, Scanned_at) 
+         VALUES (?, ?, ?, ?, 1, NOW())`,
+        [qrCode, accountId, weight, pointsAwarded]
+    );
+}
+
 export async function addPointsToAccount(accountId: number, points: number): Promise<number> {
     await db.execute(
         'UPDATE accounts_tbl SET Points = COALESCE(Points,0) + ? WHERE Account_id = ?',
@@ -28,7 +53,14 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
     return (Array.isArray(rows) && rows[0]) ? Number(rows[0].Points) : 0;
 }
 
-export async function awardPointsForAccount(accountId: number, weight: number) {
+// ✅ UPDATED: Add QR duplicate checking and recording
+export async function awardPointsForAccount(accountId: number, weight: number, qrCode: string) {
+    // Check if QR was already scanned
+    const alreadyScanned = await isQRAlreadyScanned(qrCode, accountId);
+    if (alreadyScanned) {
+        throw new Error('QR_ALREADY_SCANNED');
+    }
+
     const pointsPerKg = await conversionService.getPointsPerKg();
     const awarded = conversionService.calculatePointsFromWeight(weight, pointsPerKg);
 
@@ -36,6 +68,10 @@ export async function awardPointsForAccount(accountId: number, weight: number) {
         return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
+    // Record the scan first (before awarding points)
+    await recordQRScan(qrCode, accountId, weight, awarded);
+
+    // Then add points
     const totalPoints = await addPointsToAccount(accountId, awarded);
     return { awarded, totalPoints };
 }
