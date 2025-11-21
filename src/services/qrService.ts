@@ -1,12 +1,6 @@
 import db from '../config/db';
 import * as conversionService from './conversionService';
 
-export function calculatePointsFromWeight(weight: number): number {
-    // conversion: 2 kg -> 10 points => 5 points per kg
-    if (!Number.isFinite(weight) || weight <= 0) return 0;
-    return Math.floor(weight * 5);
-}
-
 export async function getAccountIdByQr(qr: string): Promise<number | null> {
     const [rows]: any = await db.execute(
         'SELECT Account_id FROM profile_tbl WHERE QR_code = ? LIMIT 1',
@@ -16,7 +10,6 @@ export async function getAccountIdByQr(qr: string): Promise<number | null> {
     return rows[0].Account_id ?? null;
 }
 
-// ✅ NEW: Check if QR was already scanned by this user
 export async function isQRAlreadyScanned(qrCode: string, accountId: number): Promise<boolean> {
     const [rows]: any = await db.execute(
         `SELECT COUNT(*) as count 
@@ -27,7 +20,6 @@ export async function isQRAlreadyScanned(qrCode: string, accountId: number): Pro
     return (Array.isArray(rows) && rows[0]) ? rows[0].count > 0 : false;
 }
 
-// ✅ NEW: Record a QR scan in the history table
 export async function recordQRScan(
     qrCode: string, 
     accountId: number, 
@@ -53,9 +45,7 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
     return (Array.isArray(rows) && rows[0]) ? Number(rows[0].Points) : 0;
 }
 
-// ✅ UPDATED: Add QR duplicate checking and recording
 export async function awardPointsForAccount(accountId: number, weight: number, qrCode: string) {
-    // Check if QR was already scanned
     const alreadyScanned = await isQRAlreadyScanned(qrCode, accountId);
     if (alreadyScanned) {
         throw new Error('QR_ALREADY_SCANNED');
@@ -68,11 +58,9 @@ export async function awardPointsForAccount(accountId: number, weight: number, q
         return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
-    // Record the scan first (before awarding points)
     await recordQRScan(qrCode, accountId, weight, awarded);
-
-    // Then add points
     const totalPoints = await addPointsToAccount(accountId, awarded);
+    
     return { awarded, totalPoints };
 }
 
