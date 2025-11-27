@@ -134,6 +134,7 @@ export const login = async (req: Request, res: Response) => {
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
+    // ✅ Set cookie for web browsers
     res.cookie('token', token, {
       httpOnly: true,
       secure: config.NODE_ENV === 'production',
@@ -142,9 +143,11 @@ export const login = async (req: Request, res: Response) => {
       path: '/'
     });
 
-    // ✅ REMOVED: console.log('🔐 Login successful - User data being sent:', user);
-
-    return res.json({ user });
+    // ✅ ALSO return token in response body for mobile apps
+    return res.json({ 
+      user,
+      token  // ← Add this for mobile
+    });
   } catch (err: any) {
     const statusCode = err.message === 'Invalid credentials' ? 401 : 500;
     return res.status(statusCode).json({ 
