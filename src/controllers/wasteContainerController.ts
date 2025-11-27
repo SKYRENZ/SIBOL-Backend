@@ -10,7 +10,7 @@ import { geocodeAddress } from "../utils/geocode";
  * - Inserts into waste_containers_tbl (links to area_tbl)
  */
 export async function createContainer(req: Request, res: Response) {
-  const { container_name, area_name, fullAddress } = req.body;
+  const { container_name, area_name, fullAddress, latitude, longitude } = req.body;
 
   console.log("Creating container with:", { container_name, area_name, fullAddress });
 
@@ -18,7 +18,7 @@ export async function createContainer(req: Request, res: Response) {
     return res.status(400).json({ error: "container_name, area_name and fullAddress are required." });
   }
 
-  let coords = await geocodeAddress(fullAddress);
+  let coords = (latitude && longitude) ? { lat: latitude, lon: longitude } : await geocodeAddress(fullAddress);
   console.log("Geocoded coords:", coords);
   if (!coords) {
     return res.status(400).json({ error: "Could not geocode the provided address." });
