@@ -8,11 +8,6 @@ export async function getPointsPerKg(): Promise<number> {
   return Number(rows[0].points_per_kg) || 5;
 }
 
-/**
- * Update points per kg and record an audit entry.
- * remark: required string explaining the change
- * changedBy: optional account id who made the change
- */
 export async function setPointsPerKg(pointsPerKg: number, remark: string, changedBy?: number): Promise<number> {
   if (!Number.isFinite(pointsPerKg) || pointsPerKg <= 0) {
     throw new Error('Invalid pointsPerKg');
@@ -25,17 +20,14 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
   try {
     await conn.beginTransaction();
 
-    // read old value
     const [rows]: any = await conn.execute('SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1');
     const oldValue = (Array.isArray(rows) && rows[0]) ? Number(rows[0].points_per_kg) : null;
 
-    // upsert new value
     await conn.execute(
       'INSERT INTO conversion_rate_tbl (id, points_per_kg) VALUES (1, ?) ON DUPLICATE KEY UPDATE points_per_kg = ?',
       [pointsPerKg, pointsPerKg]
     );
 
-    // insert audit
     await conn.execute(
       'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
       [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
@@ -52,10 +44,14 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
   return getPointsPerKg();
 }
 
+// ✅ UPDATED: Return decimal with 2 decimal places (no rounding down)
 export function calculatePointsFromWeight(weight: number, pointsPerKg: number): number {
   if (!Number.isFinite(weight) || weight <= 0) return 0;
   if (!Number.isFinite(pointsPerKg) || pointsPerKg <= 0) return 0;
-  return Math.floor(weight * pointsPerKg);
+  
+  // ✅ Calculate and round to 2 decimal places
+  const points = weight * pointsPerKg;
+  return Math.round(points * 100) / 100;
 }
 
 export async function getAuditEntries(limit = 100) {
