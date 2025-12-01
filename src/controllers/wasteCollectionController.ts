@@ -38,3 +38,23 @@ export async function createCollection(req: Request, res: Response) {
     return res.status(500).json({ message: err?.message || 'Failed to record collection' });
   }
 }
+
+// new: return collections for the authenticated operator
+export async function getMyCollections(req: Request, res: Response) {
+  try {
+    const operator = (req as any).user;
+    const operatorId = operator?.Account_id ?? operator?.AccountId ?? operator?.id;
+    if (!operatorId) {
+      return res.status(401).json({ message: 'Operator not authenticated' });
+    }
+
+    const limit = req.query.limit ? Number(req.query.limit) : 100;
+    const offset = req.query.offset ? Number(req.query.offset) : 0;
+
+    const rows = await wasteService.getCollectionsByOperator(Number(operatorId), limit, offset);
+    return res.status(200).json({ data: rows });
+  } catch (err: any) {
+    console.error('getMyCollections error', err);
+    return res.status(500).json({ message: err?.message || 'Failed to fetch collections' });
+  }
+}

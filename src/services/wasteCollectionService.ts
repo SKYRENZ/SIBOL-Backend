@@ -53,3 +53,34 @@ export async function getCollectionsByArea(areaId: number, limit = 100, offset =
         conn.release();
     }
 }
+
+// new: fetch collections submitted by a specific operator (returns date and time strings)
+export async function getCollectionsByOperator(operatorId: number, limit = 100, offset = 0) {
+  const sql = `
+    SELECT
+      wc.collection_id,
+      wc.area_id,
+      wc.operator_id,
+      wc.weight,
+      wc.collected_at,
+      DATE_FORMAT(wc.collected_at, '%b %d, %Y') AS date,
+      TIME_FORMAT(wc.collected_at, '%h:%i %p') AS time,
+      COALESCE(CONCAT(p.FirstName, ' ', p.LastName), acct.Username, 'Unknown Operator') AS operator_name
+    FROM
+      waste_collection_tbl wc
+    LEFT JOIN profile_tbl p ON wc.operator_id = p.Account_id
+    LEFT JOIN accounts_tbl acct ON wc.operator_id = acct.Account_id
+    WHERE wc.operator_id = ?
+    ORDER BY wc.collected_at DESC
+    LIMIT ? OFFSET ?
+  `;
+  const params = [operatorId, Number(limit), Number(offset)];
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(sql, params) as any;
+    return rows;
+  } finally {
+    conn.release();
+  }
+}
