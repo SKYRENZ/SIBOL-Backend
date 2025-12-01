@@ -1,32 +1,7 @@
 // filepath: c:\Users\Renz\OneDrive\Documents\GitHub\SIBOL\SIBOL-Backend\src\controllers\areaController.ts
 import { Request, Response } from "express";
 import pool from "../config/db";
-import axios from "axios";
-
-/**
- * Geocodes an address using the Nominatim API.
- * @param address The address string to geocode.
- * @returns An object with latitude and longitude, or null if not found.
- */
-async function geocodeAddress(address: string): Promise<{ lat: number; lon: number } | null> {
-  try {
-    const encodedAddress = encodeURIComponent(address);
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`;
-    
-    const response = await axios.get(url, {
-      headers: { 'User-Agent': 'SIBOL-App/1.0' } // Nominatim requires a User-Agent
-    });
-
-    if (response.data && response.data.length > 0) {
-      const { lat, lon } = response.data[0];
-      return { lat: parseFloat(lat), lon: parseFloat(lon) };
-    }
-    return null;
-  } catch (error) {
-    console.error("Geocoding error:", error);
-    return null;
-  }
-}
+import { geocodeAddress } from "../utils/geocode";
 
 /**
  * Creates a new area, geocoding the address to get coordinates.
