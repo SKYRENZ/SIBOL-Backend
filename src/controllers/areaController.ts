@@ -2,6 +2,7 @@
 import { Request, Response } from "express";
 import pool from "../config/db";
 import { geocodeAddress } from "../utils/geocode";
+import * as wasteService from '../services/wasteCollectionService';
 
 /**
  * Creates a new area, geocoding the address to get coordinates.
@@ -56,29 +57,20 @@ export async function list(req: Request, res: Response) {
 export async function getLogsByArea(req: Request, res: Response) {
   const { id } = req.params;
 
-  const GET_LOGS_QUERY = `
-    SELECT 
-        awi.input_id,
-        awi.weight,
-        DATE_FORMAT(awi.input_date, '%b %d, %Y') as date,
-        TIME_FORMAT(awi.input_date, '%h:%i %p') as time,
-        COALESCE(CONCAT(p.FirstName, ' ', p.LastName), 'Unknown Operator') as operator_name
-    FROM 
-        area_waste_inputs_tbl awi
-    LEFT JOIN 
-        profile_tbl p ON awi.operator_id = p.Account_id
-    WHERE 
-        awi.area_id = ?
-    ORDER BY 
-        awi.input_date DESC
-    LIMIT 20;
-  `;
+  const areaId = Number(id);
+  if (Number.isNaN(areaId) || areaId <= 0) {
+    return res.status(400).json({ error: 'Invalid area id' });
+  }
 
   try {
-    const [rows] = await pool.query(GET_LOGS_QUERY, [id]);
-    res.json({ data: rows });
+    // reuse shared service — it already returns date/time fields (or adjust format there)
+    const rows = await wasteService.getCollectionsByArea(areaId, 20, 0);
+
+    // if you need different date/time formatting, either change service SQL (DATE_FORMAT/TIME_FORMAT)
+    // or format here before returning.
+    return res.json({ data: rows });
   } catch (err) {
-    console.error("Database error:", err);
-    res.status(500).json({ error: "Failed to fetch area logs." });
+    console.error('Database error:', err);
+    return res.status(500).json({ error: 'Failed to fetch area logs.' });
   }
 }
