@@ -32,7 +32,7 @@ import qrRoutes from './Routes/qrRoutes';
 import conversionRoutes from './Routes/conversionRoutes';
 import wasteContainerRoutes from './Routes/wasteContainerRoutes';
 import wasteCollectionRoutes from './Routes/wasteCollectionRoutes';
-
+import additivesRoutes from './Routes/additivesRoutes';
 import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 
 // Build allowlist from env (FRONT_END_ORIGINS)
@@ -127,6 +127,7 @@ app.use('/api/conversion', conversionRoutes);
 app.use('/api/waste-containers', wasteContainerRoutes);
 app.use('/api/waste-collections', wasteCollectionRoutes);
 app.use("/api/users", userRoutes); // 2. Register user routes
+app.use('/api/additives', additivesRoutes);
 
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
