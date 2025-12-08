@@ -16,6 +16,18 @@ export async function getProfileByAccountId(accountId: number) {
   return rows?.[0] || null;
 }
 
+// ✅ NEW: Get user's current points
+export async function getPointsByAccountId(accountId: number) {
+  const sql = `
+    SELECT Account_id, Username, Points 
+    FROM accounts_tbl 
+    WHERE Account_id = ? 
+    LIMIT 1
+  `;
+  const [rows]: any = await pool.query(sql, [accountId]);
+  return rows?.[0] || null;
+}
+
 export async function updateProfile(accountId: number, payload: ProfileUpdate) {
   const existing = await getProfileByAccountId(accountId);
   if (!existing) throw new Error('Profile not found');
