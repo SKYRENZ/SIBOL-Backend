@@ -8,6 +8,13 @@ export const FiltersService = {
     return rows as any[];
   },
 
+  async getAreas() {
+    const [rows] = await pool.execute(
+      `SELECT Area_id AS id, Area_Name AS name FROM area_tbl ORDER BY Area_id`
+    );
+    return rows as any[];
+  },
+
   async getMaintenancePriorities() {
     const [rows] = await pool.execute(
       `SELECT Priority_id AS id, Priority AS name FROM maintenance_priority_tbl ORDER BY Priority_id`
@@ -29,36 +36,123 @@ export const FiltersService = {
     return rows as any[];
   },
 
+  async getContainerStatuses() {
+    const [rows] = await pool.execute(
+      `SELECT status_id AS id, status_name AS name FROM waste_container_status_tbl ORDER BY status_id`
+    );
+    return rows as any[];
+  },
+
+  async getWasteTypes() {
+    const [rows] = await pool.execute(
+      `SELECT type_id AS id, type_name AS name FROM waste_type_tbl ORDER BY type_id`
+    );
+    return rows as any[];
+  },
+
+  async getAdditiveStages() {
+    const [rows] = await pool.execute(
+      `SELECT stage_id AS id, stage_name AS name FROM additive_stage_tbl ORDER BY stage_id`
+    );
+    return rows as any[];
+  },
+
+  async getMachines() {
+    const [rows] = await pool.execute(
+      `SELECT machine_id AS id, Name AS name FROM machine_tbl ORDER BY machine_id`
+    );
+    return rows as any[];
+  },
+
   async getAllFilters() {
-    const [machineStatuses, maintenancePriorities, maintenanceStatuses, scheduleStatuses] = await Promise.all([
+    const [
+      machineStatuses,
+      areas,
+      maintenancePriorities,
+      maintenanceStatuses,
+      scheduleStatuses,
+      containerStatuses,
+      wasteTypes,
+      additiveStages,
+      machines
+    ] = await Promise.all([
       this.getMachineStatuses(),
+      this.getAreas(),
       this.getMaintenancePriorities(),
       this.getMaintenanceStatuses(),
       this.getScheduleStatuses(),
+      this.getContainerStatuses(),
+      this.getWasteTypes(),
+      this.getAdditiveStages(),
+      this.getMachines(),
     ]);
-    return { machineStatuses, maintenancePriorities, maintenanceStatuses, scheduleStatuses };
+    
+    return {
+      machineStatuses,
+      areas,
+      maintenancePriorities,
+      maintenanceStatuses,
+      scheduleStatuses,
+      containerStatuses,
+      wasteTypes,
+      additiveStages,
+      machines
+    };
   },
 
   async getByType(type: string) {
-    switch (type) {
-      case 'machine-status':
-      case 'machineStatuses':
-      case 'machine-statuses':
+    // Normalize type string
+    const normalizedType = type.toLowerCase().replace(/[-_]/g, '');
+
+    switch (normalizedType) {
+      // Machine Status
+      case 'machinestatus':
+      case 'machinestatuses':
         return this.getMachineStatuses();
-      case 'maintenance-priority':
-      case 'maintenancePriorities':
-      case 'maintenance-priorities':
+
+      // Areas
+      case 'area':
+      case 'areas':
+        return this.getAreas();
+
+      // Maintenance Priority
+      case 'maintenancepriority':
+      case 'maintenancepriorities':
         return this.getMaintenancePriorities();
-      case 'maintenance-status':
-      case 'maintenanceStatuses':
-      case 'maintenance-statuses':
+
+      // Maintenance Status
+      case 'maintenancestatus':
+      case 'maintenancestatuses':
         return this.getMaintenanceStatuses();
-      case 'schedule-status':
-      case 'scheduleStatuses':
-      case 'schedule-statuses':
+
+      // Schedule Status
+      case 'schedulestatus':
+      case 'schedulestatuses':
         return this.getScheduleStatuses();
+
+      // Container Status
+      case 'containerstatus':
+      case 'containerstatuses':
+        return this.getContainerStatuses();
+
+      // Waste Types
+      case 'wastetype':
+      case 'wastetypes':
+        return this.getWasteTypes();
+
+      // Additive Stages
+      case 'additivestage':
+      case 'additivesstage':
+      case 'additivestages':
+        return this.getAdditiveStages();
+
+      // Machines
+      case 'machine':
+      case 'machines':
+        return this.getMachines();
+
       default:
-        throw new Error('Unknown filter type');
+        throw new Error(`Unknown filter type: ${type}`);
     }
   }
 };
