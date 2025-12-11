@@ -16,13 +16,64 @@ async function getPriorityIdByName(name: string) {
   return rows.length ? rows[0].Priority_id : null;
 }
 
+export async function addAttachment(
+  requestId: number, 
+  uploadedBy: number, 
+  filepath: string,
+  filename: string,
+  filetype?: string,
+  filesize?: number
+): Promise<any> {
+  const [ticket] = await pool.query<Row[]>(
+    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?", 
+    [requestId]
+  );
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const sql = `INSERT INTO maintenance_attachments_tbl 
+    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size) 
+    VALUES (?, ?, ?, ?, ?, ?)`;
+  
+  const [result] = await pool.query(sql, [
+    requestId, 
+    uploadedBy, 
+    filepath, 
+    filename,
+    filetype || null,
+    filesize || null
+  ]);
+  const insertId = (result as any).insertId;
+
+  const [attachment] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_attachments_tbl WHERE Attachment_Id = ?", 
+    [insertId]
+  );
+  return attachment[0];
+}
+
+export async function getTicketAttachments(requestId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      ma.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS UploaderName,
+      a.Roles AS UploaderRole
+    FROM maintenance_attachments_tbl ma
+    LEFT JOIN profile_tbl p ON ma.Uploaded_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
+    WHERE ma.Request_Id = ?
+    ORDER BY ma.Uploaded_at ASC
+  `;
+  
+  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  return rows;
+}
+
 export async function createTicket(data: {
   title: string;
   details?: string;
   priority?: string;
   created_by: number;
   due_date?: string | null;
-  attachment?: string | null;
 }): Promise<any> {
   // Verify account exists and get role
   const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [data.created_by]);
@@ -48,14 +99,24 @@ export async function createTicket(data: {
   const requestedStatusId = await getStatusIdByName("Requested");
 
   const sql = `INSERT INTO maintenance_tbl 
-    (Title, Details, Priority_Id, Created_by, Due_date, Attachment, Main_stat_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`;
-  const params = [data.title, data.details || null, priorityId, data.created_by, data.due_date || null, data.attachment || null, requestedStatusId];
+    (Title, Details, Priority_Id, Created_by, Due_date, Main_stat_id)
+    VALUES (?, ?, ?, ?, ?, ?)`;
+  const params = [
+    data.title, 
+    data.details || null, 
+    priorityId, 
+    data.created_by, 
+    data.due_date || null, 
+    requestedStatusId
+  ];
   
   const [result] = await pool.query(sql, params);
   const insertId = (result as any).insertId;
 
-  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [insertId]);
+  const [ticket] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?", 
+    [insertId]
+  );
   return ticket[0];
 }
 
@@ -160,15 +221,24 @@ export async function getTicketById(requestId: number): Promise<any> {
     SELECT 
       m.*, 
       p.Priority, 
-      s.Status 
+      s.Status,
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
     WHERE m.Request_Id = ?
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
-  return ticket[0];
+  
+  // Get attachments
+  const attachments = await getTicketAttachments(requestId);
+  
+  return {
+    ...ticket[0],
+    Attachments: attachments
+  };
 }
 
 export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number } = {}): Promise<any[]> {
@@ -177,11 +247,13 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       m.*, 
       p.Priority, 
       s.Status,
-      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      COUNT(ma.Attachment_Id) AS AttachmentCount
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
     WHERE 1=1
   `;
   const params: any[] = [];
@@ -207,7 +279,7 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     params.push(filters.created_by);
   }
 
-  sql += " ORDER BY m.Request_date DESC";
+  sql += " GROUP BY m.Request_Id ORDER BY m.Request_date DESC";
 
   const [rows] = await pool.query<Row[]>(sql, params);
   return rows;
