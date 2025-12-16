@@ -300,3 +300,9 @@ export async function addRemarksToTicket(requestId: number, remarks: string): Pr
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
 }
+
+export async function getAllPriorities(): Promise<any[]> {
+  const sql = "SELECT Priority_id, Priority FROM maintenance_priority_tbl ORDER BY Priority_id ASC";
+  const [rows] = await pool.query<Row[]>(sql);
+  return rows;
+}

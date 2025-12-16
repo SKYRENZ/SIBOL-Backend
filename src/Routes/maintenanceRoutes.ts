@@ -77,4 +77,10 @@ router.post("/:id/attachments", ctrl.uploadAttachment);
  */
 router.get("/:id/attachments", ctrl.getAttachments);
 
+/**
+ * GET /api/maintenance/priorities
+ * Get all priority levels
+ */
+router.get("/priorities", ctrl.getPriorities);
+
 export default router;

@@ -152,3 +152,12 @@ export async function getAttachments(req: Request, res: Response) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
 }
+
+export async function getPriorities(req: Request, res: Response) {
+  try {
+    const priorities = await service.getAllPriorities();
+    return res.json(priorities);
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch priorities" });
+  }
+}
