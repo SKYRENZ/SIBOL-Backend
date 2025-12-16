@@ -222,11 +222,15 @@ export async function getTicketById(requestId: number): Promise<any> {
       m.*, 
       p.Priority, 
       s.Status,
-      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     WHERE m.Request_Id = ?
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
@@ -248,11 +252,15 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       p.Priority, 
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole,
       COUNT(ma.Attachment_Id) AS AttachmentCount
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
     WHERE 1=1
   `;
