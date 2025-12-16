@@ -11,6 +11,12 @@ const router = Router();
 router.post("/", ctrl.createTicket);
 
 /**
+ * GET /api/maintenance/priorities
+ * Get all priority levels
+ */
+router.get("/priorities", ctrl.getPriorities);
+
+/**
  * PUT /api/maintenance/:id/accept
  * body: { staff_account_id, assign_to? } 
  * - staff_account_id: account id of Barangay_staff performing acceptance
@@ -76,11 +82,5 @@ router.post("/:id/attachments", ctrl.uploadAttachment);
  * GET /api/maintenance/:id/attachments
  */
 router.get("/:id/attachments", ctrl.getAttachments);
-
-/**
- * GET /api/maintenance/priorities
- * Get all priority levels
- */
-router.get("/priorities", ctrl.getPriorities);
 
 export default router;
