@@ -52,6 +52,11 @@ export const config = {
 
   // Default account password (move from code to env)
   DEFAULT_PASSWORD: getOptionalEnv('DEFAULT_PASSWORD', 'SIBOL12345'),
+
+  // Cloudinary
+  CLOUDINARY_CLOUD_NAME: getOptionalEnv('CLOUDINARY_CLOUD_NAME', ''),
+  CLOUDINARY_API_KEY: getOptionalEnv('CLOUDINARY_API_KEY', ''),
+  CLOUDINARY_API_SECRET: getOptionalEnv('CLOUDINARY_API_SECRET', ''),
 };
 
 // derived helper to use in server

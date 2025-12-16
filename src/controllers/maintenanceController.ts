@@ -115,3 +115,40 @@ export async function listTickets(req: Request, res: Response) {
     return res.status(500).json({ message: "Server error" });
   }
 }
+
+export async function uploadAttachment(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const uploadedBy = Number(req.body.uploaded_by);
+    const filepath = req.body.filepath;
+    const filename = req.body.filename;
+    const filetype = req.body.filetype;
+    const filesize = req.body.filesize ? Number(req.body.filesize) : undefined;
+
+    if (!filepath || !filename) {
+      return res.status(400).json({ message: "Filepath and filename are required" });
+    }
+
+    const attachment = await service.addAttachment(
+      requestId, 
+      uploadedBy, 
+      filepath, 
+      filename,
+      filetype,
+      filesize
+    );
+    return res.status(201).json(attachment);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function getAttachments(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const attachments = await service.getTicketAttachments(requestId);
+    return res.json(attachments);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}

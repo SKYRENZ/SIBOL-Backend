@@ -66,4 +66,15 @@ router.get("/:id", ctrl.getTicket);
  */
 router.get("/", ctrl.listTickets);
 
+/**
+ * POST /api/maintenance/:id/attachments
+ * body: { uploaded_by, filepath, filename, filetype?, filesize? }
+ */
+router.post("/:id/attachments", ctrl.uploadAttachment);
+
+/**
+ * GET /api/maintenance/:id/attachments
+ */
+router.get("/:id/attachments", ctrl.getAttachments);
+
 export default router;
