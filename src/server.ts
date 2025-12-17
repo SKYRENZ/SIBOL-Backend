@@ -36,6 +36,9 @@ import wasteContainerRoutes from './Routes/wasteContainerRoutes';
 import wasteCollectionRoutes from './Routes/wasteCollectionRoutes';
 import additivesRoutes from './Routes/additivesRoutes';
 import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
+// I.O.T Stages imports:
+import S1_esp32Routes from './Routes/S1_esp32Routes';
+
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -135,6 +138,9 @@ app.use('/api/additives', additivesRoutes);
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
 app.use("/api/upload", uploadRoutes);
+
+// mount esp32 stages
+app.use('/api/s1-esp32', S1_esp32Routes)
 
 // ❌ REMOVE THIS LINE - it's causing issues
 // app.use(authenticate);  // Don't apply global auth middleware
