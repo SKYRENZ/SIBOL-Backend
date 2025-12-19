@@ -26,25 +26,23 @@ export async function uploadFile(req: Request, res: Response) {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'maintenance_attachments', resource_type: 'auto' },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
-      );
-      uploadStream.end(req.file!.buffer);
-    });
+    const base64Data = req.file.buffer.toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
 
-    const uploadResult = result as any;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'maintenance_attachments',
+      resource_type: 'auto',
+    });
 
     return res.status(200).json({
-      filepath: uploadResult.secure_url,
-      publicId: uploadResult.public_id,
+      filepath: result.secure_url,
+      publicId: result.public_id,
     });
   } catch (err: any) {
-    console.error("Cloudinary upload error:", err);
-    return res.status(500).json({ message: err.message || "File upload failed" });
+    console.error("Upload error:", err.message);
+    return res.status(500).json({ 
+      message: err.message || "File upload failed",
+      error: err.name || "UploadError",
+    });
   }
 }
