@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/maintenanceController.js";
+import { authenticate } from "../middleware/authenticate.js";
 
 const router = Router();
 
@@ -22,7 +23,7 @@ router.get("/priorities", ctrl.getPriorities);
  * - staff_account_id: account id of Barangay_staff performing acceptance
  * - assign_to: account id of Operator to assign (optional)
  */
-router.put("/:id/accept", ctrl.acceptAndAssign);
+router.put("/:id/accept", authenticate, ctrl.acceptAndAssign);
 
 /**
  * PUT /api/maintenance/:id/ongoing

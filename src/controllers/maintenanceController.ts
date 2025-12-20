@@ -1,9 +1,9 @@
 import * as service from "../services/maintenanceService.js";
 import type { Request, Response } from "express";
+import { checkUserRole } from "./userController.js"; // ✅ Import the reusable function
 
 export async function createTicket(req: Request, res: Response) {
   try {
-    // expected body: { title, details?, priority?, created_by, due_date?, attachment? }
     const ticket = await service.createTicket(req.body);
     return res.status(201).json(ticket);
   } catch (err: any) {
@@ -13,9 +13,14 @@ export async function createTicket(req: Request, res: Response) {
 
 export async function acceptAndAssign(req: Request, res: Response) {
   try {
+    // ✅ Only Admin and Barangay can accept
+    if (!checkUserRole(req, res, ['Admin', 'Barangay'])) {
+      return; // Response already sent by checkUserRole
+    }
+
     const requestId = Number(req.params.id);
-    const staffAccountId = Number(req.body.staff_account_id); // staff performing action
-    const assignTo = req.body.assign_to ?? null; // operator account id to assign or null
+    const staffAccountId = Number(req.body.staff_account_id);
+    const assignTo = req.body.assign_to ?? null;
     const updated = await service.acceptAndAssign(requestId, staffAccountId, assignTo);
     return res.json(updated);
   } catch (err: any) {
