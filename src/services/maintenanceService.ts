@@ -314,3 +314,48 @@ export async function getAllPriorities(): Promise<any[]> {
   const [rows] = await pool.query<Row[]>(sql);
   return rows;
 }
+
+export async function addRemark(
+  requestId: number,
+  remarkText: string,
+  createdBy: number,
+  userRole: string
+): Promise<any> {
+  const [ticket] = await pool.query<Row[]>(
+    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?", 
+    [requestId]
+  );
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const sql = `INSERT INTO maintenance_remarks_tbl 
+    (Request_Id, Remark_text, Created_by, User_role) 
+    VALUES (?, ?, ?, ?)`;
+  
+  const [result] = await pool.query(sql, [requestId, remarkText, createdBy, userRole]);
+  const insertId = (result as any).insertId;
+
+  const [remark] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_remarks_tbl WHERE Remark_Id = ?", 
+    [insertId]
+  );
+  return remark[0];
+}
+
+export async function getTicketRemarks(requestId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      mr.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
+      a.Roles AS CreatedByRoleId,
+      ur.Roles AS CreatedByRoleName
+    FROM maintenance_remarks_tbl mr
+    LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE mr.Request_Id = ?
+    ORDER BY mr.Created_at ASC
+  `;
+  
+  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  return rows;
+}

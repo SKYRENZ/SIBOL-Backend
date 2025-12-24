@@ -166,3 +166,40 @@ export async function getPriorities(req: Request, res: Response) {
     return res.status(500).json({ message: "Failed to fetch priorities" });
   }
 }
+
+// Add these new functions to your existing maintenanceController.ts
+
+export async function addRemark(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const { remark_text, created_by, user_role } = req.body;
+    
+    if (!remark_text || typeof remark_text !== 'string') {
+      return res.status(400).json({ message: "Remark text is required" });
+    }
+    
+    if (!created_by) {
+      return res.status(400).json({ message: "Created_by is required" });
+    }
+    
+    const remark = await service.addRemark(
+      requestId, 
+      remark_text, 
+      created_by,
+      user_role || null
+    );
+    return res.status(201).json(remark);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function getRemarks(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const remarks = await service.getTicketRemarks(requestId);
+    return res.json(remarks);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}

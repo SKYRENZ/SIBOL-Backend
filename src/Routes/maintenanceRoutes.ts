@@ -56,6 +56,19 @@ router.put("/:id/verify-completion", ctrl.staffVerifyCompletion); // Add this al
 router.put("/:id/remarks", ctrl.addRemarks); // Add this new endpoint
 
 /**
+ * POST /api/maintenance/:id/remarks
+ * body: { remark_text, created_by, user_role? }
+ * - Add a remark to the maintenance ticket
+ */
+router.post("/:id/remarks", ctrl.addRemark);
+
+/**
+ * GET /api/maintenance/:id/remarks
+ * - Get all remarks for a maintenance ticket
+ */
+router.get("/:id/remarks", ctrl.getRemarks);
+
+/**
  * PUT /api/maintenance/:id/cancel
  * body: { actor_account_id }
  * - creator (operator) or staff can cancel
