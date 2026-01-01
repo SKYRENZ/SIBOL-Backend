@@ -40,6 +40,11 @@ export const config = {
   EMAIL_SMTP_HOST: getOptionalEnv('EMAIL_SMTP_HOST', ''),
   EMAIL_SMTP_PORT: getOptionalEnv('EMAIL_SMTP_PORT', ''),
   SENDGRID_API_KEY: getOptionalEnv('SENDGRID_API_KEY', ''),
+
+  // ✅ Resend
+  RESEND_API_KEY: getOptionalEnv('RESEND_API_KEY', ''),
+  RESEND_FROM: getOptionalEnv('RESEND_FROM', ''),
+
   GOOGLE_CLIENT_ID: getOptionalEnv('GOOGLE_CLIENT_ID', ''),
   GOOGLE_ANDROID_CLIENT_ID: getOptionalEnv('GOOGLE_ANDROID_CLIENT_ID', ''),
   GOOGLE_CLIENT_SECRET: getOptionalEnv('GOOGLE_CLIENT_SECRET', ''),
