@@ -194,25 +194,80 @@ export async function staffVerifyCompletion(requestId: number, staffAccountId: n
   return updated[0];
 }
 
-export async function cancelTicket(requestId: number, actorAccountId: number): Promise<any> {
-  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [actorAccountId]);
+export async function cancelTicket(
+  requestId: number,
+  actorAccountId: number,
+  reason?: string
+): Promise<any> {
+  const [acctRows] = await pool.query<Row[]>(
+    "SELECT Roles FROM accounts_tbl WHERE Account_id = ?",
+    [actorAccountId]
+  );
   if (!acctRows.length) throw { status: 404, message: "Account not found" };
 
-  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+  const [ticketRows] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
+  if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
 
   const role = acctRows[0].Roles;
-  const isCreator = ticket[0].Created_by === actorAccountId;
-  const canCancel = isCreator || role === ROLE_STAFF || role === ROLE_ADMIN;
-
-  if (!canCancel) {
-    throw { status: 403, message: "Only creator, staff, or admin can cancel tickets" };
-  }
+  const ticket = ticketRows[0];
 
   const cancelledStatusId = await getStatusIdByName("Cancelled");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [cancelledStatusId, requestId]);
+  if (!cancelledStatusId) throw { status: 500, message: "Cancelled status not configured" };
 
-  const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  const cancelRequestedStatusId = await getStatusIdByName("Cancel Requested");
+  if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not configured" };
+
+  // Already cancelled?
+  if (ticket.Main_stat_id === cancelledStatusId) {
+    throw { status: 400, message: "Ticket is already cancelled" };
+  }
+
+  // ✅ Operator: must provide reason, set status = Cancel Requested (not Cancelled)
+  if (role === ROLE_OPERATOR) {
+    const trimmed = (reason ?? "").trim();
+    if (!trimmed) throw { status: 400, message: "Cancellation reason is required" };
+
+    await pool.query(
+      `UPDATE maintenance_tbl
+       SET Main_stat_id = ?,
+           Cancel_reason = ?,
+           Cancel_requested_by = ?,
+           Cancel_requested_at = NOW()
+       WHERE Request_Id = ?`,
+      [cancelRequestedStatusId, trimmed, actorAccountId, requestId]
+    );
+
+    const [updated] = await pool.query<Row[]>(
+      "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+      [requestId]
+    );
+    return updated[0];
+  }
+
+  // ✅ Staff/Admin: cancel immediately, status = Cancelled (reason optional)
+  if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
+    throw { status: 403, message: "Only staff/admin can cancel tickets" };
+  }
+
+  const trimmedReason = (reason ?? "").trim();
+
+  await pool.query(
+    `UPDATE maintenance_tbl
+     SET Main_stat_id = ?,
+         Cancelled_by = ?,
+         Cancelled_at = NOW(),
+         Cancel_reason = CASE WHEN ? <> '' THEN ? ELSE Cancel_reason END
+     WHERE Request_Id = ?`,
+    [cancelledStatusId, actorAccountId, trimmedReason, trimmedReason, requestId]
+  );
+
+  const [updated] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
   return updated[0];
 }
 

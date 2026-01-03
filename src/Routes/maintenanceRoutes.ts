@@ -70,10 +70,11 @@ router.get("/:id/remarks", ctrl.getRemarks);
 
 /**
  * PUT /api/maintenance/:id/cancel
- * body: { actor_account_id }
- * - creator (operator) or staff can cancel
+ * body: { actor_account_id, reason? }
+ * - Operator: reason REQUIRED (creates cancel request only)
+ * - Staff/Admin: reason optional (cancels immediately)
  */
-router.put("/:id/cancel", ctrl.cancelTicket);
+router.put("/:id/cancel", authenticate, ctrl.cancelTicket);
 
 /**
  * GET /api/maintenance/:id

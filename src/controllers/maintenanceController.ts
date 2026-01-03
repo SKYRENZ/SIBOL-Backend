@@ -81,7 +81,11 @@ export async function cancelTicket(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
     const actorAccountId = Number(req.body.actor_account_id);
-    const updated = await service.cancelTicket(requestId, actorAccountId);
+
+    // ✅ optional for staff/admin, REQUIRED for operator (enforced in service)
+    const reason = req.body.reason;
+
+    const updated = await service.cancelTicket(requestId, actorAccountId, reason);
     return res.json(updated);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -101,19 +105,23 @@ export async function getTicket(req: Request, res: Response) {
 export async function listTickets(req: Request, res: Response) {
   try {
     const filters: { status?: string; assigned_to?: number; created_by?: number } = {};
-    
+
     if (req.query.status) {
       filters.status = req.query.status as string;
     }
-    
-    if (req.query.assigned_to) {
-      filters.assigned_to = Number(req.query.assigned_to);
+
+    if (req.query.assigned_to !== undefined) {
+      const n = Number(req.query.assigned_to);
+      if (Number.isNaN(n)) return res.status(400).json({ message: "assigned_to must be a number" });
+      filters.assigned_to = n;
     }
-    
-    if (req.query.created_by) {
-      filters.created_by = Number(req.query.created_by);
+
+    if (req.query.created_by !== undefined) {
+      const n = Number(req.query.created_by);
+      if (Number.isNaN(n)) return res.status(400).json({ message: "created_by must be a number" });
+      filters.created_by = n;
     }
-    
+
     const rows = await service.listTickets(filters);
     return res.json(rows);
   } catch (err: any) {
