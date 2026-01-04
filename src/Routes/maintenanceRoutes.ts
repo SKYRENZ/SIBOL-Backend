@@ -98,4 +98,11 @@ router.post("/:id/attachments", ctrl.uploadAttachment);
  */
 router.get("/:id/attachments", ctrl.getAttachments);
 
+/**
+ * DELETE /api/maintenance/:id
+ * body: { actor_account_id }
+ * - Staff/Admin can delete only Requested or Cancel Requested tickets
+ */
+router.delete("/:id", authenticate, ctrl.deleteTicket);
+
 export default router;

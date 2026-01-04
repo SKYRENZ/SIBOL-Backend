@@ -17,35 +17,37 @@ async function getPriorityIdByName(name: string) {
 }
 
 export async function addAttachment(
-  requestId: number, 
-  uploadedBy: number, 
+  requestId: number,
+  uploadedBy: number,
   filepath: string,
   filename: string,
   filetype?: string,
-  filesize?: number
+  filesize?: number,
+  publicId?: string | null // ✅ add
 ): Promise<any> {
   const [ticket] = await pool.query<Row[]>(
-    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?", 
+    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?",
     [requestId]
   );
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
   const sql = `INSERT INTO maintenance_attachments_tbl 
-    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size) 
-    VALUES (?, ?, ?, ?, ?, ?)`;
-  
+    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size, Public_id) 
+    VALUES (?, ?, ?, ?, ?, ?, ?)`;
+
   const [result] = await pool.query(sql, [
-    requestId, 
-    uploadedBy, 
-    filepath, 
+    requestId,
+    uploadedBy,
+    filepath,
     filename,
     filetype || null,
-    filesize || null
+    filesize || null,
+    publicId || null, // ✅ add
   ]);
   const insertId = (result as any).insertId;
 
   const [attachment] = await pool.query<Row[]>(
-    "SELECT * FROM maintenance_attachments_tbl WHERE Attachment_Id = ?", 
+    "SELECT * FROM maintenance_attachments_tbl WHERE Attachment_Id = ?",
     [insertId]
   );
   return attachment[0];
@@ -413,4 +415,64 @@ export async function getTicketRemarks(requestId: number): Promise<any[]> {
   
   const [rows] = await pool.query<Row[]>(sql, [requestId]);
   return rows;
+}
+
+export async function deleteTicket(
+  requestId: number,
+  actorAccountId: number
+): Promise<{ deleted: boolean }> {
+  // role check
+  const [acctRows] = await pool.query<any[]>(
+    "SELECT Roles FROM accounts_tbl WHERE Account_id = ?",
+    [actorAccountId]
+  );
+  if (!acctRows.length) throw { status: 404, message: "Account not found" };
+
+  const role = acctRows[0].Roles;
+  if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
+    throw { status: 403, message: "Only Barangay Staff or Admin can delete tickets" };
+  }
+
+  // load ticket + status
+  const [ticketRows] = await pool.query<any[]>(
+    "SELECT Request_Id, Main_stat_id FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
+  if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
+
+  const requestedStatusId = await getStatusIdByName("Requested");
+  if (!requestedStatusId) throw { status: 500, message: "Requested status not configured" };
+
+  const cancelRequestedStatusId = await getStatusIdByName("Cancel Requested");
+  if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not configured" };
+
+  const mainStatId = ticketRows[0].Main_stat_id;
+  const canDelete = mainStatId === requestedStatusId || mainStatId === cancelRequestedStatusId;
+
+  if (!canDelete) {
+    throw {
+      status: 400,
+      message: "Only Requested or Cancel Requested tickets can be deleted",
+    };
+  }
+
+  // transaction: delete children first
+  const conn = await (pool as any).getConnection();
+  try {
+    await conn.beginTransaction();
+
+    await conn.query("DELETE FROM maintenance_attachments_tbl WHERE Request_Id = ?", [requestId]);
+    await conn.query("DELETE FROM maintenance_remarks_tbl WHERE Request_Id = ?", [requestId]);
+
+    const [delRes] = await conn.query("DELETE FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+    const affected = (delRes as any).affectedRows ?? 0;
+
+    await conn.commit();
+    return { deleted: affected > 0 };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }

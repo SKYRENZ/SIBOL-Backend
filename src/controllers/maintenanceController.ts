@@ -1,6 +1,6 @@
 import * as service from "../services/maintenanceService.js";
 import type { Request, Response } from "express";
-import { checkUserRole } from "./userController.js"; // ✅ Import the reusable function
+import { checkUserRole } from "./userController.js";
 
 export async function createTicket(req: Request, res: Response) {
   try {
@@ -138,18 +138,23 @@ export async function uploadAttachment(req: Request, res: Response) {
     const filetype = req.body.filetype;
     const filesize = req.body.filesize ? Number(req.body.filesize) : undefined;
 
+    // ✅ NEW
+    const publicId = req.body.public_id ?? null;
+
     if (!filepath || !filename) {
       return res.status(400).json({ message: "Filepath and filename are required" });
     }
 
     const attachment = await service.addAttachment(
-      requestId, 
-      uploadedBy, 
-      filepath, 
+      requestId,
+      uploadedBy,
+      filepath,
       filename,
       filetype,
-      filesize
+      filesize,
+      publicId // ✅ pass through
     );
+
     return res.status(201).json(attachment);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -207,6 +212,28 @@ export async function getRemarks(req: Request, res: Response) {
     const requestId = Number(req.params.id);
     const remarks = await service.getTicketRemarks(requestId);
     return res.json(remarks);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function deleteTicket(req: Request, res: Response) {
+  try {
+    // ✅ Only Admin and Barangay can delete
+    if (!checkUserRole(req, res, ["Admin", "Barangay"])) return;
+
+    const requestId = Number(req.params.id);
+    const actorAccountId = Number(req.body.actor_account_id);
+
+    if (!requestId || Number.isNaN(requestId)) {
+      return res.status(400).json({ message: "Invalid request id" });
+    }
+    if (!actorAccountId || Number.isNaN(actorAccountId)) {
+      return res.status(400).json({ message: "actor_account_id is required" });
+    }
+
+    const result = await service.deleteTicket(requestId, actorAccountId);
+    return res.json(result);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
