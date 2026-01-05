@@ -164,7 +164,20 @@ export async function uploadAttachment(req: Request, res: Response) {
 export async function getAttachments(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const attachments = await service.getTicketAttachments(requestId);
+
+    // ✅ optional cutoff
+    const beforeRaw =
+      typeof req.query.before === 'string' ? req.query.before : undefined;
+
+    let before: Date | undefined;
+    if (beforeRaw) {
+      before = new Date(beforeRaw);
+      if (Number.isNaN(before.getTime())) {
+        return res.status(400).json({ message: "Invalid before datetime" });
+      }
+    }
+
+    const attachments = await service.getTicketAttachments(requestId, before);
     return res.json(attachments);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -210,7 +223,20 @@ export async function addRemark(req: Request, res: Response) {
 export async function getRemarks(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const remarks = await service.getTicketRemarks(requestId);
+
+    // ✅ optional cutoff
+    const beforeRaw =
+      typeof req.query.before === 'string' ? req.query.before : undefined;
+
+    let before: Date | undefined;
+    if (beforeRaw) {
+      before = new Date(beforeRaw);
+      if (Number.isNaN(before.getTime())) {
+        return res.status(400).json({ message: "Invalid before datetime" });
+      }
+    }
+
+    const remarks = await service.getTicketRemarks(requestId, before);
     return res.json(remarks);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });

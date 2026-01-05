@@ -53,8 +53,8 @@ export async function addAttachment(
   return attachment[0];
 }
 
-export async function getTicketAttachments(requestId: number): Promise<any[]> {
-  const sql = `
+export async function getTicketAttachments(requestId: number, before?: Date | null): Promise<any[]> {
+  let sql = `
     SELECT
       ma.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS UploaderName,
@@ -65,10 +65,18 @@ export async function getTicketAttachments(requestId: number): Promise<any[]> {
     LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE ma.Request_Id = ?
-    ORDER BY ma.Uploaded_at ASC
   `;
-  
-  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  const params: any[] = [requestId];
+
+  // ✅ NEW: cutoff (used for Operator Cancelled-history view)
+  if (before) {
+    sql += ` AND ma.Uploaded_at <= ?`;
+    params.push(before);
+  }
+
+  sql += ` ORDER BY ma.Uploaded_at ASC`;
+
+  const [rows] = await pool.query<Row[]>(sql, params);
   return rows;
 }
 
@@ -448,8 +456,8 @@ export async function addRemark(
   return rows.length ? rows[0] : null;
 }
 
-export async function getTicketRemarks(requestId: number): Promise<any[]> {
-  const sql = `
+export async function getTicketRemarks(requestId: number, before?: Date | null): Promise<any[]> {
+  let sql = `
     SELECT 
       mr.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
@@ -460,10 +468,18 @@ export async function getTicketRemarks(requestId: number): Promise<any[]> {
     LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE mr.Request_Id = ?
-    ORDER BY mr.Created_at ASC
   `;
-  
-  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  const params: any[] = [requestId];
+
+  // ✅ NEW: cutoff (used for Operator Cancelled-history view)
+  if (before) {
+    sql += ` AND mr.Created_at <= ?`;
+    params.push(before);
+  }
+
+  sql += ` ORDER BY mr.Created_at ASC`;
+
+  const [rows] = await pool.query<Row[]>(sql, params);
   return rows;
 }
 
@@ -572,8 +588,12 @@ export async function listOperatorCancelledHistory(operatorAccountId: number): P
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
+
+      l.Cancel_Log_Id AS CancelLogId,
       l.Reason AS CancelLogReason,
+      l.Requested_At AS CancelRequestedAt,   -- ✅ NEW: cutoff we want
       l.Approved_At AS CancelApprovedAt
+
     FROM maintenance_cancel_log_tbl l
     JOIN (
       SELECT Request_Id, MAX(Cancel_Log_Id) AS LatestCancelLogId
