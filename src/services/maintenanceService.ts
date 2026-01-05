@@ -408,26 +408,44 @@ export async function addRemark(
   requestId: number,
   remarkText: string,
   createdBy: number,
-  userRole: string
+  userRole: string | null
 ): Promise<any> {
+  const trimmed = (remarkText ?? "").trim();
+  if (!trimmed) throw { status: 400, message: "Remark text is required" };
+
   const [ticket] = await pool.query<Row[]>(
-    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?", 
+    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?",
     [requestId]
   );
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
-  const sql = `INSERT INTO maintenance_remarks_tbl 
-    (Request_Id, Remark_text, Created_by, User_role) 
-    VALUES (?, ?, ?, ?)`;
-  
-  const [result] = await pool.query(sql, [requestId, remarkText, createdBy, userRole]);
-  const insertId = (result as any).insertId;
+  const [result] = await pool.query<any>(
+    `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Created_at)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [requestId, trimmed, createdBy, userRole ?? null]
+  );
 
-  const [remark] = await pool.query<Row[]>(
-    "SELECT * FROM maintenance_remarks_tbl WHERE Remark_Id = ?", 
+  const insertId = result?.insertId;
+
+  // ✅ Return joined row so mobile can show sender name + role immediately
+  const [rows] = await pool.query<Row[]>(
+    `
+    SELECT
+      mr.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
+      a.Roles AS CreatedByRoleId,
+      ur.Roles AS CreatedByRoleName
+    FROM maintenance_remarks_tbl mr
+    LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE mr.Remark_Id = ?
+    LIMIT 1
+    `,
     [insertId]
   );
-  return remark[0];
+
+  return rows.length ? rows[0] : null;
 }
 
 export async function getTicketRemarks(requestId: number): Promise<any[]> {
