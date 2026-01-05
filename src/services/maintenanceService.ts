@@ -476,3 +476,77 @@ export async function deleteTicket(
     conn.release();
   }
 }
+
+async function findLatestOpenCancelLogId(requestId: number, operatorId: number): Promise<number | null> {
+  const [rows] = await pool.query<Row[]>(
+    `SELECT Cancel_Log_Id
+     FROM maintenance_cancel_log_tbl
+     WHERE Request_Id = ? AND Operator_Account_Id = ? AND Approved_At IS NULL
+     ORDER BY Requested_At DESC
+     LIMIT 1`,
+    [requestId, operatorId]
+  );
+  return rows.length ? rows[0].Cancel_Log_Id : null;
+}
+
+async function insertCancelLog(requestId: number, operatorId: number, reason: string | null) {
+  await pool.query(
+    `INSERT INTO maintenance_cancel_log_tbl (Request_Id, Operator_Account_Id, Reason, Requested_At)
+     VALUES (?, ?, ?, NOW())`,
+    [requestId, operatorId, reason]
+  );
+}
+
+async function approveCancelLog(cancelLogId: number, approvedBy: number) {
+  await pool.query(
+    `UPDATE maintenance_cancel_log_tbl
+     SET Approved_By = ?, Approved_At = NOW()
+     WHERE Cancel_Log_Id = ?`,
+    [approvedBy, cancelLogId]
+  );
+}
+
+/**
+ * ✅ NEW: Operator Cancelled tab feed (history-based)
+ * Rules:
+ * - show only approved cancellations
+ * - hide if ticket is currently assigned back to the same operator (so it goes to Pending)
+ * - de-dupe: return only latest approved log per ticket
+ */
+export async function listOperatorCancelledHistory(operatorAccountId: number): Promise<any[]> {
+  const sql = `
+    SELECT
+      m.*,
+      p.Priority,
+      s.Status,
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole,
+      l.Reason AS CancelLogReason,
+      l.Approved_At AS CancelApprovedAt
+    FROM maintenance_cancel_log_tbl l
+    JOIN (
+      SELECT Request_Id, MAX(Cancel_Log_Id) AS LatestCancelLogId
+      FROM maintenance_cancel_log_tbl
+      WHERE Operator_Account_Id = ?
+        AND Approved_At IS NOT NULL
+      GROUP BY Request_Id
+    ) latest ON latest.LatestCancelLogId = l.Cancel_Log_Id
+    JOIN maintenance_tbl m ON l.Request_Id = m.Request_Id
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
+    WHERE l.Operator_Account_Id = ?
+      AND (m.Assigned_to IS NULL OR m.Assigned_to <> ?)
+    ORDER BY l.Approved_At DESC
+  `;
+
+  const [rows] = await pool.query<Row[]>(sql, [
+    operatorAccountId,
+    operatorAccountId,
+    operatorAccountId,
+  ]);
+  return rows;
+}

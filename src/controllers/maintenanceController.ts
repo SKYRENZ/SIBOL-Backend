@@ -238,3 +238,17 @@ export async function deleteTicket(req: Request, res: Response) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
 }
+
+export async function listOperatorCancelledHistory(req: Request, res: Response) {
+  try {
+    const operatorId = Number(req.query.operator_account_id);
+    if (!operatorId || Number.isNaN(operatorId)) {
+      return res.status(400).json({ message: "operator_account_id must be a number" });
+    }
+
+    const rows = await service.listOperatorCancelledHistory(operatorId);
+    return res.json(rows);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}

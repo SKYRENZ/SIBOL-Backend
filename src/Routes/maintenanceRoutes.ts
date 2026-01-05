@@ -77,6 +77,12 @@ router.get("/:id/remarks", ctrl.getRemarks);
 router.put("/:id/cancel", authenticate, ctrl.cancelTicket);
 
 /**
+ * GET /api/maintenance/operator-cancelled-history?operator_account_id=123
+ * - Approved cancellation history for operator (for Operator Cancelled tab)
+ */
+router.get("/operator-cancelled-history", authenticate, ctrl.listOperatorCancelledHistory);
+
+/**
  * GET /api/maintenance/:id
  */
 router.get("/:id", ctrl.getTicket);
