@@ -242,6 +242,9 @@ export async function cancelTicket(
       [cancelRequestedStatusId, trimmed, actorAccountId, requestId]
     );
 
+    // ✅ NEW: log the cancellation request
+    await insertCancelLog(requestId, actorAccountId, trimmed);
+
     const [updated] = await pool.query<Row[]>(
       "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
       [requestId]
@@ -259,12 +262,39 @@ export async function cancelTicket(
   await pool.query(
     `UPDATE maintenance_tbl
      SET Main_stat_id = ?,
+         Assigned_to = NULL,          -- ✅ unassign when cancelled
          Cancelled_by = ?,
          Cancelled_at = NOW(),
          Cancel_reason = CASE WHEN ? <> '' THEN ? ELSE Cancel_reason END
      WHERE Request_Id = ?`,
     [cancelledStatusId, actorAccountId, trimmedReason, trimmedReason, requestId]
   );
+
+  // ✅ NEW: ensure cancel_log gets rows
+  // 1) Approve ALL pending cancel logs for this ticket (so every operator who requested cancel keeps it)
+  const [updateResult] = await pool.query<any>(
+    `UPDATE maintenance_cancel_log_tbl
+     SET Approved_By = ?, Approved_At = NOW()
+     WHERE Request_Id = ? AND Approved_At IS NULL`,
+    [actorAccountId, requestId]
+  );
+
+  // 2) If there were NO existing logs at all (common when Barangay cancels directly),
+  // create an approved log for the currently assigned operator (or cancel_requested_by as fallback).
+  const affected = updateResult?.affectedRows ?? 0;
+
+  if (affected === 0) {
+    const operatorForHistory = (ticket.Assigned_to ?? ticket.Cancel_requested_by ?? null) as number | null;
+
+    if (operatorForHistory) {
+      await pool.query(
+        `INSERT INTO maintenance_cancel_log_tbl
+          (Request_Id, Operator_Account_Id, Reason, Requested_At, Approved_By, Approved_At)
+         VALUES (?, ?, ?, NOW(), ?, NOW())`,
+        [requestId, operatorForHistory, trimmedReason || null, actorAccountId]
+      );
+    }
+  }
 
   const [updated] = await pool.query<Row[]>(
     "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
