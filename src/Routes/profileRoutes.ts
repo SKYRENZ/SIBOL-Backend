@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { handleUpdateProfile, handleGetProfile, handleGetMyPoints } from '../controllers/profileController';
+import {
+  handleUpdateProfile,
+  handleGetProfile,
+  handleGetMyPoints,
+  handleGetMyProfile,
+  handleUpdateMyProfile
+} from '../controllers/profileController';
 import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
@@ -7,10 +13,12 @@ const router = Router();
 // ✅ NEW: Get authenticated user's points (requires auth)
 router.get('/points', authenticate, handleGetMyPoints);
 
-// GET /api/profile/:accountId - fetch profile (public, for schedules)
-router.get('/:accountId', handleGetProfile);
+// ✅ NEW: logged-in user's profile
+router.get('/me', authenticate, handleGetMyProfile);
+router.put('/me', authenticate, handleUpdateMyProfile);
 
-// PUT /api/profile/:accountId - update user's profile (requires auth)
+// existing
+router.get('/:accountId', handleGetProfile);
 router.put('/:accountId', authenticate, handleUpdateProfile);
 
 export default router;
