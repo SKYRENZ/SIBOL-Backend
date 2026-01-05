@@ -1,5 +1,6 @@
 import { Router } from "express";
 import * as ctrl from "../controllers/maintenanceController.js";
+import { authenticate } from "../middleware/authenticate.js";
 
 const router = Router();
 
@@ -11,12 +12,18 @@ const router = Router();
 router.post("/", ctrl.createTicket);
 
 /**
+ * GET /api/maintenance/priorities
+ * Get all priority levels
+ */
+router.get("/priorities", ctrl.getPriorities);
+
+/**
  * PUT /api/maintenance/:id/accept
  * body: { staff_account_id, assign_to? } 
  * - staff_account_id: account id of Barangay_staff performing acceptance
  * - assign_to: account id of Operator to assign (optional)
  */
-router.put("/:id/accept", ctrl.acceptAndAssign);
+router.put("/:id/accept", authenticate, ctrl.acceptAndAssign);
 
 /**
  * PUT /api/maintenance/:id/ongoing
@@ -47,6 +54,19 @@ router.put("/:id/verify-completion", ctrl.staffVerifyCompletion); // Add this al
  * - Add remarks to the maintenance ticket
  */
 router.put("/:id/remarks", ctrl.addRemarks); // Add this new endpoint
+
+/**
+ * POST /api/maintenance/:id/remarks
+ * body: { remark_text, created_by, user_role? }
+ * - Add a remark to the maintenance ticket
+ */
+router.post("/:id/remarks", ctrl.addRemark);
+
+/**
+ * GET /api/maintenance/:id/remarks
+ * - Get all remarks for a maintenance ticket
+ */
+router.get("/:id/remarks", ctrl.getRemarks);
 
 /**
  * PUT /api/maintenance/:id/cancel

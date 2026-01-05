@@ -222,11 +222,15 @@ export async function getTicketById(requestId: number): Promise<any> {
       m.*, 
       p.Priority, 
       s.Status,
-      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     WHERE m.Request_Id = ?
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
@@ -248,11 +252,15 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       p.Priority, 
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole,
       COUNT(ma.Attachment_Id) AS AttachmentCount
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
     WHERE 1=1
   `;
@@ -299,4 +307,55 @@ export async function addRemarksToTicket(requestId: number, remarks: string): Pr
   
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
+}
+
+export async function getAllPriorities(): Promise<any[]> {
+  const sql = "SELECT Priority_id, Priority FROM maintenance_priority_tbl ORDER BY Priority_id ASC";
+  const [rows] = await pool.query<Row[]>(sql);
+  return rows;
+}
+
+export async function addRemark(
+  requestId: number,
+  remarkText: string,
+  createdBy: number,
+  userRole: string
+): Promise<any> {
+  const [ticket] = await pool.query<Row[]>(
+    "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?", 
+    [requestId]
+  );
+  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+
+  const sql = `INSERT INTO maintenance_remarks_tbl 
+    (Request_Id, Remark_text, Created_by, User_role) 
+    VALUES (?, ?, ?, ?)`;
+  
+  const [result] = await pool.query(sql, [requestId, remarkText, createdBy, userRole]);
+  const insertId = (result as any).insertId;
+
+  const [remark] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_remarks_tbl WHERE Remark_Id = ?", 
+    [insertId]
+  );
+  return remark[0];
+}
+
+export async function getTicketRemarks(requestId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      mr.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
+      a.Roles AS CreatedByRoleId,
+      ur.Roles AS CreatedByRoleName
+    FROM maintenance_remarks_tbl mr
+    LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE mr.Request_Id = ?
+    ORDER BY mr.Created_at ASC
+  `;
+  
+  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  return rows;
 }

@@ -1,9 +1,9 @@
 import * as service from "../services/maintenanceService.js";
 import type { Request, Response } from "express";
+import { checkUserRole } from "./userController.js"; // ✅ Import the reusable function
 
 export async function createTicket(req: Request, res: Response) {
   try {
-    // expected body: { title, details?, priority?, created_by, due_date?, attachment? }
     const ticket = await service.createTicket(req.body);
     return res.status(201).json(ticket);
   } catch (err: any) {
@@ -13,9 +13,14 @@ export async function createTicket(req: Request, res: Response) {
 
 export async function acceptAndAssign(req: Request, res: Response) {
   try {
+    // ✅ Only Admin and Barangay can accept
+    if (!checkUserRole(req, res, ['Admin', 'Barangay'])) {
+      return; // Response already sent by checkUserRole
+    }
+
     const requestId = Number(req.params.id);
-    const staffAccountId = Number(req.body.staff_account_id); // staff performing action
-    const assignTo = req.body.assign_to ?? null; // operator account id to assign or null
+    const staffAccountId = Number(req.body.staff_account_id);
+    const assignTo = req.body.assign_to ?? null;
     const updated = await service.acceptAndAssign(requestId, staffAccountId, assignTo);
     return res.json(updated);
   } catch (err: any) {
@@ -148,6 +153,52 @@ export async function getAttachments(req: Request, res: Response) {
     const requestId = Number(req.params.id);
     const attachments = await service.getTicketAttachments(requestId);
     return res.json(attachments);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function getPriorities(req: Request, res: Response) {
+  try {
+    const priorities = await service.getAllPriorities();
+    return res.json(priorities);
+  } catch (err: any) {
+    return res.status(500).json({ message: "Failed to fetch priorities" });
+  }
+}
+
+// Add these new functions to your existing maintenanceController.ts
+
+export async function addRemark(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const { remark_text, created_by, user_role } = req.body;
+    
+    if (!remark_text || typeof remark_text !== 'string') {
+      return res.status(400).json({ message: "Remark text is required" });
+    }
+    
+    if (!created_by) {
+      return res.status(400).json({ message: "Created_by is required" });
+    }
+    
+    const remark = await service.addRemark(
+      requestId, 
+      remark_text, 
+      created_by,
+      user_role || null
+    );
+    return res.status(201).json(remark);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function getRemarks(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const remarks = await service.getTicketRemarks(requestId);
+    return res.json(remarks);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
