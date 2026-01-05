@@ -55,13 +55,15 @@ export async function addAttachment(
 
 export async function getTicketAttachments(requestId: number): Promise<any[]> {
   const sql = `
-    SELECT 
+    SELECT
       ma.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS UploaderName,
-      a.Roles AS UploaderRole
+      a.Roles AS UploaderRoleId,
+      ur.Roles AS UploaderRoleName
     FROM maintenance_attachments_tbl ma
     LEFT JOIN profile_tbl p ON ma.Uploaded_by = p.Account_id
     LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE ma.Request_Id = ?
     ORDER BY ma.Uploaded_at ASC
   `;
