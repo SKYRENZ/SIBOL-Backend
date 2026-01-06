@@ -486,8 +486,12 @@ export async function getTicketRemarks(requestId: number, before?: Date | null):
 
 export async function deleteTicket(
   requestId: number,
-  actorAccountId: number
+  actorAccountId: number,
+  reason: string
 ): Promise<{ deleted: boolean }> {
+  const trimmedReason = (reason ?? "").trim();
+  if (!trimmedReason) throw { status: 400, message: "reason is required" };
+
   // role check
   const [acctRows] = await pool.query<any[]>(
     "SELECT Roles FROM accounts_tbl WHERE Account_id = ?",
@@ -521,7 +525,6 @@ export async function deleteTicket(
 
   const mainStatId = ticketRows[0].Main_stat_id;
 
-  // ✅ allow delete from Request Maintenance tab cases
   const canDelete =
     mainStatId === requestedStatusId ||
     mainStatId === cancelRequestedStatusId ||
@@ -531,10 +534,15 @@ export async function deleteTicket(
     throw { status: 400, message: "Only Requested / Cancel Requested / Cancelled tickets can be deleted" };
   }
 
-  // ✅ SOFT DELETE: keep remarks/attachments/history
+  // ✅ SOFT DELETE + audit fields
   await pool.query(
-    "UPDATE maintenance_tbl SET IsDeleted = 1 WHERE Request_Id = ?",
-    [requestId]
+    `UPDATE maintenance_tbl
+     SET IsDeleted = 1,
+         Deleted_by = ?,
+         Deleted_at = NOW(),
+         Deleted_reason = ?
+     WHERE Request_Id = ?`,
+    [actorAccountId, trimmedReason, requestId]
   );
 
   return { deleted: true };

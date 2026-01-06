@@ -253,11 +253,22 @@ export async function deleteTicket(req: Request, res: Response) {
 
     const actorAccountId = Number(actorRaw);
 
+    const reasonRaw =
+      (req.body?.reason as unknown) ??
+      (req.query?.reason as unknown);
+
+    const reason = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
+
     if (!actorAccountId || Number.isNaN(actorAccountId)) {
       return res.status(400).json({ message: "actor_account_id is required" });
     }
 
-    const result = await service.deleteTicket(requestId, actorAccountId);
+    // ✅ require a reason for delete
+    if (!reason) {
+      return res.status(400).json({ message: "reason is required" });
+    }
+
+    const result = await service.deleteTicket(requestId, actorAccountId, reason);
     return res.json(result);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
