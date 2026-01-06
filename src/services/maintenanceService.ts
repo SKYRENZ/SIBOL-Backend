@@ -329,16 +329,16 @@ export async function getTicketById(requestId: number): Promise<any> {
     LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     WHERE m.Request_Id = ?
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL) -- ✅ NEW: hide deleted
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
-  
-  // Get attachments
+
   const attachments = await getTicketAttachments(requestId);
-  
+
   return {
     ...ticket[0],
-    Attachments: attachments
+    Attachments: attachments,
   };
 }
 
@@ -360,6 +360,7 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
     WHERE 1=1
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)  -- ✅ NEW: hide deleted
   `;
   const params: any[] = [];
 
@@ -499,48 +500,44 @@ export async function deleteTicket(
     throw { status: 403, message: "Only Barangay Staff or Admin can delete tickets" };
   }
 
-  // load ticket + status
+  // load ticket + status (+ IsDeleted)
   const [ticketRows] = await pool.query<any[]>(
-    "SELECT Request_Id, Main_stat_id FROM maintenance_tbl WHERE Request_Id = ?",
+    "SELECT Request_Id, Main_stat_id, IsDeleted FROM maintenance_tbl WHERE Request_Id = ?",
     [requestId]
   );
   if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
 
+  // idempotent
+  if (ticketRows[0].IsDeleted === 1) return { deleted: true };
+
   const requestedStatusId = await getStatusIdByName("Requested");
-  if (!requestedStatusId) throw { status: 500, message: "Requested status not configured" };
+  if (!requestedStatusId) throw { status: 500, message: "Requested status not found" };
 
   const cancelRequestedStatusId = await getStatusIdByName("Cancel Requested");
-  if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not configured" };
+  if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not found" };
+
+  const cancelledStatusId = await getStatusIdByName("Cancelled");
+  if (!cancelledStatusId) throw { status: 500, message: "Cancelled status not found" };
 
   const mainStatId = ticketRows[0].Main_stat_id;
-  const canDelete = mainStatId === requestedStatusId || mainStatId === cancelRequestedStatusId;
+
+  // ✅ allow delete from Request Maintenance tab cases
+  const canDelete =
+    mainStatId === requestedStatusId ||
+    mainStatId === cancelRequestedStatusId ||
+    mainStatId === cancelledStatusId;
 
   if (!canDelete) {
-    throw {
-      status: 400,
-      message: "Only Requested or Cancel Requested tickets can be deleted",
-    };
+    throw { status: 400, message: "Only Requested / Cancel Requested / Cancelled tickets can be deleted" };
   }
 
-  // transaction: delete children first
-  const conn = await (pool as any).getConnection();
-  try {
-    await conn.beginTransaction();
+  // ✅ SOFT DELETE: keep remarks/attachments/history
+  await pool.query(
+    "UPDATE maintenance_tbl SET IsDeleted = 1 WHERE Request_Id = ?",
+    [requestId]
+  );
 
-    await conn.query("DELETE FROM maintenance_attachments_tbl WHERE Request_Id = ?", [requestId]);
-    await conn.query("DELETE FROM maintenance_remarks_tbl WHERE Request_Id = ?", [requestId]);
-
-    const [delRes] = await conn.query("DELETE FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-    const affected = (delRes as any).affectedRows ?? 0;
-
-    await conn.commit();
-    return { deleted: affected > 0 };
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  return { deleted: true };
 }
 
 async function findLatestOpenCancelLogId(requestId: number, operatorId: number): Promise<number | null> {
@@ -618,5 +615,30 @@ export async function listOperatorCancelledHistory(operatorAccountId: number): P
     operatorAccountId,
     operatorAccountId,
   ]);
+  return rows;
+}
+
+export async function listDeletedTickets(): Promise<any[]> {
+  const sql = `
+    SELECT 
+      m.*, 
+      p.Priority, 
+      s.Status,
+      CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
+      CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
+      creator_account.Roles AS CreatorRole,
+      COUNT(ma.Attachment_Id) AS AttachmentCount
+    FROM maintenance_tbl m
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+    LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+    LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
+    LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
+    LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
+    WHERE m.IsDeleted = 1
+    GROUP BY m.Request_Id
+    ORDER BY m.Request_date DESC
+  `;
+  const [rows] = await pool.query<Row[]>(sql);
   return rows;
 }

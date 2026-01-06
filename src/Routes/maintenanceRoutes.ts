@@ -83,6 +83,12 @@ router.put("/:id/cancel", authenticate, ctrl.cancelTicket);
 router.get("/operator-cancelled-history", authenticate, ctrl.listOperatorCancelledHistory);
 
 /**
+ * GET /api/maintenance/deleted
+ * - list all soft-deleted tickets
+ */
+router.get("/deleted", authenticate, ctrl.listDeletedTickets);
+
+/**
  * GET /api/maintenance/:id
  */
 router.get("/:id", ctrl.getTicket);

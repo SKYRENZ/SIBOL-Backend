@@ -245,15 +245,14 @@ export async function getRemarks(req: Request, res: Response) {
 
 export async function deleteTicket(req: Request, res: Response) {
   try {
-    // ✅ Only Admin and Barangay can delete
-    if (!checkUserRole(req, res, ["Admin", "Barangay"])) return;
-
     const requestId = Number(req.params.id);
-    const actorAccountId = Number(req.body.actor_account_id);
 
-    if (!requestId || Number.isNaN(requestId)) {
-      return res.status(400).json({ message: "Invalid request id" });
-    }
+    const actorRaw =
+      (req.body?.actor_account_id as unknown) ??
+      (req.query?.actor_account_id as unknown);
+
+    const actorAccountId = Number(actorRaw);
+
     if (!actorAccountId || Number.isNaN(actorAccountId)) {
       return res.status(400).json({ message: "actor_account_id is required" });
     }
@@ -273,6 +272,18 @@ export async function listOperatorCancelledHistory(req: Request, res: Response) 
     }
 
     const rows = await service.listOperatorCancelledHistory(operatorId);
+    return res.json(rows);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function listDeletedTickets(req: Request, res: Response) {
+  try {
+    // ✅ Only Admin and Barangay can view deleted compilation
+    if (!checkUserRole(req, res, ["Admin", "Barangay"])) return;
+
+    const rows = await service.listDeletedTickets();
     return res.json(rows);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
