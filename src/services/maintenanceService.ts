@@ -132,25 +132,63 @@ export async function createTicket(data: {
   return ticket[0];
 }
 
-export async function acceptAndAssign(requestId: number, staffAccountId: number, assignToAccountId: number | null): Promise<any> {
+export async function acceptAndAssign(
+  requestId: number,
+  staffAccountId: number,
+  assignToAccountId: number | null
+): Promise<any> {
   // Verify staff/admin role
-  const [acctRows] = await pool.query<Row[]>("SELECT Roles FROM accounts_tbl WHERE Account_id = ?", [staffAccountId]);
+  const [acctRows] = await pool.query<Row[]>(
+    "SELECT Roles FROM accounts_tbl WHERE Account_id = ?",
+    [staffAccountId]
+  );
   if (!acctRows.length) throw { status: 404, message: "Staff account not found" };
-  
+
   const role = acctRows[0].Roles;
   if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
     throw { status: 403, message: "Only Barangay Staff or Admin can accept tickets" };
   }
 
-  // Verify ticket exists and is in Requested status
-  const [ticket] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
-  if (!ticket.length) throw { status: 404, message: "Ticket not found" };
+  // Verify ticket exists
+  const [ticketRows] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
+  if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
+
+  const ticket = ticketRows[0];
 
   const onGoingStatusId = await getStatusIdByName("On-going");
+  if (!onGoingStatusId) throw { status: 500, message: "Status 'On-going' not found" };
 
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?", [onGoingStatusId, assignToAccountId, requestId]);
+  // ✅ Only when coming from "Cancelled" status: clear cancel-related fields
+  const cancelledStatusId = await getStatusIdByName("Cancelled");
+  if (!cancelledStatusId) throw { status: 500, message: "Status 'Cancelled' not found" };
 
-  const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
+  if (ticket.Main_stat_id === cancelledStatusId) {
+    await pool.query(
+      `UPDATE maintenance_tbl
+       SET Main_stat_id = ?,
+           Assigned_to = ?,
+           Cancel_reason = NULL,
+           Cancel_requested_by = NULL,
+           Cancel_requested_at = NULL,
+           Cancelled_by = NULL,
+           Cancelled_at = NULL
+       WHERE Request_Id = ?`,
+      [onGoingStatusId, assignToAccountId, requestId]
+    );
+  } else {
+    await pool.query(
+      "UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?",
+      [onGoingStatusId, assignToAccountId, requestId]
+    );
+  }
+
+  const [updated] = await pool.query<Row[]>(
+    "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
+    [requestId]
+  );
   return updated[0];
 }
 
@@ -321,13 +359,37 @@ export async function getTicketById(requestId: number): Promise<any> {
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
-      creator_account.Roles AS CreatorRole
+      creator_account.Roles AS CreatorRole,
+
+      -- ✅ Cancel Requested (Operator)
+      CONCAT(cr_profile.FirstName, ' ', cr_profile.LastName) AS CancelRequestedByName,
+      cr_account.Roles AS CancelRequestedByRoleId,
+      cr_role.Roles AS CancelRequestedByRole,
+
+      -- ✅ Cancelled (Staff/Admin)
+      CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
+      c_account.Roles AS CancelledByRoleId,
+      c_role.Roles AS CancelledByRole
+
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
+
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
+
     LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
+
+    -- ✅ joins for Cancel Requested by
+    LEFT JOIN profile_tbl cr_profile ON m.Cancel_requested_by = cr_profile.Account_id
+    LEFT JOIN accounts_tbl cr_account ON m.Cancel_requested_by = cr_account.Account_id
+    LEFT JOIN user_roles_tbl cr_role ON cr_account.Roles = cr_role.Roles_id
+
+    -- ✅ joins for Cancelled by
+    LEFT JOIN profile_tbl c_profile ON m.Cancelled_by = c_profile.Account_id
+    LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
+    LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
+
     WHERE m.Request_Id = ?
       AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL) -- ✅ NEW: hide deleted
   `;
@@ -351,7 +413,18 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
-      COUNT(ma.Attachment_Id) AS AttachmentCount
+      COUNT(ma.Attachment_Id) AS AttachmentCount,
+
+      -- ✅ Cancel Requested (Operator)
+      CONCAT(cr_profile.FirstName, ' ', cr_profile.LastName) AS CancelRequestedByName,
+      cr_account.Roles AS CancelRequestedByRoleId,
+      cr_role.Roles AS CancelRequestedByRole,
+
+      -- ✅ Cancelled (Staff/Admin)
+      CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
+      c_account.Roles AS CancelledByRoleId,
+      c_role.Roles AS CancelledByRole
+
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
@@ -359,6 +432,17 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
+
+    -- ✅ joins for Cancel Requested by
+    LEFT JOIN profile_tbl cr_profile ON m.Cancel_requested_by = cr_profile.Account_id
+    LEFT JOIN accounts_tbl cr_account ON m.Cancel_requested_by = cr_account.Account_id
+    LEFT JOIN user_roles_tbl cr_role ON cr_account.Roles = cr_role.Roles_id
+
+    -- ✅ joins for Cancelled by
+    LEFT JOIN profile_tbl c_profile ON m.Cancelled_by = c_profile.Account_id
+    LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
+    LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
+
     WHERE 1=1
       AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)  -- ✅ NEW: hide deleted
   `;
