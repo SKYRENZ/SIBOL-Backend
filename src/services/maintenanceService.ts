@@ -219,7 +219,12 @@ export async function operatorMarkForVerification(requestId: number, operatorAcc
   if (ticket[0].Assigned_to !== operatorAccountId) throw { status: 403, message: "Only assigned operator can mark for verification" };
 
   const forVerificationStatusId = await getStatusIdByName("For Verification");
-  await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ? WHERE Request_Id = ?", [forVerificationStatusId, requestId]);
+
+  // ✅ set timestamp so frontend can show bookmark
+  await pool.query(
+    "UPDATE maintenance_tbl SET Main_stat_id = ?, For_verification_at = NOW() WHERE Request_Id = ?",
+    [forVerificationStatusId, requestId]
+  );
 
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
