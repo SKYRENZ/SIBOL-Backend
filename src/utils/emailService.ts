@@ -1,6 +1,6 @@
-import nodemailer from 'nodemailer';
 import config from '../config/env';
-import SendGrid from '@sendgrid/mail';
+import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
 // normalize frontend base and remove trailing slashes
 const FRONTEND_BASE = (config.FRONT_END_PORT || 'http://localhost:5173').replace(/\/+$/, '');
@@ -18,89 +18,101 @@ function buildFrontendUrl(path: string, params?: Record<string, string>) {
   }
 }
 
-const USE_SENDGRID = Boolean(config.SENDGRID_API_KEY);
+// Provider switches
+const USE_RESEND = Boolean(config.RESEND_API_KEY);
+const USE_SMTP = Boolean(config.EMAIL_SMTP_HOST && config.EMAIL_SMTP_PORT && config.EMAIL_USER && config.EMAIL_PASSWORD);
 
-if (USE_SENDGRID) {
-  SendGrid.setApiKey(config.SENDGRID_API_KEY);
-  console.log('📧 Using SendGrid for outbound email');
-} else {
-  console.log('📧 Using SMTP transporter for outbound email');
+console.log(
+  `📧 Outbound email: Resend API ${USE_RESEND ? '(enabled)' : '(disabled)'} | SMTP ${USE_SMTP ? '(enabled)' : '(disabled)'}`
+);
+
+// --- Resend client ---
+let resendClient: Resend | null = null;
+function getResendClient() {
+  if (resendClient) return resendClient;
+  if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not set');
+  resendClient = new Resend(config.RESEND_API_KEY);
+  return resendClient;
 }
 
 function defaultFrom() {
-  return config.EMAIL_FROM || config.EMAIL_USER || 'no-reply@sibol.local';
+  // Prefer RESEND_FROM; fallback to EMAIL_FROM
+  const from = (config.RESEND_FROM || config.EMAIL_FROM || '').trim();
+  if (!from) throw new Error('Missing sender: set RESEND_FROM or EMAIL_FROM');
+  return from;
 }
 
-// --- create single SMTP transporter once (if using SMTP) ---
+// --- SMTP transporter (lazy) ---
 let smtpTransporter: nodemailer.Transporter | null = null;
 function getSmtpTransporter() {
   if (smtpTransporter) return smtpTransporter;
+  if (!USE_SMTP) throw new Error('SMTP is not configured (EMAIL_SMTP_HOST/PORT/USER/PASSWORD)');
+
+  const port = Number(config.EMAIL_SMTP_PORT);
   smtpTransporter = nodemailer.createTransport({
-    host: config.EMAIL_SMTP_HOST || 'smtp.gmail.com',
-    port: Number(config.EMAIL_SMTP_PORT ?? 465),
-    secure: Number(config.EMAIL_SMTP_PORT ?? 465) === 465,
-    auth: { user: config.EMAIL_USER, pass: config.EMAIL_PASSWORD },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000,
+    host: config.EMAIL_SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: config.EMAIL_USER,
+      pass: config.EMAIL_PASSWORD,
+    },
   } as any);
-  // verify once at startup to fail early in logs (don't await in hot path)
-  smtpTransporter.verify().then(() => {
-    console.log('✅ SMTP transporter verified');
-  }).catch(err => {
-    console.error('❌ SMTP transporter verification failed:', err?.message ?? err);
-  });
+
   return smtpTransporter;
+}
+
+async function resendSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
+  const resend = getResendClient();
+
+  const from = (mailOptions.from || defaultFrom()).trim();
+  const to = (mailOptions.to || '').trim();
+  if (!to) throw new Error('Missing recipient email (to)');
+
+  const result = await resend.emails.send({
+    from,
+    to: [to],
+    subject: mailOptions.subject,
+    html: mailOptions.html,
+  });
+
+  const err = (result as any)?.error;
+  if (err) throw new Error(err?.message || 'Resend send failed');
+
+  return result;
 }
 
 async function smtpSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
   const transporter = getSmtpTransporter();
-  try {
-    const info = await transporter.sendMail({
-      from: mailOptions.from || defaultFrom(),
-      to: mailOptions.to,
-      subject: mailOptions.subject,
-      html: mailOptions.html,
-    });
-    return info; // nodemailer sendMail info object
-  } catch (err: any) {
-    console.error('❌ smtpSend failed:', err?.message ?? err);
-    throw err;
-  }
-}
 
-async function sendgridSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
-  const msg = {
-    to: mailOptions.to,
-    from: mailOptions.from || defaultFrom(),
+  const from = (mailOptions.from || defaultFrom()).trim();
+  const to = (mailOptions.to || '').trim();
+  if (!to) throw new Error('Missing recipient email (to)');
+
+  const info = await transporter.sendMail({
+    from,
+    to,
     subject: mailOptions.subject,
     html: mailOptions.html,
-  };
-  try {
-    const res = await SendGrid.send(msg);
-    return res; // SendGrid returns an array of responses
-  } catch (err: any) {
-    console.error('❌ sendgridSend failed:', err?.message ?? err);
-    throw err;
-  }
+  });
+
+  return info;
 }
 
 async function sendEmail(mailOptions: { to: string; subject: string; html: string; from?: string }) {
-  try {
-    const result = USE_SENDGRID ? await sendgridSend(mailOptions) : await smtpSend(mailOptions);
-    // Normalize return shape so callers can log messageId/status consistently
-    if (Array.isArray(result) && result.length > 0) {
-      return { provider: 'sendgrid', statusCode: result[0].statusCode, body: result[0].body };
+  // Try Resend first if enabled; on error fallback to SMTP (if configured)
+  if (USE_RESEND) {
+    try {
+      const result = await resendSend(mailOptions);
+      return { provider: 'resend', id: (result as any)?.data?.id ?? (result as any)?.id, result };
+    } catch (err: any) {
+      console.warn('⚠️ Resend failed; attempting SMTP fallback:', err?.message ?? err);
+      if (!USE_SMTP) throw err;
     }
-    if (result && (result as any).messageId) {
-      return { provider: 'smtp', messageId: (result as any).messageId };
-    }
-    return { provider: USE_SENDGRID ? 'sendgrid' : 'smtp', result };
-  } catch (err: any) {
-    // Re-throw with original error message preserved
-    throw new Error(err?.message ?? String(err));
   }
+
+  const result = await smtpSend(mailOptions);
+  return { provider: 'smtp', messageId: (result as any)?.messageId, result };
 }
 
 // --- exported helpers use sendEmail and handle normalized result ---
@@ -145,14 +157,8 @@ export async function sendVerificationEmail(email: string, verificationToken: st
       </p>
     </div>
   `;
-  try {
-    const info = await sendEmail({ to: email, subject: 'SIBOL - Verify Your Email Address', html });
-    console.log('✅ Verification email sent:', info);
-    return { success: true, info };
-  } catch (error: any) {
-    console.error('❌ Verification email failed:', error?.message ?? error);
-    throw new Error(error?.message ?? 'Failed to send verification email');
-  }
+  const info = await sendEmail({ to: email, subject: 'SIBOL - Verify Your Email Address', html });
+  return { success: true, info };
 }
 
 export async function sendWelcomeEmail(email: string, firstName: string, username: string, plainPassword?: string) {
@@ -191,20 +197,12 @@ export async function sendWelcomeEmail(email: string, firstName: string, usernam
       <p style="text-align: center; color: #333;">Welcome to the SIBOL family!</p>
     </div>
   `;
-  try {
-    const info = await sendEmail({ to: email, subject: 'SIBOL - Account Approved! Welcome aboard!', html });
-    console.log('✅ Welcome email sent:', info);
-    return { success: true, info };
-  } catch (error: any) {
-    console.error('❌ Welcome email failed:', error?.message ?? error);
-    throw new Error(error?.message ?? 'Failed to send welcome email');
-  }
+  const info = await sendEmail({ to: email, subject: 'SIBOL - Account Approved! Welcome aboard!', html });
+  return { success: true, info };
 }
 
 export async function sendResetEmail(email: string, code: string) {
-  // ✅ Add link to forgot password page with email prefilled
   const resetUrl = buildFrontendUrl('/forgot-password', { email, step: 'verify' });
-  
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 28px; text-align: center;">
       <div style="text-align: center; margin-bottom: 18px;">
@@ -250,14 +248,8 @@ export async function sendResetEmail(email: string, code: string) {
       </p>
     </div>
   `;
-  try {
-    const info = await sendEmail({ to: email, subject: 'SIBOL - Password Reset Code', html });
-    console.log('✅ Password reset email queued/sent:', email, info);
-    return { success: true, info };
-  } catch (err: any) {
-    console.error('❌ Password reset email sending failed:', err?.message ?? err);
-    throw new Error(err?.message ?? 'Failed to send password reset email');
-  }
+  const info = await sendEmail({ to: email, subject: 'SIBOL - Password Reset Code', html });
+  return { success: true, info };
 }
 
 export async function sendVerificationCodeEmail(email: string, code: string, firstName = '') {
@@ -292,12 +284,6 @@ export async function sendVerificationCodeEmail(email: string, code: string, fir
       </p>
     </div>
   `;
-  try {
-    const info = await sendEmail({ to: email, subject: 'SIBOL - Email Verification Code', html });
-    console.log('✅ Verification code email queued/sent:', email, info);
-    return { success: true, info };
-  } catch (err: any) {
-    console.error('❌ Verification code email sending failed:', err?.message ?? err);
-    throw new Error(err?.message ?? 'Failed to send verification code email');
-  }
+  const info = await sendEmail({ to: email, subject: 'SIBOL - Email Verification Code', html });
+  return { success: true, info };
 }

@@ -70,10 +70,23 @@ router.get("/:id/remarks", ctrl.getRemarks);
 
 /**
  * PUT /api/maintenance/:id/cancel
- * body: { actor_account_id }
- * - creator (operator) or staff can cancel
+ * body: { actor_account_id, reason? }
+ * - Operator: reason REQUIRED (creates cancel request only)
+ * - Staff/Admin: reason optional (cancels immediately)
  */
-router.put("/:id/cancel", ctrl.cancelTicket);
+router.put("/:id/cancel", authenticate, ctrl.cancelTicket);
+
+/**
+ * GET /api/maintenance/operator-cancelled-history?operator_account_id=123
+ * - Approved cancellation history for operator (for Operator Cancelled tab)
+ */
+router.get("/operator-cancelled-history", authenticate, ctrl.listOperatorCancelledHistory);
+
+/**
+ * GET /api/maintenance/deleted
+ * - list all soft-deleted tickets
+ */
+router.get("/deleted", authenticate, ctrl.listDeletedTickets);
 
 /**
  * GET /api/maintenance/:id
@@ -96,5 +109,12 @@ router.post("/:id/attachments", ctrl.uploadAttachment);
  * GET /api/maintenance/:id/attachments
  */
 router.get("/:id/attachments", ctrl.getAttachments);
+
+/**
+ * DELETE /api/maintenance/:id
+ * body: { actor_account_id }
+ * - Staff/Admin can delete only Requested or Cancel Requested tickets
+ */
+router.delete("/:id", authenticate, ctrl.deleteTicket);
 
 export default router;

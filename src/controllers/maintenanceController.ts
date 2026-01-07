@@ -1,6 +1,6 @@
 import * as service from "../services/maintenanceService.js";
 import type { Request, Response } from "express";
-import { checkUserRole } from "./userController.js"; // ✅ Import the reusable function
+import { checkUserRole } from "./userController.js";
 
 export async function createTicket(req: Request, res: Response) {
   try {
@@ -81,7 +81,11 @@ export async function cancelTicket(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
     const actorAccountId = Number(req.body.actor_account_id);
-    const updated = await service.cancelTicket(requestId, actorAccountId);
+
+    // ✅ optional for staff/admin, REQUIRED for operator (enforced in service)
+    const reason = req.body.reason;
+
+    const updated = await service.cancelTicket(requestId, actorAccountId, reason);
     return res.json(updated);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -101,19 +105,23 @@ export async function getTicket(req: Request, res: Response) {
 export async function listTickets(req: Request, res: Response) {
   try {
     const filters: { status?: string; assigned_to?: number; created_by?: number } = {};
-    
+
     if (req.query.status) {
       filters.status = req.query.status as string;
     }
-    
-    if (req.query.assigned_to) {
-      filters.assigned_to = Number(req.query.assigned_to);
+
+    if (req.query.assigned_to !== undefined) {
+      const n = Number(req.query.assigned_to);
+      if (Number.isNaN(n)) return res.status(400).json({ message: "assigned_to must be a number" });
+      filters.assigned_to = n;
     }
-    
-    if (req.query.created_by) {
-      filters.created_by = Number(req.query.created_by);
+
+    if (req.query.created_by !== undefined) {
+      const n = Number(req.query.created_by);
+      if (Number.isNaN(n)) return res.status(400).json({ message: "created_by must be a number" });
+      filters.created_by = n;
     }
-    
+
     const rows = await service.listTickets(filters);
     return res.json(rows);
   } catch (err: any) {
@@ -130,18 +138,23 @@ export async function uploadAttachment(req: Request, res: Response) {
     const filetype = req.body.filetype;
     const filesize = req.body.filesize ? Number(req.body.filesize) : undefined;
 
+    // ✅ NEW
+    const publicId = req.body.public_id ?? null;
+
     if (!filepath || !filename) {
       return res.status(400).json({ message: "Filepath and filename are required" });
     }
 
     const attachment = await service.addAttachment(
-      requestId, 
-      uploadedBy, 
-      filepath, 
+      requestId,
+      uploadedBy,
+      filepath,
       filename,
       filetype,
-      filesize
+      filesize,
+      publicId // ✅ pass through
     );
+
     return res.status(201).json(attachment);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -151,7 +164,20 @@ export async function uploadAttachment(req: Request, res: Response) {
 export async function getAttachments(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const attachments = await service.getTicketAttachments(requestId);
+
+    // ✅ optional cutoff
+    const beforeRaw =
+      typeof req.query.before === 'string' ? req.query.before : undefined;
+
+    let before: Date | undefined;
+    if (beforeRaw) {
+      before = new Date(beforeRaw);
+      if (Number.isNaN(before.getTime())) {
+        return res.status(400).json({ message: "Invalid before datetime" });
+      }
+    }
+
+    const attachments = await service.getTicketAttachments(requestId, before);
     return res.json(attachments);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -197,8 +223,79 @@ export async function addRemark(req: Request, res: Response) {
 export async function getRemarks(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const remarks = await service.getTicketRemarks(requestId);
+
+    // ✅ optional cutoff
+    const beforeRaw =
+      typeof req.query.before === 'string' ? req.query.before : undefined;
+
+    let before: Date | undefined;
+    if (beforeRaw) {
+      before = new Date(beforeRaw);
+      if (Number.isNaN(before.getTime())) {
+        return res.status(400).json({ message: "Invalid before datetime" });
+      }
+    }
+
+    const remarks = await service.getTicketRemarks(requestId, before);
     return res.json(remarks);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function deleteTicket(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+
+    const actorRaw =
+      (req.body?.actor_account_id as unknown) ??
+      (req.query?.actor_account_id as unknown);
+
+    const actorAccountId = Number(actorRaw);
+
+    const reasonRaw =
+      (req.body?.reason as unknown) ??
+      (req.query?.reason as unknown);
+
+    const reason = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
+
+    if (!actorAccountId || Number.isNaN(actorAccountId)) {
+      return res.status(400).json({ message: "actor_account_id is required" });
+    }
+
+    // ✅ require a reason for delete
+    if (!reason) {
+      return res.status(400).json({ message: "reason is required" });
+    }
+
+    const result = await service.deleteTicket(requestId, actorAccountId, reason);
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function listOperatorCancelledHistory(req: Request, res: Response) {
+  try {
+    const operatorId = Number(req.query.operator_account_id);
+    if (!operatorId || Number.isNaN(operatorId)) {
+      return res.status(400).json({ message: "operator_account_id must be a number" });
+    }
+
+    const rows = await service.listOperatorCancelledHistory(operatorId);
+    return res.json(rows);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function listDeletedTickets(req: Request, res: Response) {
+  try {
+    // ✅ Only Admin and Barangay can view deleted compilation
+    if (!checkUserRole(req, res, ["Admin", "Barangay"])) return;
+
+    const rows = await service.listDeletedTickets();
+    return res.json(rows);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
