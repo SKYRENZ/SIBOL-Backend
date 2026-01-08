@@ -23,7 +23,8 @@ export async function addAttachment(
   filename: string,
   filetype?: string,
   filesize?: number,
-  publicId?: string | null // ✅ add
+  publicId?: string | null, // ✅ add
+  eventId?: number | null // ✅ NEW: optional event ID
 ): Promise<any> {
   const [ticket] = await pool.query<Row[]>(
     "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?",
@@ -32,8 +33,8 @@ export async function addAttachment(
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
   const sql = `INSERT INTO maintenance_attachments_tbl 
-    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size, Public_id) 
-    VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size, Public_id, Event_Id) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
   const [result] = await pool.query(sql, [
     requestId,
@@ -42,7 +43,8 @@ export async function addAttachment(
     filename,
     filetype || null,
     filesize || null,
-    publicId || null, // ✅ add
+    publicId || null,
+    eventId || null // ✅ add
   ]);
   const insertId = (result as any).insertId;
 
@@ -125,6 +127,9 @@ export async function createTicket(data: {
   const [result] = await pool.query(sql, params);
   const insertId = (result as any).insertId;
 
+  // ✅ Log REQUESTED event
+  await logEvent(insertId, 'REQUESTED', data.created_by, null);
+
   const [ticket] = await pool.query<Row[]>(
     "SELECT * FROM maintenance_tbl WHERE Request_Id = ?", 
     [insertId]
@@ -157,11 +162,9 @@ export async function acceptAndAssign(
   if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
 
   const ticket = ticketRows[0];
-
   const onGoingStatusId = await getStatusIdByName("On-going");
   if (!onGoingStatusId) throw { status: 500, message: "Status 'On-going' not found" };
 
-  // ✅ Only when coming from "Cancelled" status: clear cancel-related fields
   const cancelledStatusId = await getStatusIdByName("Cancelled");
   if (!cancelledStatusId) throw { status: 500, message: "Status 'Cancelled' not found" };
 
@@ -178,10 +181,24 @@ export async function acceptAndAssign(
        WHERE Request_Id = ?`,
       [onGoingStatusId, assignToAccountId, requestId]
     );
+    // ✅ Log REASSIGNED event (coming from cancelled)
+    await logEvent(
+      requestId,
+      'REASSIGNED',
+      staffAccountId,
+      `Reassigned to operator ${assignToAccountId || 'unassigned'} after cancellation`
+    );
   } else {
     await pool.query(
       "UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?",
       [onGoingStatusId, assignToAccountId, requestId]
+    );
+    // ✅ Log ACCEPTED event
+    await logEvent(
+      requestId,
+      'ACCEPTED',
+      staffAccountId,
+      assignToAccountId ? `Assigned to operator ${assignToAccountId}` : 'Accepted without assignment'
     );
   }
 
@@ -220,11 +237,13 @@ export async function operatorMarkForVerification(requestId: number, operatorAcc
 
   const forVerificationStatusId = await getStatusIdByName("For Verification");
 
-  // ✅ set timestamp so frontend can show bookmark
   await pool.query(
     "UPDATE maintenance_tbl SET Main_stat_id = ?, For_verification_at = NOW() WHERE Request_Id = ?",
     [forVerificationStatusId, requestId]
   );
+
+  // ✅ Log FOR_VERIFICATION event
+  await logEvent(requestId, 'FOR_VERIFICATION', operatorAccountId, 'Operator marked task as complete');
 
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
@@ -244,6 +263,9 @@ export async function staffVerifyCompletion(requestId: number, staffAccountId: n
 
   const completedStatusId = await getStatusIdByName("Completed");
   await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Completed_at = NOW() WHERE Request_Id = ?", [completedStatusId, requestId]);
+
+  // ✅ Log COMPLETED event
+  await logEvent(requestId, 'COMPLETED', staffAccountId, 'Staff verified completion');
 
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
@@ -275,12 +297,10 @@ export async function cancelTicket(
   const cancelRequestedStatusId = await getStatusIdByName("Cancel Requested");
   if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not configured" };
 
-  // Already cancelled?
   if (ticket.Main_stat_id === cancelledStatusId) {
     throw { status: 400, message: "Ticket is already cancelled" };
   }
 
-  // ✅ Operator: must provide reason, set status = Cancel Requested (not Cancelled)
   if (role === ROLE_OPERATOR) {
     const trimmed = (reason ?? "").trim();
     if (!trimmed) throw { status: 400, message: "Cancellation reason is required" };
@@ -295,8 +315,10 @@ export async function cancelTicket(
       [cancelRequestedStatusId, trimmed, actorAccountId, requestId]
     );
 
-    // ✅ NEW: log the cancellation request
     await insertCancelLog(requestId, actorAccountId, trimmed);
+
+    // ✅ Log CANCEL_REQUESTED event
+    await logEvent(requestId, 'CANCEL_REQUESTED', actorAccountId, trimmed);
 
     const [updated] = await pool.query<Row[]>(
       "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
@@ -305,7 +327,6 @@ export async function cancelTicket(
     return updated[0];
   }
 
-  // ✅ Staff/Admin: cancel immediately, status = Cancelled (reason optional)
   if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
     throw { status: 403, message: "Only staff/admin can cancel tickets" };
   }
@@ -315,7 +336,7 @@ export async function cancelTicket(
   await pool.query(
     `UPDATE maintenance_tbl
      SET Main_stat_id = ?,
-         Assigned_to = NULL,          -- ✅ unassign when cancelled
+         Assigned_to = NULL,
          Cancelled_by = ?,
          Cancelled_at = NOW(),
          Cancel_reason = CASE WHEN ? <> '' THEN ? ELSE Cancel_reason END
@@ -323,8 +344,11 @@ export async function cancelTicket(
     [cancelledStatusId, actorAccountId, trimmedReason, trimmedReason, requestId]
   );
 
-  // ✅ NEW: ensure cancel_log gets rows
-  // 1) Approve ALL pending cancel logs for this ticket (so every operator who requested cancel keeps it)
+  // ✅ Log CANCELLED event (by staff/admin)
+  await logEvent(requestId, 'CANCELLED', actorAccountId, trimmedReason || 'Cancelled by staff');
+
+  // ✅ NEW: Approve ALL pending cancel logs for this ticket
+  // This ensures EVERY operator who requested cancel gets a history entry
   const [updateResult] = await pool.query<any>(
     `UPDATE maintenance_cancel_log_tbl
      SET Approved_By = ?, Approved_At = NOW()
@@ -332,10 +356,10 @@ export async function cancelTicket(
     [actorAccountId, requestId]
   );
 
-  // 2) If there were NO existing logs at all (common when Barangay cancels directly),
-  // create an approved log for the currently assigned operator (or cancel_requested_by as fallback).
   const affected = updateResult?.affectedRows ?? 0;
 
+  // ✅ If no existing logs, create one for the assigned/requesting operator
+  // This happens when Barangay cancels directly without operator requesting
   if (affected === 0) {
     const operatorForHistory = (ticket.Assigned_to ?? ticket.Cancel_requested_by ?? null) as number | null;
 
@@ -506,7 +530,8 @@ export async function addRemark(
   requestId: number,
   remarkText: string,
   createdBy: number,
-  userRole: string | null
+  userRole: string | null,
+  eventId?: number | null // ✅ NEW: optional event ID
 ): Promise<any> {
   const trimmed = (remarkText ?? "").trim();
   if (!trimmed) throw { status: 400, message: "Remark text is required" };
@@ -518,17 +543,15 @@ export async function addRemark(
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
   const [result] = await pool.query<any>(
-    `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Created_at)
-     VALUES (?, ?, ?, ?, NOW())`,
-    [requestId, trimmed, createdBy, userRole ?? null]
+    `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Event_Id, Created_at)
+     VALUES (?, ?, ?, ?, ?, NOW())`,
+    [requestId, trimmed, createdBy, userRole ?? null, eventId ?? null]
   );
 
   const insertId = result?.insertId;
 
-  // ✅ Return joined row so mobile can show sender name + role immediately
   const [rows] = await pool.query<Row[]>(
-    `
-    SELECT
+    `SELECT
       mr.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
       a.Roles AS CreatedByRoleId,
@@ -538,8 +561,7 @@ export async function addRemark(
     LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE mr.Remark_Id = ?
-    LIMIT 1
-    `,
+    LIMIT 1`,
     [insertId]
   );
 
@@ -633,6 +655,9 @@ export async function deleteTicket(
      WHERE Request_Id = ?`,
     [actorAccountId, trimmedReason, requestId]
   );
+
+  // ✅ Log DELETED event
+  await logEvent(requestId, 'DELETED', actorAccountId, trimmedReason);
 
   return { deleted: true };
 }
@@ -738,4 +763,96 @@ export async function listDeletedTickets(): Promise<any[]> {
   `;
   const [rows] = await pool.query<Row[]>(sql);
   return rows;
+}
+
+// ✅ NEW: Event logging functions
+async function logEvent(
+  requestId: number,
+  eventType: string,
+  actorAccountId: number | null,
+  notes: string | null = null
+): Promise<number> {
+  const [result] = await pool.query<any>(
+    `INSERT INTO maintenance_events_tbl (Request_Id, Event_type, Actor_Account_Id, Notes, Created_At)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [requestId, eventType, actorAccountId, notes]
+  );
+  return result?.insertId ?? 0;
+}
+
+export async function getTicketEvents(requestId: number): Promise<any[]> {
+  const sql = `
+    SELECT 
+      e.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS ActorName,
+      a.Roles AS ActorRoleId,
+      ur.Roles AS ActorRoleName
+    FROM maintenance_events_tbl e
+    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE e.Request_Id = ?
+    ORDER BY e.Created_At ASC
+  `;
+  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  return rows;
+}
+
+export async function getEventDetails(eventId: number): Promise<any> {
+  // Get event with actor details
+  const [eventRows] = await pool.query<Row[]>(
+    `SELECT 
+      e.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS ActorName,
+      a.Roles AS ActorRoleId,
+      ur.Roles AS ActorRoleName
+    FROM maintenance_events_tbl e
+    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE e.Event_Id = ?`,
+    [eventId]
+  );
+  
+  if (!eventRows.length) return null;
+
+  const event = eventRows[0];
+
+  // Get remarks for this event
+  const [remarks] = await pool.query<Row[]>(
+    `SELECT 
+      mr.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
+      a.Roles AS CreatedByRoleId,
+      ur.Roles AS CreatedByRoleName
+    FROM maintenance_remarks_tbl mr
+    LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE mr.Event_Id = ?
+    ORDER BY mr.Created_at ASC`,
+    [eventId]
+  );
+
+  // Get attachments for this event
+  const [attachments] = await pool.query<Row[]>(
+    `SELECT
+      ma.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS UploaderName,
+      a.Roles AS UploaderRoleId,
+      ur.Roles AS UploaderRoleName
+    FROM maintenance_attachments_tbl ma
+    LEFT JOIN profile_tbl p ON ma.Uploaded_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE ma.Event_Id = ?
+    ORDER BY ma.Uploaded_at ASC`,
+    [eventId]
+  );
+
+  return {
+    ...event,
+    Remarks: remarks,
+    Attachments: attachments
+  };
 }

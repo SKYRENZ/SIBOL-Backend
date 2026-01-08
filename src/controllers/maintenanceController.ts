@@ -300,3 +300,28 @@ export async function listDeletedTickets(req: Request, res: Response) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
   }
 }
+
+export async function getTicketEvents(req: Request, res: Response) {
+  try {
+    const requestId = Number(req.params.id);
+    const events = await service.getTicketEvents(requestId);
+    return res.json(events);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
+
+export async function getEventDetails(req: Request, res: Response) {
+  try {
+    const eventId = Number(req.params.eventId);
+    const eventDetails = await service.getEventDetails(eventId);
+    
+    if (!eventDetails) {
+      return res.status(404).json({ message: "Event not found" });
+    }
+    
+    return res.json(eventDetails);
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ message: err.message || "Server error" });
+  }
+}
