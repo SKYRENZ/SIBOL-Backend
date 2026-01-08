@@ -398,7 +398,10 @@ export async function getTicketById(requestId: number): Promise<any> {
       -- ✅ Cancelled (Staff/Admin)
       CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
       c_account.Roles AS CancelledByRoleId,
-      c_role.Roles AS CancelledByRole
+      c_role.Roles AS CancelledByRole,
+
+      -- ✅ NEW: Last Assigned Operator from cancel log (for cancelled tickets)
+      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName
 
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
@@ -419,8 +422,19 @@ export async function getTicketById(requestId: number): Promise<any> {
     LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
     LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
 
+    -- ✅ NEW: Get last assigned operator from cancel log (most recent approved cancellation)
+    LEFT JOIN (
+      SELECT 
+        Request_Id,
+        Operator_Account_Id,
+        ROW_NUMBER() OVER (PARTITION BY Request_Id ORDER BY Approved_At DESC) AS rn
+      FROM maintenance_cancel_log_tbl
+      WHERE Approved_At IS NOT NULL
+    ) last_cancel_log ON m.Request_Id = last_cancel_log.Request_Id AND last_cancel_log.rn = 1
+    LEFT JOIN profile_tbl last_op_profile ON last_cancel_log.Operator_Account_Id = last_op_profile.Account_id
+
     WHERE m.Request_Id = ?
-      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL) -- ✅ NEW: hide deleted
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
@@ -452,7 +466,10 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       -- ✅ Cancelled (Staff/Admin)
       CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
       c_account.Roles AS CancelledByRoleId,
-      c_role.Roles AS CancelledByRole
+      c_role.Roles AS CancelledByRole,
+
+      -- ✅ NEW: Last Assigned Operator from cancel log
+      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName
 
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
@@ -472,20 +489,26 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
     LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
 
+    -- ✅ NEW: Get last assigned operator from cancel log
+    LEFT JOIN (
+      SELECT 
+        Request_Id,
+        Operator_Account_Id,
+        ROW_NUMBER() OVER (PARTITION BY Request_Id ORDER BY Approved_At DESC) AS rn
+      FROM maintenance_cancel_log_tbl
+      WHERE Approved_At IS NOT NULL
+    ) last_cancel_log ON m.Request_Id = last_cancel_log.Request_Id AND last_cancel_log.rn = 1
+    LEFT JOIN profile_tbl last_op_profile ON last_cancel_log.Operator_Account_Id = last_op_profile.Account_id
+
     WHERE 1=1
-      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)  -- ✅ NEW: hide deleted
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)
   `;
   const params: any[] = [];
 
   if (filters.status) {
-    const statusNames = filters.status.split(',');
-    const statusIds = await Promise.all(statusNames.map(name => getStatusIdByName(name.trim())));
-    const validStatusIds = statusIds.filter(id => id !== null);
-
-    if (validStatusIds.length > 0) {
-      sql += ` AND m.Main_stat_id IN (?)`;
-      params.push(validStatusIds);
-    }
+    const statuses = filters.status.split(",").map((s) => s.trim());
+    sql += ` AND s.Status IN (${statuses.map(() => "?").join(",")})`;
+    params.push(...statuses);
   }
 
   if (typeof filters.assigned_to === "number") {
