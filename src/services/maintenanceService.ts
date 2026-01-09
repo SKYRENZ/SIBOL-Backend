@@ -137,6 +137,24 @@ export async function createTicket(data: {
   return ticket[0];
 }
 
+function extractToAccountIdFromNotes(notes: string | null): { toAccountId: number | null; message: string | null } {
+  if (!notes) return { toAccountId: null, message: null };
+
+  // 1) JSON notes: {"to_account_id":123,"message":"..."}
+  try {
+    const parsed = JSON.parse(notes);
+    const to = parsed?.to_account_id;
+    const msg = typeof parsed?.message === "string" ? parsed.message : notes;
+    return { toAccountId: typeof to === "number" ? to : Number.isFinite(Number(to)) ? Number(to) : null, message: msg };
+  } catch {
+    // ignore
+  }
+
+  // 2) Legacy text notes: "Reassigned to operator 123 ..."
+  const m = notes.match(/operator\s+(\d+)/i);
+  return { toAccountId: m ? Number(m[1]) : null, message: notes };
+}
+
 export async function acceptAndAssign(
   requestId: number,
   staffAccountId: number,
@@ -181,12 +199,18 @@ export async function acceptAndAssign(
        WHERE Request_Id = ?`,
       [onGoingStatusId, assignToAccountId, requestId]
     );
-    // ✅ Log REASSIGNED event (coming from cancelled)
+
+    // ✅ Log REASSIGNED event with structured payload (so UI can show "to (Name) (Role)")
     await logEvent(
       requestId,
-      'REASSIGNED',
+      "REASSIGNED",
       staffAccountId,
-      `Reassigned to operator ${assignToAccountId || 'unassigned'} after cancellation`
+      JSON.stringify({
+        to_account_id: assignToAccountId,
+        message: assignToAccountId
+          ? `Reassigned to operator ${assignToAccountId} after cancellation`
+          : "Reassigned after cancellation (unassigned)",
+      })
     );
   } else {
     await pool.query(
@@ -818,7 +842,55 @@ export async function getTicketEvents(requestId: number): Promise<any[]> {
     ORDER BY e.Created_At ASC
   `;
   const [rows] = await pool.query<Row[]>(sql, [requestId]);
-  return rows;
+
+  // ✅ Enrich REASSIGNED events with "to" operator (Name + Role)
+  const toIds = new Set<number>();
+  const parsedByEventId = new Map<number, { toAccountId: number | null; message: string | null }>();
+
+  for (const ev of rows) {
+    if (ev.Event_type !== "REASSIGNED") continue;
+    const parsed = extractToAccountIdFromNotes(ev.Notes ?? null);
+    parsedByEventId.set(ev.Event_Id, parsed);
+    if (parsed.toAccountId) toIds.add(parsed.toAccountId);
+  }
+
+  let toMap = new Map<number, { name: string; roleName: string | null }>();
+  if (toIds.size > 0) {
+    const ids = Array.from(toIds);
+    const placeholders = ids.map(() => "?").join(",");
+    const [toRows] = await pool.query<Row[]>(
+      `
+      SELECT
+        p.Account_id AS AccountId,
+        CONCAT(p.FirstName, ' ', p.LastName) AS FullName,
+        ur.Roles AS RoleName
+      FROM profile_tbl p
+      LEFT JOIN accounts_tbl a ON p.Account_id = a.Account_id
+      LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+      WHERE p.Account_id IN (${placeholders})
+      `,
+      ids
+    );
+
+    toMap = new Map(
+      toRows.map((r) => [Number(r.AccountId), { name: r.FullName || "Unknown", roleName: r.RoleName ?? null }])
+    );
+  }
+
+  return rows.map((ev) => {
+    if (ev.Event_type !== "REASSIGNED") return ev;
+
+    const parsed = parsedByEventId.get(ev.Event_Id) ?? { toAccountId: null, message: ev.Notes ?? null };
+    const to = parsed.toAccountId ? toMap.get(parsed.toAccountId) : null;
+
+    return {
+      ...ev,
+      Notes: parsed.message, // keep readable message in output
+      ToActorAccountId: parsed.toAccountId,
+      ToActorName: to?.name ?? null,
+      ToActorRoleName: to?.roleName ?? null,
+    };
+  });
 }
 
 export async function getEventDetails(eventId: number): Promise<any> {
