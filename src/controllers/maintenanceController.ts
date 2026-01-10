@@ -13,15 +13,17 @@ export async function createTicket(req: Request, res: Response) {
 
 export async function acceptAndAssign(req: Request, res: Response) {
   try {
-    // ✅ Only Admin and Barangay can accept
-    if (!checkUserRole(req, res, ['Admin', 'Barangay'])) {
-      return; // Response already sent by checkUserRole
-    }
+    if (!checkUserRole(req, res, ['Admin', 'Barangay'])) return;
 
     const requestId = Number(req.params.id);
     const staffAccountId = Number(req.body.staff_account_id);
     const assignTo = req.body.assign_to ?? null;
-    const updated = await service.acceptAndAssign(requestId, staffAccountId, assignTo);
+
+    // ✅ NEW
+    const priority = typeof req.body.priority === "string" ? req.body.priority : (req.body.priority ?? null);
+    const dueDate = typeof req.body.due_date === "string" ? req.body.due_date : (req.body.due_date ?? null);
+
+    const updated = await service.acceptAndAssign(requestId, staffAccountId, assignTo, priority, dueDate);
     return res.json(updated);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });

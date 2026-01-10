@@ -158,7 +158,9 @@ function extractToAccountIdFromNotes(notes: string | null): { toAccountId: numbe
 export async function acceptAndAssign(
   requestId: number,
   staffAccountId: number,
-  assignToAccountId: number | null
+  assignToAccountId: number | null,
+  priority?: string | number | null,
+  dueDate?: string | null
 ): Promise<any> {
   // Verify staff/admin role
   const [acctRows] = await pool.query<Row[]>(
@@ -186,18 +188,43 @@ export async function acceptAndAssign(
   const cancelledStatusId = await getStatusIdByName("Cancelled");
   if (!cancelledStatusId) throw { status: 500, message: "Status 'Cancelled' not found" };
 
+  // ✅ resolve priority id if provided
+  let priorityId: number | null = null;
+  if (priority !== undefined && priority !== null && String(priority).trim() !== "") {
+    const p = String(priority).trim();
+    if (['Critical', 'Urgent', 'Mild'].includes(p)) {
+      priorityId = await getPriorityIdByName(p);
+    } else {
+      const n = Number(p);
+      priorityId = Number.isFinite(n) ? n : null;
+    }
+  }
+
+  const dueDateValue =
+    dueDate !== undefined && dueDate !== null && String(dueDate).trim() !== ""
+      ? String(dueDate).trim()
+      : null;
+
   if (ticket.Main_stat_id === cancelledStatusId) {
     await pool.query(
       `UPDATE maintenance_tbl
        SET Main_stat_id = ?,
            Assigned_to = ?,
+           Priority_Id = CASE WHEN ? IS NOT NULL THEN ? ELSE Priority_Id END,
+           Due_date   = CASE WHEN ? IS NOT NULL THEN ? ELSE Due_date END,
            Cancel_reason = NULL,
            Cancel_requested_by = NULL,
            Cancel_requested_at = NULL,
            Cancelled_by = NULL,
            Cancelled_at = NULL
        WHERE Request_Id = ?`,
-      [onGoingStatusId, assignToAccountId, requestId]
+      [
+        onGoingStatusId,
+        assignToAccountId,
+        priorityId, priorityId,
+        dueDateValue, dueDateValue,
+        requestId,
+      ]
     );
 
     // ✅ Log REASSIGNED event with structured payload (so UI can show "to (Name) (Role)")
@@ -214,8 +241,19 @@ export async function acceptAndAssign(
     );
   } else {
     await pool.query(
-      "UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?",
-      [onGoingStatusId, assignToAccountId, requestId]
+      `UPDATE maintenance_tbl
+       SET Main_stat_id = ?,
+           Assigned_to = ?,
+           Priority_Id = CASE WHEN ? IS NOT NULL THEN ? ELSE Priority_Id END,
+           Due_date   = CASE WHEN ? IS NOT NULL THEN ? ELSE Due_date END
+       WHERE Request_Id = ?`,
+      [
+        onGoingStatusId,
+        assignToAccountId,
+        priorityId, priorityId,
+        dueDateValue, dueDateValue,
+        requestId,
+      ]
     );
     // ✅ Log ACCEPTED event
     await logEvent(
