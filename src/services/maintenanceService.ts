@@ -865,8 +865,8 @@ async function logEvent(
   return result?.insertId ?? 0;
 }
 
-export async function getTicketEvents(requestId: number): Promise<any[]> {
-  const sql = `
+export async function getTicketEvents(requestId: number, before?: Date | null): Promise<any[]> {
+  let sql = `
     SELECT 
       e.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS ActorName,
@@ -877,9 +877,18 @@ export async function getTicketEvents(requestId: number): Promise<any[]> {
     LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE e.Request_Id = ?
-    ORDER BY e.Created_At ASC
   `;
-  const [rows] = await pool.query<Row[]>(sql, [requestId]);
+  const params: any[] = [requestId];
+
+  // ✅ apply cutoff (Operator Cancelled-history view)
+  if (before) {
+    sql += ` AND e.Created_At <= ?`;
+    params.push(before);
+  }
+
+  sql += ` ORDER BY e.Created_At ASC`;
+
+  const [rows] = await pool.query<Row[]>(sql, params);
 
   // ✅ Enrich REASSIGNED events with "to" operator (Name + Role)
   const toIds = new Set<number>();
@@ -923,7 +932,7 @@ export async function getTicketEvents(requestId: number): Promise<any[]> {
 
     return {
       ...ev,
-      Notes: parsed.message, // keep readable message in output
+      Notes: parsed.message,
       ToActorAccountId: parsed.toAccountId,
       ToActorName: to?.name ?? null,
       ToActorRoleName: to?.roleName ?? null,

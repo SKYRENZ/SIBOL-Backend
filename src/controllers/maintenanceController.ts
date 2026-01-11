@@ -306,7 +306,20 @@ export async function listDeletedTickets(req: Request, res: Response) {
 export async function getTicketEvents(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const events = await service.getTicketEvents(requestId);
+
+    // ✅ optional cutoff
+    const beforeRaw =
+      typeof req.query.before === 'string' ? req.query.before : undefined;
+
+    let before: Date | undefined;
+    if (beforeRaw) {
+      before = new Date(beforeRaw);
+      if (Number.isNaN(before.getTime())) {
+        return res.status(400).json({ message: "Invalid before datetime" });
+      }
+    }
+
+    const events = await service.getTicketEvents(requestId, before);
     return res.json(events);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
