@@ -9,6 +9,7 @@ import config, { FRONTEND_ORIGINS_ARRAY } from './config/env.js';
 console.log('Server starting', { NODE_ENV: config.NODE_ENV, DB_HOST: config.DB_HOST, DB_NAME: config.DB_NAME });
 
 import uploadRoutes from "./Routes/uploadRoutes.js";
+import chatRoutes from "./Routes/chat.route.js";
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -132,6 +133,7 @@ app.use('/api/waste-collections', wasteCollectionRoutes);
 app.use("/api/users", userRoutes); // 2. Register user routes
 app.use('/api/additives', additivesRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);
+app.use('/api/chat', authenticate, chatRoutes);
 
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
