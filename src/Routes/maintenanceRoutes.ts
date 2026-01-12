@@ -117,4 +117,16 @@ router.get("/:id/attachments", ctrl.getAttachments);
  */
 router.delete("/:id", authenticate, ctrl.deleteTicket);
 
+/**
+ * GET /api/maintenance/:id/events
+ * - Get all events/history for a ticket
+ */
+router.get("/:id/events", ctrl.getTicketEvents);
+
+/**
+ * GET /api/maintenance/:id/events/:eventId
+ * - Get detailed information for a specific event (including remarks and attachments)
+ */
+router.get("/:id/events/:eventId", ctrl.getEventDetails);
+
 export default router;

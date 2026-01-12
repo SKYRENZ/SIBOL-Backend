@@ -23,7 +23,8 @@ export async function addAttachment(
   filename: string,
   filetype?: string,
   filesize?: number,
-  publicId?: string | null // ✅ add
+  publicId?: string | null, // ✅ add
+  eventId?: number | null // ✅ NEW: optional event ID
 ): Promise<any> {
   const [ticket] = await pool.query<Row[]>(
     "SELECT Request_Id FROM maintenance_tbl WHERE Request_Id = ?",
@@ -32,8 +33,8 @@ export async function addAttachment(
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
   const sql = `INSERT INTO maintenance_attachments_tbl 
-    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size, Public_id) 
-    VALUES (?, ?, ?, ?, ?, ?, ?)`;
+    (Request_Id, Uploaded_by, File_path, File_name, File_type, File_size, Public_id, Event_Id) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
   const [result] = await pool.query(sql, [
     requestId,
@@ -42,7 +43,8 @@ export async function addAttachment(
     filename,
     filetype || null,
     filesize || null,
-    publicId || null, // ✅ add
+    publicId || null,
+    eventId || null // ✅ add
   ]);
   const insertId = (result as any).insertId;
 
@@ -125,6 +127,9 @@ export async function createTicket(data: {
   const [result] = await pool.query(sql, params);
   const insertId = (result as any).insertId;
 
+  // ✅ Log REQUESTED event
+  await logEvent(insertId, 'REQUESTED', data.created_by, null);
+
   const [ticket] = await pool.query<Row[]>(
     "SELECT * FROM maintenance_tbl WHERE Request_Id = ?", 
     [insertId]
@@ -132,10 +137,30 @@ export async function createTicket(data: {
   return ticket[0];
 }
 
+function extractToAccountIdFromNotes(notes: string | null): { toAccountId: number | null; message: string | null } {
+  if (!notes) return { toAccountId: null, message: null };
+
+  // 1) JSON notes: {"to_account_id":123,"message":"..."}
+  try {
+    const parsed = JSON.parse(notes);
+    const to = parsed?.to_account_id;
+    const msg = typeof parsed?.message === "string" ? parsed.message : notes;
+    return { toAccountId: typeof to === "number" ? to : Number.isFinite(Number(to)) ? Number(to) : null, message: msg };
+  } catch {
+    // ignore
+  }
+
+  // 2) Legacy text notes: "Reassigned to operator 123 ..."
+  const m = notes.match(/operator\s+(\d+)/i);
+  return { toAccountId: m ? Number(m[1]) : null, message: notes };
+}
+
 export async function acceptAndAssign(
   requestId: number,
   staffAccountId: number,
-  assignToAccountId: number | null
+  assignToAccountId: number | null,
+  priority?: string | number | null,
+  dueDate?: string | null
 ): Promise<any> {
   // Verify staff/admin role
   const [acctRows] = await pool.query<Row[]>(
@@ -157,31 +182,85 @@ export async function acceptAndAssign(
   if (!ticketRows.length) throw { status: 404, message: "Ticket not found" };
 
   const ticket = ticketRows[0];
-
   const onGoingStatusId = await getStatusIdByName("On-going");
   if (!onGoingStatusId) throw { status: 500, message: "Status 'On-going' not found" };
 
-  // ✅ Only when coming from "Cancelled" status: clear cancel-related fields
   const cancelledStatusId = await getStatusIdByName("Cancelled");
   if (!cancelledStatusId) throw { status: 500, message: "Status 'Cancelled' not found" };
+
+  // ✅ resolve priority id if provided
+  let priorityId: number | null = null;
+  if (priority !== undefined && priority !== null && String(priority).trim() !== "") {
+    const p = String(priority).trim();
+    if (['Critical', 'Urgent', 'Mild'].includes(p)) {
+      priorityId = await getPriorityIdByName(p);
+    } else {
+      const n = Number(p);
+      priorityId = Number.isFinite(n) ? n : null;
+    }
+  }
+
+  const dueDateValue =
+    dueDate !== undefined && dueDate !== null && String(dueDate).trim() !== ""
+      ? String(dueDate).trim()
+      : null;
 
   if (ticket.Main_stat_id === cancelledStatusId) {
     await pool.query(
       `UPDATE maintenance_tbl
        SET Main_stat_id = ?,
            Assigned_to = ?,
+           Priority_Id = CASE WHEN ? IS NOT NULL THEN ? ELSE Priority_Id END,
+           Due_date   = CASE WHEN ? IS NOT NULL THEN ? ELSE Due_date END,
            Cancel_reason = NULL,
            Cancel_requested_by = NULL,
            Cancel_requested_at = NULL,
            Cancelled_by = NULL,
            Cancelled_at = NULL
        WHERE Request_Id = ?`,
-      [onGoingStatusId, assignToAccountId, requestId]
+      [
+        onGoingStatusId,
+        assignToAccountId,
+        priorityId, priorityId,
+        dueDateValue, dueDateValue,
+        requestId,
+      ]
+    );
+
+    // ✅ Log REASSIGNED event with structured payload (so UI can show "to (Name) (Role)")
+    await logEvent(
+      requestId,
+      "REASSIGNED",
+      staffAccountId,
+      JSON.stringify({
+        to_account_id: assignToAccountId,
+        message: assignToAccountId
+          ? `Reassigned to operator ${assignToAccountId} after cancellation`
+          : "Reassigned after cancellation (unassigned)",
+      })
     );
   } else {
     await pool.query(
-      "UPDATE maintenance_tbl SET Main_stat_id = ?, Assigned_to = ? WHERE Request_Id = ?",
-      [onGoingStatusId, assignToAccountId, requestId]
+      `UPDATE maintenance_tbl
+       SET Main_stat_id = ?,
+           Assigned_to = ?,
+           Priority_Id = CASE WHEN ? IS NOT NULL THEN ? ELSE Priority_Id END,
+           Due_date   = CASE WHEN ? IS NOT NULL THEN ? ELSE Due_date END
+       WHERE Request_Id = ?`,
+      [
+        onGoingStatusId,
+        assignToAccountId,
+        priorityId, priorityId,
+        dueDateValue, dueDateValue,
+        requestId,
+      ]
+    );
+    // ✅ Log ACCEPTED event
+    await logEvent(
+      requestId,
+      'ACCEPTED',
+      staffAccountId,
+      assignToAccountId ? `Assigned to operator ${assignToAccountId}` : 'Accepted without assignment'
     );
   }
 
@@ -220,11 +299,13 @@ export async function operatorMarkForVerification(requestId: number, operatorAcc
 
   const forVerificationStatusId = await getStatusIdByName("For Verification");
 
-  // ✅ set timestamp so frontend can show bookmark
   await pool.query(
     "UPDATE maintenance_tbl SET Main_stat_id = ?, For_verification_at = NOW() WHERE Request_Id = ?",
     [forVerificationStatusId, requestId]
   );
+
+  // ✅ Log FOR_VERIFICATION event
+  await logEvent(requestId, 'FOR_VERIFICATION', operatorAccountId, 'Operator marked task as complete');
 
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
@@ -244,6 +325,9 @@ export async function staffVerifyCompletion(requestId: number, staffAccountId: n
 
   const completedStatusId = await getStatusIdByName("Completed");
   await pool.query("UPDATE maintenance_tbl SET Main_stat_id = ?, Completed_at = NOW() WHERE Request_Id = ?", [completedStatusId, requestId]);
+
+  // ✅ Log COMPLETED event
+  await logEvent(requestId, 'COMPLETED', staffAccountId, 'Staff verified completion');
 
   const [updated] = await pool.query<Row[]>("SELECT * FROM maintenance_tbl WHERE Request_Id = ?", [requestId]);
   return updated[0];
@@ -275,12 +359,10 @@ export async function cancelTicket(
   const cancelRequestedStatusId = await getStatusIdByName("Cancel Requested");
   if (!cancelRequestedStatusId) throw { status: 500, message: "Cancel Requested status not configured" };
 
-  // Already cancelled?
   if (ticket.Main_stat_id === cancelledStatusId) {
     throw { status: 400, message: "Ticket is already cancelled" };
   }
 
-  // ✅ Operator: must provide reason, set status = Cancel Requested (not Cancelled)
   if (role === ROLE_OPERATOR) {
     const trimmed = (reason ?? "").trim();
     if (!trimmed) throw { status: 400, message: "Cancellation reason is required" };
@@ -295,8 +377,10 @@ export async function cancelTicket(
       [cancelRequestedStatusId, trimmed, actorAccountId, requestId]
     );
 
-    // ✅ NEW: log the cancellation request
     await insertCancelLog(requestId, actorAccountId, trimmed);
+
+    // ✅ Log CANCEL_REQUESTED event
+    await logEvent(requestId, 'CANCEL_REQUESTED', actorAccountId, trimmed);
 
     const [updated] = await pool.query<Row[]>(
       "SELECT * FROM maintenance_tbl WHERE Request_Id = ?",
@@ -305,7 +389,6 @@ export async function cancelTicket(
     return updated[0];
   }
 
-  // ✅ Staff/Admin: cancel immediately, status = Cancelled (reason optional)
   if (role !== ROLE_STAFF && role !== ROLE_ADMIN) {
     throw { status: 403, message: "Only staff/admin can cancel tickets" };
   }
@@ -315,7 +398,7 @@ export async function cancelTicket(
   await pool.query(
     `UPDATE maintenance_tbl
      SET Main_stat_id = ?,
-         Assigned_to = NULL,          -- ✅ unassign when cancelled
+         Assigned_to = NULL,
          Cancelled_by = ?,
          Cancelled_at = NOW(),
          Cancel_reason = CASE WHEN ? <> '' THEN ? ELSE Cancel_reason END
@@ -323,8 +406,11 @@ export async function cancelTicket(
     [cancelledStatusId, actorAccountId, trimmedReason, trimmedReason, requestId]
   );
 
-  // ✅ NEW: ensure cancel_log gets rows
-  // 1) Approve ALL pending cancel logs for this ticket (so every operator who requested cancel keeps it)
+  // ✅ Log CANCELLED event (by staff/admin)
+  await logEvent(requestId, 'CANCELLED', actorAccountId, trimmedReason || 'Cancelled by staff');
+
+  // ✅ NEW: Approve ALL pending cancel logs for this ticket
+  // This ensures EVERY operator who requested cancel gets a history entry
   const [updateResult] = await pool.query<any>(
     `UPDATE maintenance_cancel_log_tbl
      SET Approved_By = ?, Approved_At = NOW()
@@ -332,10 +418,10 @@ export async function cancelTicket(
     [actorAccountId, requestId]
   );
 
-  // 2) If there were NO existing logs at all (common when Barangay cancels directly),
-  // create an approved log for the currently assigned operator (or cancel_requested_by as fallback).
   const affected = updateResult?.affectedRows ?? 0;
 
+  // ✅ If no existing logs, create one for the assigned/requesting operator
+  // This happens when Barangay cancels directly without operator requesting
   if (affected === 0) {
     const operatorForHistory = (ticket.Assigned_to ?? ticket.Cancel_requested_by ?? null) as number | null;
 
@@ -374,7 +460,10 @@ export async function getTicketById(requestId: number): Promise<any> {
       -- ✅ Cancelled (Staff/Admin)
       CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
       c_account.Roles AS CancelledByRoleId,
-      c_role.Roles AS CancelledByRole
+      c_role.Roles AS CancelledByRole,
+
+      -- ✅ NEW: Last Assigned Operator from cancel log (for cancelled tickets)
+      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName
 
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
@@ -395,8 +484,19 @@ export async function getTicketById(requestId: number): Promise<any> {
     LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
     LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
 
+    -- ✅ NEW: Get last assigned operator from cancel log (most recent approved cancellation)
+    LEFT JOIN (
+      SELECT 
+        Request_Id,
+        Operator_Account_Id,
+        ROW_NUMBER() OVER (PARTITION BY Request_Id ORDER BY Approved_At DESC) AS rn
+      FROM maintenance_cancel_log_tbl
+      WHERE Approved_At IS NOT NULL
+    ) last_cancel_log ON m.Request_Id = last_cancel_log.Request_Id AND last_cancel_log.rn = 1
+    LEFT JOIN profile_tbl last_op_profile ON last_cancel_log.Operator_Account_Id = last_op_profile.Account_id
+
     WHERE m.Request_Id = ?
-      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL) -- ✅ NEW: hide deleted
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)
   `;
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
@@ -428,7 +528,10 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
       -- ✅ Cancelled (Staff/Admin)
       CONCAT(c_profile.FirstName, ' ', c_profile.LastName) AS CancelledByName,
       c_account.Roles AS CancelledByRoleId,
-      c_role.Roles AS CancelledByRole
+      c_role.Roles AS CancelledByRole,
+
+      -- ✅ NEW: Last Assigned Operator from cancel log
+      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName
 
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
@@ -448,20 +551,26 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     LEFT JOIN accounts_tbl c_account ON m.Cancelled_by = c_account.Account_id
     LEFT JOIN user_roles_tbl c_role ON c_account.Roles = c_role.Roles_id
 
+    -- ✅ NEW: Get last assigned operator from cancel log
+    LEFT JOIN (
+      SELECT 
+        Request_Id,
+        Operator_Account_Id,
+        ROW_NUMBER() OVER (PARTITION BY Request_Id ORDER BY Approved_At DESC) AS rn
+      FROM maintenance_cancel_log_tbl
+      WHERE Approved_At IS NOT NULL
+    ) last_cancel_log ON m.Request_Id = last_cancel_log.Request_Id AND last_cancel_log.rn = 1
+    LEFT JOIN profile_tbl last_op_profile ON last_cancel_log.Operator_Account_Id = last_op_profile.Account_id
+
     WHERE 1=1
-      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)  -- ✅ NEW: hide deleted
+      AND (m.IsDeleted = 0 OR m.IsDeleted IS NULL)
   `;
   const params: any[] = [];
 
   if (filters.status) {
-    const statusNames = filters.status.split(',');
-    const statusIds = await Promise.all(statusNames.map(name => getStatusIdByName(name.trim())));
-    const validStatusIds = statusIds.filter(id => id !== null);
-
-    if (validStatusIds.length > 0) {
-      sql += ` AND m.Main_stat_id IN (?)`;
-      params.push(validStatusIds);
-    }
+    const statuses = filters.status.split(",").map((s) => s.trim());
+    sql += ` AND s.Status IN (${statuses.map(() => "?").join(",")})`;
+    params.push(...statuses);
   }
 
   if (typeof filters.assigned_to === "number") {
@@ -506,7 +615,8 @@ export async function addRemark(
   requestId: number,
   remarkText: string,
   createdBy: number,
-  userRole: string | null
+  userRole: string | null,
+  eventId?: number | null // ✅ NEW: optional event ID
 ): Promise<any> {
   const trimmed = (remarkText ?? "").trim();
   if (!trimmed) throw { status: 400, message: "Remark text is required" };
@@ -518,17 +628,15 @@ export async function addRemark(
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
   const [result] = await pool.query<any>(
-    `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Created_at)
-     VALUES (?, ?, ?, ?, NOW())`,
-    [requestId, trimmed, createdBy, userRole ?? null]
+    `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Event_Id, Created_at)
+     VALUES (?, ?, ?, ?, ?, NOW())`,
+    [requestId, trimmed, createdBy, userRole ?? null, eventId ?? null]
   );
 
   const insertId = result?.insertId;
 
-  // ✅ Return joined row so mobile can show sender name + role immediately
   const [rows] = await pool.query<Row[]>(
-    `
-    SELECT
+    `SELECT
       mr.*,
       CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
       a.Roles AS CreatedByRoleId,
@@ -538,8 +646,7 @@ export async function addRemark(
     LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
     WHERE mr.Remark_Id = ?
-    LIMIT 1
-    `,
+    LIMIT 1`,
     [insertId]
   );
 
@@ -633,6 +740,9 @@ export async function deleteTicket(
      WHERE Request_Id = ?`,
     [actorAccountId, trimmedReason, requestId]
   );
+
+  // ✅ Log DELETED event
+  await logEvent(requestId, 'DELETED', actorAccountId, trimmedReason);
 
   return { deleted: true };
 }
@@ -738,4 +848,153 @@ export async function listDeletedTickets(): Promise<any[]> {
   `;
   const [rows] = await pool.query<Row[]>(sql);
   return rows;
+}
+
+// ✅ NEW: Event logging functions
+async function logEvent(
+  requestId: number,
+  eventType: string,
+  actorAccountId: number | null,
+  notes: string | null = null
+): Promise<number> {
+  const [result] = await pool.query<any>(
+    `INSERT INTO maintenance_events_tbl (Request_Id, Event_type, Actor_Account_Id, Notes, Created_At)
+     VALUES (?, ?, ?, ?, NOW())`,
+    [requestId, eventType, actorAccountId, notes]
+  );
+  return result?.insertId ?? 0;
+}
+
+export async function getTicketEvents(requestId: number, before?: Date | null): Promise<any[]> {
+  let sql = `
+    SELECT 
+      e.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS ActorName,
+      a.Roles AS ActorRoleId,
+      ur.Roles AS ActorRoleName
+    FROM maintenance_events_tbl e
+    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE e.Request_Id = ?
+  `;
+  const params: any[] = [requestId];
+
+  // ✅ apply cutoff (Operator Cancelled-history view)
+  if (before) {
+    sql += ` AND e.Created_At <= ?`;
+    params.push(before);
+  }
+
+  sql += ` ORDER BY e.Created_At ASC`;
+
+  const [rows] = await pool.query<Row[]>(sql, params);
+
+  // ✅ Enrich REASSIGNED events with "to" operator (Name + Role)
+  const toIds = new Set<number>();
+  const parsedByEventId = new Map<number, { toAccountId: number | null; message: string | null }>();
+
+  for (const ev of rows) {
+    if (ev.Event_type !== "REASSIGNED") continue;
+    const parsed = extractToAccountIdFromNotes(ev.Notes ?? null);
+    parsedByEventId.set(ev.Event_Id, parsed);
+    if (parsed.toAccountId) toIds.add(parsed.toAccountId);
+  }
+
+  let toMap = new Map<number, { name: string; roleName: string | null }>();
+  if (toIds.size > 0) {
+    const ids = Array.from(toIds);
+    const placeholders = ids.map(() => "?").join(",");
+    const [toRows] = await pool.query<Row[]>(
+      `
+      SELECT
+        p.Account_id AS AccountId,
+        CONCAT(p.FirstName, ' ', p.LastName) AS FullName,
+        ur.Roles AS RoleName
+      FROM profile_tbl p
+      LEFT JOIN accounts_tbl a ON p.Account_id = a.Account_id
+      LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+      WHERE p.Account_id IN (${placeholders})
+      `,
+      ids
+    );
+
+    toMap = new Map(
+      toRows.map((r) => [Number(r.AccountId), { name: r.FullName || "Unknown", roleName: r.RoleName ?? null }])
+    );
+  }
+
+  return rows.map((ev) => {
+    if (ev.Event_type !== "REASSIGNED") return ev;
+
+    const parsed = parsedByEventId.get(ev.Event_Id) ?? { toAccountId: null, message: ev.Notes ?? null };
+    const to = parsed.toAccountId ? toMap.get(parsed.toAccountId) : null;
+
+    return {
+      ...ev,
+      Notes: parsed.message,
+      ToActorAccountId: parsed.toAccountId,
+      ToActorName: to?.name ?? null,
+      ToActorRoleName: to?.roleName ?? null,
+    };
+  });
+}
+
+export async function getEventDetails(eventId: number): Promise<any> {
+  // Get event with actor details
+  const [eventRows] = await pool.query<Row[]>(
+    `SELECT 
+      e.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS ActorName,
+      a.Roles AS ActorRoleId,
+      ur.Roles AS ActorRoleName
+    FROM maintenance_events_tbl e
+    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE e.Event_Id = ?`,
+    [eventId]
+  );
+  
+  if (!eventRows.length) return null;
+
+  const event = eventRows[0];
+
+  // Get remarks for this event
+  const [remarks] = await pool.query<Row[]>(
+    `SELECT 
+      mr.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS CreatedByName,
+      a.Roles AS CreatedByRoleId,
+      ur.Roles AS CreatedByRoleName
+    FROM maintenance_remarks_tbl mr
+    LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE mr.Event_Id = ?
+    ORDER BY mr.Created_at ASC`,
+    [eventId]
+  );
+
+  // Get attachments for this event
+  const [attachments] = await pool.query<Row[]>(
+    `SELECT
+      ma.*,
+      CONCAT(p.FirstName, ' ', p.LastName) AS UploaderName,
+      a.Roles AS UploaderRoleId,
+      ur.Roles AS UploaderRoleName
+    FROM maintenance_attachments_tbl ma
+    LEFT JOIN profile_tbl p ON ma.Uploaded_by = p.Account_id
+    LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
+    LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
+    WHERE ma.Event_Id = ?
+    ORDER BY ma.Uploaded_at ASC`,
+    [eventId]
+  );
+
+  return {
+    ...event,
+    Remarks: remarks,
+    Attachments: attachments
+  };
 }
