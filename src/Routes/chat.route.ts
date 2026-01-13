@@ -1,25 +1,28 @@
-import express from "express"
-import { chatWithAI } from "../services/chat.service"
+import express from "express";
+import { chatWithAI } from "../services/chat.service";
+import { authenticate } from "../middleware/authenticate";
 
-const router = express.Router()
+const router = express.Router();
 
-router.post("/", async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
   try {
-    const roleId = req.user?.Roles // from auth middleware
-    const { message } = req.body
+    const roleId = (req as any).user?.Roles;
+    const { message } = req.body;
 
-    if (typeof roleId !== "number") {
-      return res.status(400).json({ error: "Invalid or missing roleId" })
+    if (typeof message !== "string" || !message.trim()) {
+      return res.status(400).json({ error: "Message is required" });
     }
 
-    const reply = await chatWithAI(roleId, message)
+    if (typeof roleId !== "number") {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    res.json({ reply })
+    const reply = await chatWithAI(roleId, message);
+    return res.json({ reply });
   } catch (err) {
-    res.status(403).json({
-      error: "You are not allowed to access this chat"
-    })
+    console.error("[chat.route] chat failed:", err);
+    return res.status(500).json({ error: "Chat failed" });
   }
-})
+});
 
-export default router
+export default router;
