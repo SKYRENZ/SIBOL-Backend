@@ -4,6 +4,8 @@ import multer from "multer";
 import cloudinary from "../config/cloudinary.js";
 
 const storage = multer.memoryStorage();
+
+// existing generic upload (maintenance_attachments, allows docs)
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -19,6 +21,20 @@ const upload = multer({
 });
 
 export const uploadMiddleware = upload.single("file");
+
+// ✅ NEW: signup attachment middleware (REQUIRED image-only)
+const signupUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB (adjust)
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    return cb(new Error("Invalid file type (signup attachment must be an image)"));
+  },
+});
+
+// field name for signup: "attachment"
+export const signupAttachmentMiddleware = signupUpload.single("attachment");
 
 export async function uploadFile(req: Request, res: Response) {
   try {
@@ -40,7 +56,7 @@ export async function uploadFile(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error("Upload error:", err.message);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: err.message || "File upload failed",
       error: err.name || "UploadError",
     });

@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import * as emailService from '../utils/emailService';
 import config from '../config/env';
+import cloudinary from '../config/cloudinary.js';
 
 // DEFAULT_PASSWORD moved to config
 const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
@@ -658,4 +659,34 @@ function calculateEstimatedWaitTime(position: number): string {
   } else {
     return `${Math.ceil(daysToWait / 7)} weeks`;
   }
+}
+
+// NEW: Save attachment for pending signup
+export async function savePendingSignupAttachment(pendingId: number, file: Express.Multer.File) {
+  const base64Data = file.buffer.toString('base64');
+  const dataURI = `data:${file.mimetype};base64,${base64Data}`;
+
+  const uploadRes = await cloudinary.uploader.upload(dataURI, {
+    folder: `pending_account_attachments/${pendingId}`,
+    resource_type: 'image',
+  });
+
+  // enforce 1 attachment per pending
+  await pool.execute(`DELETE FROM pending_account_attachments_tbl WHERE Pending_id = ?`, [pendingId]);
+
+  await pool.execute(
+    `INSERT INTO pending_account_attachments_tbl
+     (Pending_id, File_path, Public_id, File_name, File_type, File_size)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      pendingId,
+      uploadRes.secure_url,
+      uploadRes.public_id,
+      file.originalname ?? null,
+      file.mimetype ?? null,
+      file.size ?? null,
+    ]
+  );
+
+  return uploadRes;
 }

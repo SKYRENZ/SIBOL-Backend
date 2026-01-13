@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import * as authController from '../controllers/authController';
 import { authenticate } from '../middleware/authenticate';
+import { signupAttachmentMiddleware } from '../controllers/uploadController';
 
 const router = Router();
 
-// POST /api/auth/register
-router.post('/register', authController.register);
+// POST /api/auth/register (✅ now requires multipart with "attachment")
+router.post('/register', signupAttachmentMiddleware, authController.register);
 
 // GET /api/auth/verify-email/:token
 router.get('/verify-email/:token', authController.verifyEmail);
@@ -29,8 +30,8 @@ router.post('/reset-password', authController.resetPassword);
 // GET /api/auth/barangays - returns active barangays for signup dropdown
 router.get('/barangays', authController.getBarangays);
 
-// PUBLIC (signup maps to `register` which is exported by the controller)
-router.post('/signup', authController.register);
+// PUBLIC (signup maps to `register`)
+router.post('/signup', signupAttachmentMiddleware, authController.register);
 router.post('/login', authController.login);
 router.post('/forgot-password', authController.forgotPassword);
 

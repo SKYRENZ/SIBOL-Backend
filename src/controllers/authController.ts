@@ -9,8 +9,11 @@ const JWT_SECRET = config.JWT_SECRET;
 
 export async function register(req: Request, res: Response) {
   try {
-    // ✅ REMOVED: console.log('📝 Registration request received:', req.body);
-    
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) {
+      return res.status(400).json({ success: false, error: 'Signup attachment is required (field name: "attachment")' });
+    }
+
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
     const finalBarangayId = barangayId ?? areaId;
 
@@ -36,13 +39,27 @@ export async function register(req: Request, res: Response) {
       Boolean(isSSO || false),
       sendMethod
     );
-    
-    // ✅ REMOVED: console.log('✅ Registration successful:', result);
-    res.status(201).json(result);
+
+    let uploadRes: any = null;
+    try {
+      uploadRes = await authService.savePendingSignupAttachment(result.pendingId, file);
+    } catch (e) {
+      // cleanup pending row if attachment save failed
+      try {
+        await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [result.pendingId]);
+      } catch (_) {}
+      throw new Error('Failed to save signup attachment. Please try again.');
+    }
+
+    return res.status(201).json({
+      ...result,
+      attachmentUrl: uploadRes?.secure_url,
+      attachmentPublicId: uploadRes?.public_id
+    });
   } catch (error: any) {
     const message = error?.message ?? String(error) ?? 'Registration failed';
     const statusCode = /exist/i.test(message) ? 409 : 400;
-    res.status(statusCode).json({
+    return res.status(statusCode).json({
       success: false,
       error: message
     });
