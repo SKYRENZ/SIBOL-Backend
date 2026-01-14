@@ -7,16 +7,42 @@ import config from '../config/env';
 
 const JWT_SECRET = config.JWT_SECRET;
 
+function parseBoolean(input: unknown): boolean {
+  if (typeof input === 'boolean') return input;
+  if (typeof input === 'number') return input === 1;
+  if (typeof input === 'string') {
+    const v = input.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === '') return false;
+  }
+  return false;
+}
+
 export async function register(req: Request, res: Response) {
   try {
+    const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
+
+    const roleNum = Number(roleId);
+    const rolesRequiringAttachment = new Set([2, 3, 4]); // Barangay, Operator, Household
+    const requiresAttachment = rolesRequiringAttachment.has(roleNum);
+
     const file = (req as any).file as Express.Multer.File | undefined;
-    if (!file) {
-      return res.status(400).json({ success: false, error: 'Signup attachment is required (field name: "attachment")' });
+
+    // ✅ attachment rules
+    if (requiresAttachment && !file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is required (field name: "attachment")'
+      });
+    }
+    if (!requiresAttachment && file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is only allowed for Barangay, Operator, and Household'
+      });
     }
 
-    const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
     const finalBarangayId = barangayId ?? areaId;
-
     if (!finalBarangayId) {
       return res.status(400).json({ success: false, error: 'barangayId is required' });
     }
@@ -29,26 +55,31 @@ export async function register(req: Request, res: Response) {
 
     const sendMethod: 'link' | 'code' = isMobileClient ? 'code' : 'link';
 
+    // ✅ FIX: parse isSSO safely (handles "false" correctly)
+    const isSSOFlag = parseBoolean(isSSO);
+
     const result = await authService.registerUser(
       firstName,
       lastName,
       Number(finalBarangayId),
       email,
-      Number(roleId),
+      roleNum,
       undefined,
-      Boolean(isSSO || false),
+      isSSOFlag,
       sendMethod
     );
 
+    // ✅ only save attachment when required
     let uploadRes: any = null;
-    try {
-      uploadRes = await authService.savePendingSignupAttachment(result.pendingId, file);
-    } catch (e) {
-      // cleanup pending row if attachment save failed
+    if (requiresAttachment && file) {
       try {
-        await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [result.pendingId]);
-      } catch (_) {}
-      throw new Error('Failed to save signup attachment. Please try again.');
+        uploadRes = await authService.savePendingSignupAttachment(result.pendingId, file);
+      } catch (e) {
+        try {
+          await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [result.pendingId]);
+        } catch (_) {}
+        throw new Error('Failed to save signup attachment. Please try again.');
+      }
     }
 
     return res.status(201).json({
@@ -59,10 +90,7 @@ export async function register(req: Request, res: Response) {
   } catch (error: any) {
     const message = error?.message ?? String(error) ?? 'Registration failed';
     const statusCode = /exist/i.test(message) ? 409 : 400;
-    return res.status(statusCode).json({
-      success: false,
-      error: message
-    });
+    return res.status(statusCode).json({ success: false, error: message });
   }
 }
 
