@@ -18,6 +18,16 @@ function parseBoolean(input: unknown): boolean {
   return false;
 }
 
+function getClientType(req: Request): 'web' | 'mobile' {
+  const h = (req.headers['x-client-type'] as string | undefined)?.toLowerCase();
+  if (h === 'web') return 'web';
+  if (h === 'mobile') return 'mobile';
+
+  const ua = String(req.headers['user-agent'] ?? '').toLowerCase();
+  if (/react-native|expo|android|iphone|ipad|mobile|okhttp/.test(ua)) return 'mobile';
+  return 'web';
+}
+
 export async function register(req: Request, res: Response) {
   try {
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
@@ -164,40 +174,39 @@ export async function checkStatus(req: Request, res: Response) {
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ message: 'Username and password are required' });
 
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
-    }
+    const clientType = getClientType(req);
 
-    const user = await authService.loginUser(username, password);
+    const user = await authService.loginUser(username, password, clientType);
 
-    const payload = { 
-      Account_id: user.Account_id, 
-      Roles: user.Roles, 
+    const payload = {
+      Account_id: user.Account_id,
+      Roles: user.Roles,
       Username: user.Username,
       IsFirstLogin: user.IsFirstLogin
     };
+
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // ✅ Set cookie for web browsers
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: config.NODE_ENV === 'production',
-      sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/'
-    });
+    // Only set cookie for web
+    if (clientType === 'web') {
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: config.NODE_ENV === 'production',
+        sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
 
-    // ✅ ALSO return token in response body for mobile apps
-    return res.json({ 
-      user,
-      token  // ← Add this for mobile
-    });
+    return res.json({ user, token });
   } catch (err: any) {
-    const statusCode = err.message === 'Invalid credentials' ? 401 : 500;
-    return res.status(statusCode).json({ 
-      message: err.message || 'Login failed'
-    });
+    if (err?.code === 'PLATFORM_NOT_ALLOWED') {
+      return res.status(403).json({ message: err.message });
+    }
+    const statusCode = err?.message === 'Invalid credentials' ? 401 : 500;
+    return res.status(statusCode).json({ message: err?.message || 'Login failed' });
   }
 };
 

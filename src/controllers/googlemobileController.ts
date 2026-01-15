@@ -37,7 +37,6 @@ export async function handleGoogleAuth(req: Request, res: Response) {
       const user = await findUserByEmail(googleUser.email);
 
       if (user) {
-        // User exists in active accounts
         if (!isAccountActive(user)) {
           return res.json({
             status: 'pending',
@@ -46,7 +45,14 @@ export async function handleGoogleAuth(req: Request, res: Response) {
           });
         }
 
-        // Generate JWT token for active user
+        const roleNum = Number(user.Roles ?? NaN);
+        const MOBILE_ALLOWED = new Set([3, 4]);
+        if (!MOBILE_ALLOWED.has(roleNum)) {
+          return res.status(403).json({
+            error: 'Your account does not have access to this platform.',
+          });
+        }
+
         const token = generateUserToken(user);
 
         return res.json({
