@@ -19,25 +19,29 @@ export async function handleGetProfile(req: Request, res: Response) {
 export async function handleGetMyPoints(req: Request, res: Response) {
   try {
     const user = (req as any).user;
-    const accountId = user?.Account_id ?? user?.account_id ?? user?.id;
-    
-    if (!accountId) {
-      return res.status(401).json({ message: 'Not authenticated' });
-    }
 
-    const account = await getPointsByAccountId(Number(accountId));
-    
-    if (!account) {
-      return res.status(404).json({ message: 'Account not found' });
-    }
+    if (!user) return res.status(401).json({ message: 'Not authenticated' });
 
-    return res.json({ 
-      points: account.Points ?? 0,
-      account_id: account.Account_id,
-      username: account.Username
+    const accountId = Number(user?.Account_id ?? user?.account_id ?? user?.id);
+
+    if (!accountId) return res.status(400).json({ message: 'Invalid account id' });
+
+    const account = await getPointsByAccountId(accountId);
+
+    if (!account) return res.status(404).json({ message: 'Account not found' });
+
+    // Normalize DB/row field casing (some rows use Points / Username)
+    const pointsVal = account?.points ?? account?.Points ?? user?.Points ?? 0;
+    const usernameVal = account?.username ?? account?.Username ?? user?.Username ?? user?.username ?? '';
+
+    return res.json({
+      account_id: accountId,
+      points: Number(pointsVal) || 0,
+      username: usernameVal
     });
-  } catch (err: any) {
-    return res.status(500).json({ message: err?.message || 'Server error' });
+  } catch (err) {
+    console.error('handleGetMyPoints error', err);
+    return res.status(500).json({ message: 'Server error' });
   }
 }
 
