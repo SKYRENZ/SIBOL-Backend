@@ -24,6 +24,10 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
   if (fields.Quantity !== undefined) { sets.push("Quantity = ?"); params.push(fields.Quantity); }
   if (fields.IsArchived !== undefined) { sets.push("IsArchived = ?"); params.push(fields.IsArchived); }
 
+  // ✅ new fields
+  if (fields.Image_url !== undefined) { sets.push("Image_url = ?"); params.push(fields.Image_url); }
+  if (fields.Image_public_id !== undefined) { sets.push("Image_public_id = ?"); params.push(fields.Image_public_id); }
+
   if (sets.length === 0) return;
 
   const sql = `UPDATE rewards_tbl SET ${sets.join(", ")} WHERE Reward_id = ?`;

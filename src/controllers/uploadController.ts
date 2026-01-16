@@ -36,6 +36,19 @@ const signupUpload = multer({
 // field name for signup: "attachment"
 export const signupAttachmentMiddleware = signupUpload.single("attachment");
 
+// ✅ Reward image upload (image-only)
+const rewardImageUpload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    return cb(new Error("Invalid file type (reward image must be an image)"));
+  },
+});
+
+export const rewardImageUploadMiddleware = rewardImageUpload.single("file");
+
 export async function uploadFile(req: Request, res: Response) {
   try {
     if (!req.file) {
@@ -60,5 +73,27 @@ export async function uploadFile(req: Request, res: Response) {
       message: err.message || "File upload failed",
       error: err.name || "UploadError",
     });
+  }
+}
+
+export async function uploadRewardImage(req: Request, res: Response) {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const base64Data = req.file.buffer.toString("base64");
+    const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: "rewards",
+      resource_type: "image",
+    });
+
+    return res.status(200).json({
+      imageUrl: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (err: any) {
+    console.error("Reward image upload error:", err?.message || err);
+    return res.status(500).json({ message: err.message || "File upload failed" });
   }
 }
