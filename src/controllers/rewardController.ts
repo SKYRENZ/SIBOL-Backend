@@ -102,3 +102,28 @@ export const markRedeemed = async (req: Request, res: Response) => {
     return res.status(500).json({ message: err.message || "Server error" });
   }
 };
+
+export const listTransactions = async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status ? String(req.query.status).trim() : undefined;
+
+    // If household user, restrict to their own transactions
+    const authUser: any = (req as any).user;
+    let accountFilter: number | undefined = undefined;
+
+    if (authUser && Number(authUser?.Roles) === 4) {
+      accountFilter = Number(authUser?.Account_id);
+    } else if (req.query.account_id) {
+      accountFilter = Number(req.query.account_id);
+    }
+
+    const opts: { status?: string; accountId?: number } = {};
+    if (status !== undefined) opts.status = status;
+    if (accountFilter !== undefined) opts.accountId = accountFilter;
+
+    const rows = await rewardService.listTransactions(opts);
+    return res.json(rows);
+  } catch (err: any) {
+    return res.status(500).json({ message: err?.message ?? "Server error" });
+  }
+};

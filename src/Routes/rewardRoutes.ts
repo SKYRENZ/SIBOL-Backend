@@ -10,9 +10,13 @@ router.use(authenticate);
 
 // Public / household routes (authenticated users can view)
 router.get("/", rewardController.listRewards); // query ?archived=true|false
+
+// move specific routes before the dynamic :id route
+router.get("/transactions", rewardController.listTransactions); // authenticated
+router.get("/code/:code", rewardController.validateRedemptionCode); // staff can lookup code
+
 router.get("/:id", rewardController.getReward);
 router.post("/redeem", rewardController.redeemReward); // body: { account_id, reward_id, quantity }
-router.get("/code/:code", rewardController.validateRedemptionCode); // staff can lookup code
 
 // Admin / barangay staff routes (admin only)
 router.post("/", isAdmin, rewardController.createReward);
