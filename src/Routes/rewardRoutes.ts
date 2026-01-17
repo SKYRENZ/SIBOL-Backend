@@ -1,11 +1,10 @@
 import express from "express";
 import * as rewardController from "../controllers/rewardController";
-import { authenticate } from "../middleware/authenticate"; // ✅ ADD THIS
+import { authenticate } from "../middleware/authenticate";
 import { isAdmin } from "../middleware/isAdmin";
 
 const router = express.Router();
 
-// ✅ Apply authenticate to ALL routes first
 router.use(authenticate);
 
 // Public / household routes (authenticated users can view)
@@ -24,5 +23,9 @@ router.put("/:id", isAdmin, rewardController.updateReward);
 router.patch("/:id/archive", isAdmin, rewardController.archiveReward);
 router.patch("/:id/restore", isAdmin, rewardController.restoreReward);
 router.patch("/transaction/:id/redeemed", isAdmin, rewardController.markRedeemed);
+
+// ---------------- attachments ----------------
+router.get("/transaction/:transactionId/attachments", rewardController.listRewardAttachments);
+router.delete("/attachment/:id", isAdmin, rewardController.deleteRewardAttachment);
 
 export default router;

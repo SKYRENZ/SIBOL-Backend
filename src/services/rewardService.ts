@@ -179,3 +179,62 @@ export const listTransactions = async (opts: { status?: string; accountId?: numb
   const [rows]: any = await pool.query(sql, params);
   return rows;
 };
+
+// -------------------- NEW: reward transaction attachments helpers --------------------
+export const transactionExists = async (transactionId: number): Promise<boolean> => {
+  const [rows]: any = await pool.query(
+    "SELECT Reward_transaction_id FROM reward_transactions_tbl WHERE Reward_transaction_id = ?",
+    [transactionId]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+};
+
+export const insertRewardAttachment = async (payload: {
+  Reward_transaction_id: number;
+  Account_id?: number | null;
+  File_path: string;
+  Public_id?: string | null;
+  File_name?: string | null;
+  File_type?: string | null;
+  File_size?: number | null;
+  Created_by?: number | null;
+}) => {
+  const { Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_by } = payload;
+  const [res]: any = await pool.query(
+    `INSERT INTO reward_transaction_attachments_tbl
+      (Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [Reward_transaction_id, Account_id ?? null, File_path, Public_id ?? null, File_name ?? null, File_type ?? null, File_size ?? null, Created_by ?? null]
+  );
+  const insertId = (res as any).insertId;
+  const [rows]: any = await pool.query("SELECT * FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [insertId]);
+  return (rows as any[])[0] || null;
+};
+
+export const listRewardAttachmentsByTransaction = async (transactionId: number) => {
+  const [rows]: any = await pool.query(
+    `SELECT Attachment_id, Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_at, Created_by
+     FROM reward_transaction_attachments_tbl
+     WHERE Reward_transaction_id = ?
+     ORDER BY Created_at ASC`,
+    [transactionId]
+  );
+  return rows;
+};
+
+export const getAttachmentById = async (attachmentId: number) => {
+  const [rows]: any = await pool.query("SELECT * FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [attachmentId]);
+  return (rows as any[])[0] || null;
+};
+
+export const deleteAttachmentById = async (attachmentId: number) => {
+  await pool.query("DELETE FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [attachmentId]);
+};
+
+export const hasAttachments = async (transactionId: number): Promise<boolean> => {
+  const [rows]: any = await pool.query(
+    "SELECT Attachment_id FROM reward_transaction_attachments_tbl WHERE Reward_transaction_id = ? LIMIT 1",
+    [transactionId]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+};
