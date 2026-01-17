@@ -99,16 +99,17 @@ export const markRedeemed = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid transaction id" });
 
-    // ensure at least one attachment exists (moved to service)
+    // ensure attachment exists (if enforced)
     const has = await rewardService.hasAttachments(id);
     if (!has) {
       return res.status(400).json({ message: "Please upload at least one attachment before marking as claimed." });
     }
 
-    await rewardService.markTransactionRedeemed(id);
-    return res.json({ message: "Transaction marked as Redeemed" });
+    const updated = await rewardService.markTransactionRedeemed(id);
+    return res.json({ message: "Transaction marked as Redeemed", transaction: updated });
   } catch (err: any) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    console.error("markRedeemed error:", err);
+    return res.status(500).json({ message: err?.message ?? "Server error" });
   }
 };
 

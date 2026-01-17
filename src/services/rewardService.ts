@@ -116,12 +116,19 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
 };
 
 /* mark transaction redeemed */
-export const markTransactionRedeemed = async (transactionId: number): Promise<any> => {
-  const [rows] = await pool.query(
-    `UPDATE reward_transactions_tbl SET Status = 'Claimed', Redeemed_at = NOW() WHERE Reward_transaction_id = ?`,
+export const markTransactionRedeemed = async (transactionId: number) => {
+  const sql = `
+    UPDATE reward_transactions_tbl
+    SET Status = 'Claimed',
+        Redeemed_at = NOW()
+    WHERE Reward_transaction_id = ?
+  `;
+  await pool.query(sql, [transactionId]);
+  const [rows]: any = await pool.query(
+    "SELECT * FROM reward_transactions_tbl WHERE Reward_transaction_id = ?",
     [transactionId]
   );
-  return rows;
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
 /* get transaction by code */
