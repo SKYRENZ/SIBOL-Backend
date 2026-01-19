@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import * as emailService from '../utils/emailService';
 import config from '../config/env';
+import cloudinary from '../config/cloudinary.js';
 
 // DEFAULT_PASSWORD moved to config
 const DEFAULT_PASSWORD = config.DEFAULT_PASSWORD;
@@ -546,32 +547,35 @@ export async function changeUserPassword(
 }
 
 // NEW: Login user and return user data (for cookie-based auth)
-export async function loginUser(username: string, password: string) {
+type ClientType = 'web' | 'mobile';
+
+export async function loginUser(username: string, password: string, clientType: ClientType) {
   try {
-    // 1. Fetch user from database
     const [rows]: any = await pool.execute(
       'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1',
       [username]
     );
 
     const user = rows?.[0];
-    if (!user) {
-      throw new Error('Invalid credentials');
+    if (!user) throw new Error('Invalid credentials');
+
+    const isValid = await bcrypt.compare(password, user.Password);
+    if (!isValid) throw new Error('Invalid credentials');
+
+    const roleNum = typeof user.Roles === 'string' ? Number(user.Roles) : user.Roles;
+
+    const WEB_ALLOWED = new Set([1, 2]);
+    const MOBILE_ALLOWED = new Set([3, 4]);
+
+    const allowed =
+      clientType === 'web' ? WEB_ALLOWED.has(roleNum) : MOBILE_ALLOWED.has(roleNum);
+
+    if (!allowed) {
+      const err: any = new Error('Your account does not have access to this platform.');
+      err.code = 'PLATFORM_NOT_ALLOWED';
+      throw err;
     }
 
-    // 2. Verify password
-    let isValid = false;
-    try {
-      isValid = await bcrypt.compare(password, user.Password);
-    } catch {
-      isValid = false;
-    }
-
-    if (!isValid) {
-      throw new Error('Invalid credentials');
-    }
-
-    // 3. Return user data (without password)
     return {
       Account_id: user.Account_id,
       Username: user.Username,
@@ -579,7 +583,6 @@ export async function loginUser(username: string, password: string) {
       IsFirstLogin: user.IsFirstLogin
     };
   } catch (error) {
-    console.error('Login service error:', error);
     throw error;
   }
 }
@@ -658,4 +661,34 @@ function calculateEstimatedWaitTime(position: number): string {
   } else {
     return `${Math.ceil(daysToWait / 7)} weeks`;
   }
+}
+
+// NEW: Save attachment for pending signup
+export async function savePendingSignupAttachment(pendingId: number, file: Express.Multer.File) {
+  const base64Data = file.buffer.toString('base64');
+  const dataURI = `data:${file.mimetype};base64,${base64Data}`;
+
+  const uploadRes = await cloudinary.uploader.upload(dataURI, {
+    folder: `pending_account_attachments/${pendingId}`,
+    resource_type: 'image',
+  });
+
+  // enforce 1 attachment per pending
+  await pool.execute(`DELETE FROM pending_account_attachments_tbl WHERE Pending_id = ?`, [pendingId]);
+
+  await pool.execute(
+    `INSERT INTO pending_account_attachments_tbl
+     (Pending_id, File_path, Public_id, File_name, File_type, File_size)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      pendingId,
+      uploadRes.secure_url,
+      uploadRes.public_id,
+      file.originalname ?? null,
+      file.mimetype ?? null,
+      file.size ?? null,
+    ]
+  );
+
+  return uploadRes;
 }

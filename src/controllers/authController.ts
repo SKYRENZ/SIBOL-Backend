@@ -7,13 +7,52 @@ import config from '../config/env';
 
 const JWT_SECRET = config.JWT_SECRET;
 
+function parseBoolean(input: unknown): boolean {
+  if (typeof input === 'boolean') return input;
+  if (typeof input === 'number') return input === 1;
+  if (typeof input === 'string') {
+    const v = input.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === '') return false;
+  }
+  return false;
+}
+
+function getClientType(req: Request): 'web' | 'mobile' {
+  const h = (req.headers['x-client-type'] as string | undefined)?.toLowerCase();
+  if (h === 'web') return 'web';
+  if (h === 'mobile') return 'mobile';
+
+  const ua = String(req.headers['user-agent'] ?? '').toLowerCase();
+  if (/react-native|expo|android|iphone|ipad|mobile|okhttp/.test(ua)) return 'mobile';
+  return 'web';
+}
+
 export async function register(req: Request, res: Response) {
   try {
-    // ✅ REMOVED: console.log('📝 Registration request received:', req.body);
-    
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
-    const finalBarangayId = barangayId ?? areaId;
 
+    const roleNum = Number(roleId);
+    const rolesRequiringAttachment = new Set([2, 3, 4]); // Barangay, Operator, Household
+    const requiresAttachment = rolesRequiringAttachment.has(roleNum);
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+
+    // ✅ attachment rules
+    if (requiresAttachment && !file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is required (field name: "attachment")'
+      });
+    }
+    if (!requiresAttachment && file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is only allowed for Barangay, Operator, and Household'
+      });
+    }
+
+    const finalBarangayId = barangayId ?? areaId;
     if (!finalBarangayId) {
       return res.status(400).json({ success: false, error: 'barangayId is required' });
     }
@@ -26,26 +65,42 @@ export async function register(req: Request, res: Response) {
 
     const sendMethod: 'link' | 'code' = isMobileClient ? 'code' : 'link';
 
+    // ✅ FIX: parse isSSO safely (handles "false" correctly)
+    const isSSOFlag = parseBoolean(isSSO);
+
     const result = await authService.registerUser(
       firstName,
       lastName,
       Number(finalBarangayId),
       email,
-      Number(roleId),
+      roleNum,
       undefined,
-      Boolean(isSSO || false),
+      isSSOFlag,
       sendMethod
     );
-    
-    // ✅ REMOVED: console.log('✅ Registration successful:', result);
-    res.status(201).json(result);
+
+    // ✅ only save attachment when required
+    let uploadRes: any = null;
+    if (requiresAttachment && file) {
+      try {
+        uploadRes = await authService.savePendingSignupAttachment(result.pendingId, file);
+      } catch (e) {
+        try {
+          await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [result.pendingId]);
+        } catch (_) {}
+        throw new Error('Failed to save signup attachment. Please try again.');
+      }
+    }
+
+    return res.status(201).json({
+      ...result,
+      attachmentUrl: uploadRes?.secure_url,
+      attachmentPublicId: uploadRes?.public_id
+    });
   } catch (error: any) {
     const message = error?.message ?? String(error) ?? 'Registration failed';
     const statusCode = /exist/i.test(message) ? 409 : 400;
-    res.status(statusCode).json({
-      success: false,
-      error: message
-    });
+    return res.status(statusCode).json({ success: false, error: message });
   }
 }
 
@@ -119,40 +174,39 @@ export async function checkStatus(req: Request, res: Response) {
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ message: 'Username and password are required' });
 
-    if (!username || !password) {
-      return res.status(400).json({ message: 'Username and password are required' });
-    }
+    const clientType = getClientType(req);
 
-    const user = await authService.loginUser(username, password);
+    const user = await authService.loginUser(username, password, clientType);
 
-    const payload = { 
-      Account_id: user.Account_id, 
-      Roles: user.Roles, 
+    const payload = {
+      Account_id: user.Account_id,
+      Roles: user.Roles,
       Username: user.Username,
       IsFirstLogin: user.IsFirstLogin
     };
+
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // ✅ Set cookie for web browsers
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: config.NODE_ENV === 'production',
-      sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/'
-    });
+    // Only set cookie for web
+    if (clientType === 'web') {
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: config.NODE_ENV === 'production',
+        sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
 
-    // ✅ ALSO return token in response body for mobile apps
-    return res.json({ 
-      user,
-      token  // ← Add this for mobile
-    });
+    return res.json({ user, token });
   } catch (err: any) {
-    const statusCode = err.message === 'Invalid credentials' ? 401 : 500;
-    return res.status(statusCode).json({ 
-      message: err.message || 'Login failed'
-    });
+    if (err?.code === 'PLATFORM_NOT_ALLOWED') {
+      return res.status(403).json({ message: err.message });
+    }
+    const statusCode = err?.message === 'Invalid credentials' ? 401 : 500;
+    return res.status(statusCode).json({ message: err?.message || 'Login failed' });
   }
 };
 

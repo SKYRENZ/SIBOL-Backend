@@ -2,6 +2,7 @@ import * as emailService from '../utils/emailService';
 import bcrypt from 'bcrypt';
 import { pool } from '../config/db';
 import config from '../config/env';
+import cloudinary from '../config/cloudinary.js';
 
 /**
  * Create a user directly as admin.
@@ -100,10 +101,15 @@ export async function getPendingAccounts() {
         p.IsAdminVerified,
         p.Created_at,
         a.Area_Name,
-        r.Roles as RoleName
+        r.Roles as RoleName,
+        pa.File_path AS AttachmentUrl,
+        pa.Public_id AS AttachmentPublicId,
+        pa.File_name AS AttachmentFileName,
+        pa.File_type AS AttachmentFileType
       FROM pending_accounts_tbl p
       LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
+      LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
       WHERE p.IsEmailVerified = 1 AND p.IsAdminVerified = 0
       ORDER BY p.Created_at ASC
     `);
@@ -126,11 +132,19 @@ export async function getPendingAccountById(pendingId: number) {
       SELECT 
         p.*,
         a.Area_Name,
-        r.Roles as RoleName
+        r.Roles as RoleName,
+        pa.File_path AS AttachmentUrl,
+        pa.Public_id AS AttachmentPublicId,
+        pa.File_name AS AttachmentFileName,
+        pa.File_type AS AttachmentFileType,
+        pa.File_size AS AttachmentFileSize,
+        pa.Uploaded_at AS AttachmentUploadedAt
       FROM pending_accounts_tbl p
       LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
+      LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
       WHERE p.Pending_id = ? AND p.IsEmailVerified = 1
+      LIMIT 1
     `, [pendingId]);
 
     if (rows.length === 0) {
@@ -142,7 +156,6 @@ export async function getPendingAccountById(pendingId: number) {
       success: true,
       pendingAccount: safeAccount
     };
-
   } catch (error) {
     console.error("❌ Error fetching pending account:", error);
     throw new Error("Failed to fetch pending account details");
@@ -152,11 +165,10 @@ export async function getPendingAccountById(pendingId: number) {
 // ✅ UPDATED: Admin approve account (removed contact field from transfer)
 export async function approveAccount(pendingId: number) {
   const conn = await (pool as any).getConnection();
-  
+
   try {
     await conn.beginTransaction();
 
-    // 1. Get pending account data
     const [pendingRows]: any = await conn.execute(
       "SELECT * FROM pending_accounts_tbl WHERE Pending_id = ? AND IsEmailVerified = 1 AND IsAdminVerified = 0",
       [pendingId]
@@ -166,11 +178,17 @@ export async function approveAccount(pendingId: number) {
       throw new Error("Pending account not found, email not verified, or already processed");
     }
 
+    // ✅ get attachment public_id for deletion
+    const [attRows]: any = await conn.execute(
+      `SELECT Public_id FROM pending_account_attachments_tbl WHERE Pending_id = ?`,
+      [pendingId]
+    );
+
     const pendingAccount = pendingRows[0];
 
-    // 2. Use configured DEFAULT_PASSWORD for approved accounts (hash for storage)
     const usePassword = config.DEFAULT_PASSWORD;
     const hashed = await bcrypt.hash(usePassword, 10);
+
     const [accountResult]: any = await conn.execute(
       "INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)",
       [pendingAccount.Username, hashed, pendingAccount.Roles]
@@ -178,24 +196,27 @@ export async function approveAccount(pendingId: number) {
 
     const newAccountId = accountResult.insertId;
 
-    // 3. Insert into profile_tbl (removed Contact field - set to NULL or remove if column doesn't allow NULL)
     await conn.execute(
       "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)",
       [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
     );
 
-    // 4. ✅ DELETE the pending account (no longer needed)
-    await conn.execute(
-      "DELETE FROM pending_accounts_tbl WHERE Pending_id = ?",
-      [pendingId]
-    );
+    // ✅ best-effort Cloudinary cleanup (do not fail approval if destroy fails)
+    for (const a of attRows || []) {
+      const publicId = a?.Public_id;
+      if (!publicId) continue;
+      try {
+        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+      } catch (e) {
+        console.warn('[approveAccount] failed to delete cloudinary asset', { pendingId, publicId });
+      }
+    }
 
-    // COMMIT first so DB changes are durable even if email fails
+    await conn.execute("DELETE FROM pending_accounts_tbl WHERE Pending_id = ?", [pendingId]);
+
     await conn.commit();
 
-    // 5. Send welcome email (best-effort; do NOT fail the approval on email errors)
     try {
-      // include the default plaintext password in the welcome email
       await emailService.sendWelcomeEmail(
         pendingAccount.Email,
         pendingAccount.FirstName,
@@ -204,11 +225,8 @@ export async function approveAccount(pendingId: number) {
       );
     } catch (emailErr) {
       console.warn("Warning: failed to send welcome email (non-fatal):", emailErr);
-      // optionally persist a flag/log in DB or continue silently
     }
 
-    // continue to fetch created user and return success
-    // 6. Get the complete user data (Contact will be NULL in profile_tbl)
     const [newUserRows]: any = await pool.execute(`
       SELECT 
         a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
@@ -661,19 +679,29 @@ export async function rejectAccount(pendingId: number, reason?: string) {
     }
     const pending = rows[0];
 
-    // Optionally: store a rejection record or send email
+    const [attRows]: any = await pool.execute(
+      `SELECT Public_id FROM pending_account_attachments_tbl WHERE Pending_id = ?`,
+      [pendingId]
+    );
+
+    for (const a of attRows || []) {
+      const publicId = a?.Public_id;
+      if (!publicId) continue;
+      try {
+        await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+      } catch (e) {
+        console.warn('[rejectAccount] failed to delete cloudinary asset', { pendingId, publicId });
+      }
+    }
+
     try {
-      if (pending.Email) {
-        // best-effort: send rejection email if your emailService supports it
-        if ((emailService as any).sendRejectionEmail) {
-          await (emailService as any).sendRejectionEmail(pending.Email, pending.FirstName, reason);
-        }
+      if (pending.Email && (emailService as any).sendRejectionEmail) {
+        await (emailService as any).sendRejectionEmail(pending.Email, pending.FirstName, reason);
       }
     } catch (emailErr) {
       console.warn("Warning: failed to send rejection email:", emailErr);
     }
 
-    // Delete pending record
     await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
 
     return {

@@ -1,54 +1,43 @@
 import { Router } from 'express';
 import * as authController from '../controllers/authController';
 import { authenticate } from '../middleware/authenticate';
+import { signupAttachmentMiddleware } from '../controllers/uploadController';
 
 const router = Router();
 
-// POST /api/auth/register
-router.post('/register', authController.register);
+// Signup/Register (alias)
+router.post('/register', signupAttachmentMiddleware, authController.register);
+router.post('/signup', signupAttachmentMiddleware, authController.register);
 
-// GET /api/auth/verify-email/:token
-router.get('/verify-email/:token', authController.verifyEmail);
-
-// POST /api/auth/resend-verification
-router.post('/resend-verification', authController.resendVerification);
-
-// GET /api/auth/check-status/:username
-router.get('/check-status/:username', authController.checkStatus);
-
-// POST /api/auth/login
+// Login
 router.post('/login', authController.login);
 
-// NEW: Check if email is eligible for SSO
+// Email verification (link + resend)
+router.get('/verify-email/:token', authController.verifyEmail);
+router.post('/resend-verification', authController.resendVerification);
+
+// Status + dropdown
+router.get('/check-status/:username', authController.checkStatus);
+router.get('/barangays', authController.getBarangays);
+
+// SSO eligibility
 router.post('/check-sso-eligibility', authController.checkSSOEligibility);
 
+// Password reset
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/verify-reset-code', authController.verifyResetCode);
 router.post('/reset-password', authController.resetPassword);
 
-// GET /api/auth/barangays - returns active barangays for signup dropdown
-router.get('/barangays', authController.getBarangays);
-
-// PUBLIC (signup maps to `register` which is exported by the controller)
-router.post('/signup', authController.register);
-router.post('/login', authController.login);
-router.post('/forgot-password', authController.forgotPassword);
-
-// PROTECTED ones should use middleware individually
-// router.get('/me', authenticate, getMe);
-
-// POST /api/auth/send-verification-code
+// Mobile email-code verification
 router.post('/send-verification-code', authController.sendVerificationCode);
-// POST /api/auth/verify-email-code (client sends { email, code })
 router.post('/verify-email-code', authController.verifyVerificationCode);
 
-// Token verification endpoint (PROTECTED)
+// Protected
 router.get('/verify', authenticate, authController.verifyToken);
-
-// POST /api/auth/change-password (PROTECTED)
 router.post('/change-password', authenticate, authController.changePassword);
 
-// GET /api/auth/queue-position - Get queue position for pending account
+// Queue position (your choice: public or protected)
+// If it’s sensitive, protect it. If it’s meant for pre-login pending users, keep it public.
 router.get('/queue-position', authController.getQueuePosition);
 
 export default router;

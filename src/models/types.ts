@@ -43,14 +43,18 @@ export interface Area {
   Area_Name: string;
 }
 
-export interface Reward {
+export type Reward = {
   Reward_id?: number;
   Item: string;
-  Description?: string;
+  Description?: string | null;
   Points_cost: number;
   Quantity: number;
-  IsArchived?: number;
-}
+  IsArchived?: number | boolean;
+
+  // ✅ add these
+  Image_url?: string | null;
+  Image_public_id?: string | null;
+};
 
 export interface RewardTransaction {
   Reward_transaction_id?: number;
