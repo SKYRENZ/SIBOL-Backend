@@ -92,7 +92,7 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
     const code = crypto.randomBytes(6).toString("hex").toUpperCase();
 
     const [insertResult]: any = await conn.query(
-      `INSERT INTO reward_transactions_tbl (Reward_id, Account_id, Quantity, Total_points, Redemption_code, Status) VALUES (?, ?, ?, ?, ?, 'Pending')`,
+      `INSERT INTO reward_transactions_tbl (Reward_id, Account_id, Quantity, Total_points, Redemption_code, Status) VALUES (?, ?, ?, ?, ?, 'Unclaimed')`,
       [rewardId, accountId, quantity, totalCost, code]
     );
 
@@ -116,9 +116,19 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
 };
 
 /* mark transaction redeemed */
-export const markTransactionRedeemed = async (transactionId: number): Promise<any> => {
-  const [rows] = await pool.query(`UPDATE reward_transactions_tbl SET Status = 'Redeemed', Redeemed_at = NOW() WHERE Reward_transaction_id = ?`, [transactionId]);
-  return rows;
+export const markTransactionRedeemed = async (transactionId: number) => {
+  const sql = `
+    UPDATE reward_transactions_tbl
+    SET Status = 'Claimed',
+        Redeemed_at = NOW()
+    WHERE Reward_transaction_id = ?
+  `;
+  await pool.query(sql, [transactionId]);
+  const [rows]: any = await pool.query(
+    "SELECT * FROM reward_transactions_tbl WHERE Reward_transaction_id = ?",
+    [transactionId]
+  );
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
 /* get transaction by code */
@@ -128,4 +138,110 @@ export const getTransactionByCode = async (code: string): Promise<(RewardTransac
     [code]
   );
   return (rows as any[])[0] || null;
+};
+
+/* list transactions */
+export const listTransactions = async (opts: { status?: string; accountId?: number } = {}) => {
+  const params: any[] = [];
+  const where: string[] = [];
+
+  if (opts.status) {
+    const s = String(opts.status).toLowerCase();
+    const statusVal = s === "claimed" ? "Claimed" : "Unclaimed";
+    where.push("rt.Status = ?");
+    params.push(statusVal);
+  }
+
+  if (opts.accountId) {
+    where.push("rt.Account_id = ?");
+    params.push(opts.accountId);
+  }
+
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const sql = `
+    SELECT
+      rt.Reward_transaction_id,
+      rt.Account_id,
+      rt.Reward_id,
+      r.Item,
+      -- prefer profile first/last name and fallback to accounts.Username
+      COALESCE(CONCAT(COALESCE(p.FirstName, ''), ' ', COALESCE(p.LastName, '')), a.Username, '') AS Fullname,
+      -- profile email only (accounts_tbl has no Email column)
+      COALESCE(p.Email, '') AS Email,
+      rt.Quantity AS Quantity,
+      rt.Total_points,
+      rt.Redemption_code,
+      rt.Status,
+      rt.Redeemed_at,
+      rt.Created_at
+    FROM reward_transactions_tbl rt
+    LEFT JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+    LEFT JOIN accounts_tbl a ON rt.Account_id = a.Account_id
+    LEFT JOIN profile_tbl p ON rt.Account_id = p.Account_id
+    ${whereSql}
+    ORDER BY rt.Created_at DESC
+  `;
+
+  const [rows]: any = await pool.query(sql, params);
+  return rows;
+};
+
+// -------------------- NEW: reward transaction attachments helpers --------------------
+export const transactionExists = async (transactionId: number): Promise<boolean> => {
+  const [rows]: any = await pool.query(
+    "SELECT Reward_transaction_id FROM reward_transactions_tbl WHERE Reward_transaction_id = ?",
+    [transactionId]
+  );
+  return Array.isArray(rows) && rows.length > 0;
+};
+
+export const insertRewardAttachment = async (payload: {
+  Reward_transaction_id: number;
+  Account_id?: number | null;
+  File_path: string;
+  Public_id?: string | null;
+  File_name?: string | null;
+  File_type?: string | null;
+  File_size?: number | null;
+  Created_by?: number | null;
+}) => {
+  const { Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_by } = payload;
+  const [res]: any = await pool.query(
+    `INSERT INTO reward_transaction_attachments_tbl
+      (Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [Reward_transaction_id, Account_id ?? null, File_path, Public_id ?? null, File_name ?? null, File_type ?? null, File_size ?? null, Created_by ?? null]
+  );
+  const insertId = (res as any).insertId;
+  const [rows]: any = await pool.query("SELECT * FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [insertId]);
+  return (rows as any[])[0] || null;
+};
+
+export const listRewardAttachmentsByTransaction = async (transactionId: number) => {
+  const [rows]: any = await pool.query(
+    `SELECT Attachment_id, Reward_transaction_id, Account_id, File_path, Public_id, File_name, File_type, File_size, Created_at, Created_by
+     FROM reward_transaction_attachments_tbl
+     WHERE Reward_transaction_id = ?
+     ORDER BY Created_at ASC`,
+    [transactionId]
+  );
+  return rows;
+};
+
+export const getAttachmentById = async (attachmentId: number) => {
+  const [rows]: any = await pool.query("SELECT * FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [attachmentId]);
+  return (rows as any[])[0] || null;
+};
+
+export const deleteAttachmentById = async (attachmentId: number) => {
+  await pool.query("DELETE FROM reward_transaction_attachments_tbl WHERE Attachment_id = ?", [attachmentId]);
+};
+
+export const hasAttachments = async (transactionId: number): Promise<boolean> => {
+  const [rows]: any = await pool.query(
+    "SELECT Attachment_id FROM reward_transaction_attachments_tbl WHERE Reward_transaction_id = ? LIMIT 1",
+    [transactionId]
+  );
+  return Array.isArray(rows) && rows.length > 0;
 };

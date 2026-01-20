@@ -2,6 +2,7 @@
 import type { Request, Response } from "express";
 import multer from "multer";
 import cloudinary from "../config/cloudinary.js";
+import * as rewardService from "../services/rewardService"; // ✅ used by uploadClaimedRewardAttachment
 
 const storage = multer.memoryStorage();
 
@@ -95,5 +96,52 @@ export async function uploadRewardImage(req: Request, res: Response) {
   } catch (err: any) {
     console.error("Reward image upload error:", err?.message || err);
     return res.status(500).json({ message: err.message || "File upload failed" });
+  }
+}
+
+// ----------------- NEW: reward transaction attachments -----------------
+
+/**
+ * Upload an attachment for a reward transaction and insert DB row.
+ * Protected route should provide req.user.Account_id.
+ * Expects multipart/form-data with field "file" and body.reward_transaction_id
+ */
+export async function uploadClaimedRewardAttachment(req: Request, res: Response) {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: "No file uploaded" });
+
+    const txId = Number(req.body.reward_transaction_id ?? req.body.Reward_transaction_id);
+    if (!txId) return res.status(400).json({ message: "Missing reward_transaction_id" });
+
+    const exists = await rewardService.transactionExists(txId);
+    if (!exists) return res.status(404).json({ message: "Reward transaction not found" });
+
+    const base64Data = file.buffer.toString("base64");
+    const dataURI = `data:${file.mimetype};base64,${base64Data}`;
+    const folder = `reward_attachments/tx_${txId}`;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder,
+      resource_type: "auto",
+    });
+
+    const authUser: any = (req as any).user;
+    const accountId = Number(authUser?.Account_id ?? req.body.account_id ?? null) || null;
+
+    const attachment = await rewardService.insertRewardAttachment({
+      Reward_transaction_id: txId,
+      Account_id: accountId,
+      File_path: result.secure_url,
+      Public_id: result.public_id,
+      File_name: file.originalname,
+      File_type: file.mimetype,
+      File_size: file.size,
+      Created_by: accountId,
+    });
+
+    return res.status(201).json({ attachment });
+  } catch (err: any) {
+    console.error("uploadClaimedRewardAttachment error:", err);
+    return res.status(500).json({ message: err?.message ?? "Upload failed" });
   }
 }
