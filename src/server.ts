@@ -55,12 +55,12 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With'],
+  allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With','x-client-type'],
 };
 
-const app = express(); // <-- MOVE THIS UP
+const app = express();
 
-app.use(cors(corsOptions)); // <-- NOW THIS IS AFTER app is declared
+app.use(cors(corsOptions)); // ✅ Only this one
 
 const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT) || 5000
 
@@ -84,12 +84,6 @@ app.use(session({
 // Initialize passport
 app.use(passport.initialize());
 app.use(passport.session());
-
-// CORS - allow credentials
-app.use(cors({
-  origin: FRONTEND_ORIGINS_ARRAY,
-  credentials: true, // ✅ Important for cookies
-}));
 
 // Remove the app.options('*' / '/*') call (path-to-regexp rejects '*').
 // Provide a simple OPTIONS responder so preflight requests are answered.
