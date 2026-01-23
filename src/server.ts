@@ -58,7 +58,10 @@ const corsOptions = {
   allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With'],
 };
 
-const app = express();
+const app = express(); // <-- MOVE THIS UP
+
+app.use(cors(corsOptions)); // <-- NOW THIS IS AFTER app is declared
+
 const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT) || 5000
 
 // trust proxy so secure cookies work behind Render's proxy
