@@ -1,11 +1,9 @@
 import { Request, Response } from "express";
-import pool from "../config/db";
+import * as operatorService from "../services/operatorService";
 
-export async function list(req: Request, res: Response) {
+export async function list(_req: Request, res: Response) {
   try {
-    const [rows] = await pool.query<any[]>(
-      "SELECT Account_id, Username FROM accounts_tbl WHERE Roles = 3"
-    );
+    const rows = await operatorService.listOperators();
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch operators" });

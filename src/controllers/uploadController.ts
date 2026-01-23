@@ -2,8 +2,11 @@
 import type { Request, Response } from "express";
 import multer from "multer";
 import cloudinary from "../config/cloudinary.js";
+import * as rewardService from "../services/rewardService"; // ✅ used by uploadClaimedRewardAttachment
 
 const storage = multer.memoryStorage();
+
+// existing generic upload (maintenance_attachments, allows docs)
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -20,31 +23,125 @@ const upload = multer({
 
 export const uploadMiddleware = upload.single("file");
 
+// ✅ NEW: signup attachment middleware (REQUIRED image-only)
+const signupUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB (adjust)
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    return cb(new Error("Invalid file type (signup attachment must be an image)"));
+  },
+});
+
+// field name for signup: "attachment"
+export const signupAttachmentMiddleware = signupUpload.single("attachment");
+
+// ✅ Reward image upload (image-only)
+const rewardImageUpload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    return cb(new Error("Invalid file type (reward image must be an image)"));
+  },
+});
+
+export const rewardImageUploadMiddleware = rewardImageUpload.single("file");
+
 export async function uploadFile(req: Request, res: Response) {
   try {
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const result = await new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'maintenance_attachments', resource_type: 'auto' },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
-      );
-      uploadStream.end(req.file!.buffer);
-    });
+    const base64Data = req.file.buffer.toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
 
-    const uploadResult = result as any;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: 'maintenance_attachments',
+      resource_type: 'auto',
+    });
 
     return res.status(200).json({
-      filepath: uploadResult.secure_url,
-      publicId: uploadResult.public_id,
+      filepath: result.secure_url,
+      publicId: result.public_id,
     });
   } catch (err: any) {
-    console.error("Cloudinary upload error:", err);
+    console.error("Upload error:", err.message);
+    return res.status(500).json({
+      message: err.message || "File upload failed",
+      error: err.name || "UploadError",
+    });
+  }
+}
+
+export async function uploadRewardImage(req: Request, res: Response) {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    const base64Data = req.file.buffer.toString("base64");
+    const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: "rewards",
+      resource_type: "image",
+    });
+
+    return res.status(200).json({
+      imageUrl: result.secure_url,
+      publicId: result.public_id,
+    });
+  } catch (err: any) {
+    console.error("Reward image upload error:", err?.message || err);
     return res.status(500).json({ message: err.message || "File upload failed" });
+  }
+}
+
+// ----------------- NEW: reward transaction attachments -----------------
+
+/**
+ * Upload an attachment for a reward transaction and insert DB row.
+ * Protected route should provide req.user.Account_id.
+ * Expects multipart/form-data with field "file" and body.reward_transaction_id
+ */
+export async function uploadClaimedRewardAttachment(req: Request, res: Response) {
+  try {
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: "No file uploaded" });
+
+    const txId = Number(req.body.reward_transaction_id ?? req.body.Reward_transaction_id);
+    if (!txId) return res.status(400).json({ message: "Missing reward_transaction_id" });
+
+    const exists = await rewardService.transactionExists(txId);
+    if (!exists) return res.status(404).json({ message: "Reward transaction not found" });
+
+    const base64Data = file.buffer.toString("base64");
+    const dataURI = `data:${file.mimetype};base64,${base64Data}`;
+    const folder = `reward_attachments/tx_${txId}`;
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder,
+      resource_type: "auto",
+    });
+
+    const authUser: any = (req as any).user;
+    const accountId = Number(authUser?.Account_id ?? req.body.account_id ?? null) || null;
+
+    const attachment = await rewardService.insertRewardAttachment({
+      Reward_transaction_id: txId,
+      Account_id: accountId,
+      File_path: result.secure_url,
+      Public_id: result.public_id,
+      File_name: file.originalname,
+      File_type: file.mimetype,
+      File_size: file.size,
+      Created_by: accountId,
+    });
+
+    return res.status(201).json({ attachment });
+  } catch (err: any) {
+    console.error("uploadClaimedRewardAttachment error:", err);
+    return res.status(500).json({ message: err?.message ?? "Upload failed" });
   }
 }

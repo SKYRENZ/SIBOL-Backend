@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import pool from "../config/db";
-import { geocodeAddress } from "../utils/geocode";
+import * as wasteContainerService from "../services/wasteContainerService";
 
 /**
  * Create a new waste container.
@@ -18,78 +17,19 @@ export async function createContainer(req: Request, res: Response) {
     return res.status(400).json({ error: "container_name, area_name and fullAddress are required." });
   }
 
-  let coords = (latitude && longitude) ? { lat: latitude, lon: longitude } : await geocodeAddress(fullAddress);
-  console.log("Geocoded coords:", coords);
-  if (!coords) {
-    return res.status(400).json({ error: "Could not geocode the provided address." });
-  }
-
   try {
-    // Try to find an existing area record by name + address
-    console.log("Checking for existing area...");
-    const [existingAreaRows]: any = await pool.query(
-      "SELECT Area_id, Latitude, Longitude FROM area_tbl WHERE Area_Name = ? AND Full_Address = ? LIMIT 1",
-      [area_name, fullAddress]
-    );
-    console.log("Existing area rows:", existingAreaRows);
-
-    let areaId: number;
-    let areaLat: number | null = null;
-    let areaLon: number | null = null;
-
-    if (existingAreaRows && existingAreaRows.length > 0) {
-      areaId = existingAreaRows[0].Area_id;
-      areaLat = existingAreaRows[0].Latitude;
-      areaLon = existingAreaRows[0].Longitude;
-
-      // If area exists but has no coordinates, update them
-      if (areaLat === null || areaLon === null) {
-        console.log("Updating area coordinates...");
-        await pool.query("UPDATE area_tbl SET Latitude = ?, Longitude = ? WHERE Area_id = ?", [
-          coords.lat,
-          coords.lon,
-          areaId,
-        ]);
-        areaLat = coords.lat;
-        areaLon = coords.lon;
-      }
-    } else {
-      // Create a new area
-      console.log("Inserting new area...");
-      const [areaResult]: any = await pool.query(
-        "INSERT INTO area_tbl (Area_Name, Full_Address, Latitude, Longitude) VALUES (?, ?, ?, ?)",
-        [area_name, fullAddress, coords.lat, coords.lon]
-      );
-      console.log("Area insert result:", areaResult);
-      areaId = areaResult.insertId;
-      areaLat = coords.lat;
-      areaLon = coords.lon;
-    }
-
-    // Insert the container (table is waste_containers_tbl)
-    console.log("Inserting container...");
-    const deploymentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const [containerResult]: any = await pool.query(
-      "INSERT INTO waste_containers_tbl (container_name, area_id, deployment_date, status) VALUES (?, ?, ?, ?)",
-      [container_name, areaId, deploymentDate, "Empty"]
-    );
-    console.log("Container insert result:", containerResult);
-
-    const created = {
-      container_id: containerResult.insertId,
+    const created = await wasteContainerService.createContainer({
       container_name,
-      area_id: areaId,
       area_name,
-      deployment_date: deploymentDate,
-      status: "Empty",
-      latitude: areaLat,
-      longitude: areaLon,
-    };
+      fullAddress,
+      latitude,
+      longitude,
+    });
 
     return res.status(201).json({ data: created });
   } catch (err) {
-    console.error("Database error:", err);
-    return res.status(500).json({ error: "Failed to create waste container." });
+    const message = err instanceof Error ? err.message : "Failed to create waste container.";
+    return res.status(500).json({ error: message });
   }
 }
 
@@ -97,24 +37,9 @@ export async function createContainer(req: Request, res: Response) {
  * List all containers joined with area info.
  * Uses existing waste_containers_tbl schema.
  */
-export async function listContainers(req: Request, res: Response) {
+export async function listContainers(_req: Request, res: Response) {
   try {
-    const [rows]: any = await pool.query(
-      `SELECT
-         wc.container_id,
-         wc.container_name,
-         wc.deployment_date,
-         wc.status,
-         a.Area_id AS area_id,
-         a.Area_Name AS area_name,
-         a.Full_Address AS full_address,
-         a.Latitude AS latitude,
-         a.Longitude AS longitude
-       FROM waste_containers_tbl wc
-       LEFT JOIN area_tbl a ON wc.area_id = a.Area_id
-       ORDER BY wc.container_id DESC`
-    );
-
+    const rows = await wasteContainerService.listContainers();
     return res.json({ data: rows });
   } catch (err) {
     console.error("Database error:", err);

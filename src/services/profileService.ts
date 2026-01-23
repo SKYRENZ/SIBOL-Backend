@@ -6,9 +6,16 @@ const DAYS_RESTRICTION = 15;
 
 export async function getProfileByAccountId(accountId: number) {
   const sql = `
-    SELECT p.*, a.Username, a.Password AS account_password
+    SELECT
+      p.*,
+      a.Username,
+      b.Barangay_Name,
+      ar.Area_Name,
+      ar.Full_Address
     FROM profile_tbl p
     JOIN accounts_tbl a ON a.Account_id = p.Account_id
+    LEFT JOIN barangay_tbl b ON b.Barangay_id = p.Barangay_id
+    LEFT JOIN area_tbl ar ON ar.Area_id = p.Area_id
     WHERE p.Account_id = ?
     LIMIT 1
   `;

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import * as rewardService from "../services/rewardService";
+import cloudinary from "../config/cloudinary"; // ✅ needed for attachment deletion
 
 export const createReward = async (req: Request, res: Response) => {
   try {
@@ -96,9 +97,80 @@ export const validateRedemptionCode = async (req: Request, res: Response) => {
 export const markRedeemed = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    await rewardService.markTransactionRedeemed(id);
-    return res.json({ message: "Transaction marked as Redeemed" });
+    if (!id) return res.status(400).json({ message: "Invalid transaction id" });
+
+    // ensure attachment exists (if enforced)
+    const has = await rewardService.hasAttachments(id);
+    if (!has) {
+      return res.status(400).json({ message: "Please upload at least one attachment before marking as claimed." });
+    }
+
+    const updated = await rewardService.markTransactionRedeemed(id);
+    return res.json({ message: "Transaction marked as Redeemed", transaction: updated });
   } catch (err: any) {
-    return res.status(500).json({ message: err.message || "Server error" });
+    console.error("markRedeemed error:", err);
+    return res.status(500).json({ message: err?.message ?? "Server error" });
+  }
+};
+
+export const listTransactions = async (req: Request, res: Response) => {
+  try {
+    const status = req.query.status ? String(req.query.status).trim() : undefined;
+
+    // If household user, restrict to their own transactions
+    const authUser: any = (req as any).user;
+    let accountFilter: number | undefined = undefined;
+
+    if (authUser && Number(authUser?.Roles) === 4) {
+      accountFilter = Number(authUser?.Account_id);
+    } else if (req.query.account_id) {
+      accountFilter = Number(req.query.account_id);
+    }
+
+    const opts: { status?: string; accountId?: number } = {};
+    if (status !== undefined) opts.status = status;
+    if (accountFilter !== undefined) opts.accountId = accountFilter;
+
+    const rows = await rewardService.listTransactions(opts);
+    return res.json(rows);
+  } catch (err: any) {
+    return res.status(500).json({ message: err?.message ?? "Server error" });
+  }
+};
+
+export const listRewardAttachments = async (req: Request, res: Response) => {
+  try {
+    const txId = Number(req.params.transactionId ?? req.query.transactionId);
+    if (!txId) return res.status(400).json({ message: "Missing transaction id" });
+
+    const rows = await rewardService.listRewardAttachmentsByTransaction(txId);
+    return res.json(rows);
+  } catch (err: any) {
+    console.error("listRewardAttachments error:", err);
+    return res.status(500).json({ message: err?.message ?? "Server error" });
+  }
+};
+
+export const deleteRewardAttachment = async (req: Request, res: Response) => {
+  try {
+    const attachId = Number(req.params.id);
+    if (!attachId) return res.status(400).json({ message: "Missing attachment id" });
+
+    const row = await rewardService.getAttachmentById(attachId);
+    if (!row) return res.status(404).json({ message: "Attachment not found" });
+
+    if (row.Public_id) {
+      try {
+        await cloudinary.uploader.destroy(String(row.Public_id), { resource_type: "auto" });
+      } catch (e) {
+        console.warn("cloudinary destroy failed, continuing:", e);
+      }
+    }
+
+    await rewardService.deleteAttachmentById(attachId);
+    return res.json({ message: "Attachment deleted" });
+  } catch (err: any) {
+    console.error("deleteRewardAttachment error:", err);
+    return res.status(500).json({ message: err?.message ?? "Server error" });
   }
 };
