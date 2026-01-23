@@ -40,23 +40,17 @@ import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 // I.O.T Stages imports:
 import S1_esp32Routes from './Routes/S1_esp32Routes';
 
-import userRoutes from "./Routes/userRoutes"; 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
-// CORS options that validate the request Origin and echo it when allowed
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // allow non-browser requests (curl, server-to-server) when origin is undefined
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-
-    console.warn('Blocked CORS origin:', origin);
     return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
