@@ -40,23 +40,17 @@ import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 // I.O.T Stages imports:
 import S1_esp32Routes from './Routes/S1_esp32Routes';
 
-import userRoutes from "./Routes/userRoutes"; 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
-// CORS options that validate the request Origin and echo it when allowed
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // allow non-browser requests (curl, server-to-server) when origin is undefined
     if (!origin) return callback(null, true);
-
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-
-    console.warn('Blocked CORS origin:', origin);
     return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
@@ -64,7 +58,10 @@ const corsOptions = {
   allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With'],
 };
 
-const app = express();
+const app = express(); // <-- MOVE THIS UP
+
+app.use(cors(corsOptions)); // <-- NOW THIS IS AFTER app is declared
+
 const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT) || 5000
 
 // trust proxy so secure cookies work behind Render's proxy
