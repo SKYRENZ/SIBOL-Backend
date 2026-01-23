@@ -1,6 +1,19 @@
 import type { Request, Response, NextFunction } from 'express';
 import { pool } from '../config/db';
 
+function getRoleNumber(user: any): number | null {
+  const role =
+    user?.Roles ??
+    user?.roleId ??
+    user?.role ??
+    user?.Roles_id ??
+    user?.RolesId ??
+    null;
+
+  const roleNum = typeof role === 'string' ? Number(role) : role;
+  return Number.isFinite(roleNum) ? roleNum : null;
+}
+
 // usage: authorizeByModulePath('/admin')
 export const authorizeByModulePath = (path: string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -22,3 +35,19 @@ export const authorizeByModulePath = (path: string) => {
     }
   };
 };
+
+export function authorizeRoles(allowedRoles: number[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const actor = (req as any).user;
+    if (!actor) return res.status(401).json({ message: 'Authentication required' });
+
+    const roleNum = getRoleNumber(actor);
+    if (roleNum === null) return res.status(403).json({ message: 'Insufficient privileges' });
+
+    if (!allowedRoles.includes(roleNum)) {
+      return res.status(403).json({ message: 'Insufficient privileges' });
+    }
+
+    return next();
+  };
+}

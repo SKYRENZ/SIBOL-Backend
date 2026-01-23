@@ -40,6 +40,11 @@ export const config = {
   EMAIL_SMTP_HOST: getOptionalEnv('EMAIL_SMTP_HOST', ''),
   EMAIL_SMTP_PORT: getOptionalEnv('EMAIL_SMTP_PORT', ''),
   SENDGRID_API_KEY: getOptionalEnv('SENDGRID_API_KEY', ''),
+
+  // ✅ Resend
+  RESEND_API_KEY: getOptionalEnv('RESEND_API_KEY', ''),
+  RESEND_FROM: getOptionalEnv('RESEND_FROM', ''),
+
   GOOGLE_CLIENT_ID: getOptionalEnv('GOOGLE_CLIENT_ID', ''),
   GOOGLE_ANDROID_CLIENT_ID: getOptionalEnv('GOOGLE_ANDROID_CLIENT_ID', ''),
   GOOGLE_CLIENT_SECRET: getOptionalEnv('GOOGLE_CLIENT_SECRET', ''),
@@ -52,6 +57,11 @@ export const config = {
 
   // Default account password (move from code to env)
   DEFAULT_PASSWORD: getOptionalEnv('DEFAULT_PASSWORD', 'SIBOL12345'),
+
+  // Cloudinary
+  CLOUDINARY_CLOUD_NAME: getOptionalEnv('CLOUDINARY_CLOUD_NAME', ''),
+  CLOUDINARY_API_KEY: getOptionalEnv('CLOUDINARY_API_KEY', ''),
+  CLOUDINARY_API_SECRET: getOptionalEnv('CLOUDINARY_API_SECRET', ''),
 };
 
 // derived helper to use in server

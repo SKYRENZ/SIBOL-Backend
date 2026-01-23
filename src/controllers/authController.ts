@@ -3,19 +3,56 @@ import * as authService from '../services/authService';
 import { pool } from '../config/db';
 import { sendResetEmail } from '../utils/emailService';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcrypt'; // ✅ ADD THIS LINE
 import config from '../config/env';
 
-const SECRET = config.JWT_SECRET;
 const JWT_SECRET = config.JWT_SECRET;
+
+function parseBoolean(input: unknown): boolean {
+  if (typeof input === 'boolean') return input;
+  if (typeof input === 'number') return input === 1;
+  if (typeof input === 'string') {
+    const v = input.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === '') return false;
+  }
+  return false;
+}
+
+function getClientType(req: Request): 'web' | 'mobile' {
+  const h = (req.headers['x-client-type'] as string | undefined)?.toLowerCase();
+  if (h === 'web') return 'web';
+  if (h === 'mobile') return 'mobile';
+
+  const ua = String(req.headers['user-agent'] ?? '').toLowerCase();
+  if (/react-native|expo|android|iphone|ipad|mobile|okhttp/.test(ua)) return 'mobile';
+  return 'web';
+}
 
 export async function register(req: Request, res: Response) {
   try {
-    console.log('📝 Registration request received:', req.body);
-    
     const { firstName, lastName, barangayId, areaId, email, roleId, isSSO } = req.body;
-    const finalBarangayId = barangayId ?? areaId;
 
+    const roleNum = Number(roleId);
+    const rolesRequiringAttachment = new Set([2, 3, 4]); // Barangay, Operator, Household
+    const requiresAttachment = rolesRequiringAttachment.has(roleNum);
+
+    const file = (req as any).file as Express.Multer.File | undefined;
+
+    // ✅ attachment rules
+    if (requiresAttachment && !file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is required (field name: "attachment")'
+      });
+    }
+    if (!requiresAttachment && file) {
+      return res.status(400).json({
+        success: false,
+        error: 'Signup attachment is only allowed for Barangay, Operator, and Household'
+      });
+    }
+
+    const finalBarangayId = barangayId ?? areaId;
     if (!finalBarangayId) {
       return res.status(400).json({ success: false, error: 'barangayId is required' });
     }
@@ -28,27 +65,42 @@ export async function register(req: Request, res: Response) {
 
     const sendMethod: 'link' | 'code' = isMobileClient ? 'code' : 'link';
 
+    // ✅ FIX: parse isSSO safely (handles "false" correctly)
+    const isSSOFlag = parseBoolean(isSSO);
+
     const result = await authService.registerUser(
       firstName,
       lastName,
       Number(finalBarangayId),
       email,
-      Number(roleId),
+      roleNum,
       undefined,
-      Boolean(isSSO || false),
+      isSSOFlag,
       sendMethod
     );
-    
-    console.log('✅ Registration successful:', result);
-    res.status(201).json(result);
+
+    // ✅ only save attachment when required
+    let uploadRes: any = null;
+    if (requiresAttachment && file) {
+      try {
+        uploadRes = await authService.savePendingSignupAttachment(result.pendingId, file);
+      } catch (e) {
+        try {
+          await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [result.pendingId]);
+        } catch (_) {}
+        throw new Error('Failed to save signup attachment. Please try again.');
+      }
+    }
+
+    return res.status(201).json({
+      ...result,
+      attachmentUrl: uploadRes?.secure_url,
+      attachmentPublicId: uploadRes?.public_id
+    });
   } catch (error: any) {
-    console.error('❌ Registration error:', error?.stack ?? error);
     const message = error?.message ?? String(error) ?? 'Registration failed';
     const statusCode = /exist/i.test(message) ? 409 : 400;
-    res.status(statusCode).json({
-      success: false,
-      error: message
-    });
+    return res.status(statusCode).json({ success: false, error: message });
   }
 }
 
@@ -118,51 +170,43 @@ export async function checkStatus(req: Request, res: Response) {
   }
 }
 
+// ✅ REFACTORED: Now uses authService.loginUser()
 export const login = async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
-    
-    // ✅ SELECT IsFirstLogin from database
-    const [rows]: any = await pool.query(
-      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1', 
-      [username]
-    );
-    
-    const user = rows?.[0];
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+    if (!username || !password) return res.status(400).json({ message: 'Username and password are required' });
 
-    // Verify password
-    let isValid = false;
-    try {
-      isValid = await bcrypt.compare(password, user.Password);
-    } catch {
-      isValid = false;
-    }
-    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
+    const clientType = getClientType(req);
 
-    // ✅ Create JWT with IsFirstLogin
-    const payload = { 
-      Account_id: user.Account_id, 
-      Roles: user.Roles, 
+    const user = await authService.loginUser(username, password, clientType);
+
+    const payload = {
+      Account_id: user.Account_id,
+      Roles: user.Roles,
       Username: user.Username,
       IsFirstLogin: user.IsFirstLogin
     };
+
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
 
-    // ✅ FIX: Include IsFirstLogin in the response user object
-    const safeUser = { 
-      Account_id: user.Account_id,
-      Username: user.Username,
-      Roles: user.Roles,
-      IsFirstLogin: user.IsFirstLogin  // ✅ CRITICAL: This must be included
-    };
+    // Only set cookie for web
+    if (clientType === 'web') {
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: config.NODE_ENV === 'production',
+        sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        path: '/'
+      });
+    }
 
-    console.log('🔐 Login successful - User data being sent:', safeUser); // ✅ Debug log
-
-    return res.json({ token, user: safeUser });
+    return res.json({ user, token });
   } catch (err: any) {
-    console.error('login error:', err?.stack ?? err);
-    return res.status(500).json({ message: 'Login failed', error: err?.message ?? err });
+    if (err?.code === 'PLATFORM_NOT_ALLOWED') {
+      return res.status(403).json({ message: err.message });
+    }
+    const statusCode = err?.message === 'Invalid credentials' ? 401 : 500;
+    return res.status(statusCode).json({ message: err?.message || 'Login failed' });
   }
 };
 
@@ -171,30 +215,36 @@ export async function checkSSOEligibility(req: Request, res: Response) {
     const { email } = req.body;
     
     if (!email) {
-      return res.status(400).json({ message: 'Email is required' });
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email is required' 
+      });
     }
 
-    const [userRows]: any = await pool.execute(`
-      SELECT Account_id, Username, Roles, FirstName, LastName, Email 
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id 
-      WHERE p.Email = ? AND a.IsActive = 1
-    `, [email]);
+    // ✅ Call service layer
+    const result = await authService.checkSSOEligibility(email);
 
-    if (userRows.length === 0) {
+    if (!result.canSSO) {
       return res.status(404).json({ 
-        message: 'Email not found in system',
-        canSSO: false 
+        success: false,
+        canSSO: false,
+        message: result.message
       });
     }
 
     return res.json({
+      success: true,
       canSSO: true,
-      message: 'Eligible for SSO'
+      message: result.message
     });
 
-  } catch (error) {
-    return res.status(500).json({ message: 'Server error' });
+  } catch (error: any) {
+    console.error('checkSSOEligibility error:', error);
+    return res.status(500).json({ 
+      success: false,
+      message: 'Server error',
+      error: error.message 
+    });
   }
 }
 
@@ -322,7 +372,7 @@ export async function verifyToken(req: Request, res: Response) {
       });
     }
 
-    // Fetch fresh user data from database - NOW INCLUDING IsFirstLogin
+    // Fetch fresh user data from database
     const [rows]: any = await pool.execute(
       `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.IsFirstLogin,
               p.FirstName, p.LastName, p.Email
@@ -344,7 +394,7 @@ export async function verifyToken(req: Request, res: Response) {
 
     res.json({ 
       valid: true, 
-      user: user // ✅ Now includes IsFirstLogin
+      user: user
     });
   } catch (error: any) {
     console.error('Token verification error:', error);
@@ -387,6 +437,41 @@ export async function changePassword(req: Request, res: Response) {
     res.status(400).json({ 
       success: false, 
       error: error.message || 'Failed to change password' 
+    });
+  }
+}
+
+// NEW: Get queue position
+export async function getQueuePosition(req: Request, res: Response) {
+  try {
+    const { email } = req.query;
+    
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email is required' 
+      });
+    }
+
+    const queueInfo = await authService.getQueuePosition(email);
+
+    res.json({ 
+      success: true, 
+      ...queueInfo 
+    });
+  } catch (error: any) {
+    console.error('getQueuePosition error:', error);
+    
+    if (error.message === 'Account not found in pending queue') {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Account not found or already approved' 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to get queue position' 
     });
   }
 }

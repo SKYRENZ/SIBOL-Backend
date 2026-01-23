@@ -25,11 +25,24 @@ export async function googleAuthInit(req: Request, res: Response, next: NextFunc
   return passport.authenticate('google', { scope: ['profile', 'email'] })(req, res, next);
 }
 
+function getRoleNumber(user: any): number | null {
+  const role =
+    user?.Roles ??
+    user?.roleId ??
+    user?.role ??
+    user?.Roles_id ??
+    user?.RolesId ??
+    null;
+
+  const roleNum = typeof role === 'string' ? Number(role) : role;
+  return Number.isFinite(roleNum) ? roleNum : null;
+}
+
 export async function googleAuthCallback(req: Request, res: Response, next: NextFunction) {
   return passport.authenticate('google', (err: any, user: any, info: any) => {
     if (err) {
       console.error('Passport error:', err);
-      return res.redirect(buildFrontendUrl('/auth/callback', { 
+      return res.redirect(buildFrontendUrl('/auth/callback', {
         error: 'server_error',
         auth: 'fail'
       }));
@@ -39,19 +52,49 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
       req.logIn(user, (loginErr: any) => {
         if (loginErr) {
           console.error('Login error:', loginErr);
-          return res.redirect(buildFrontendUrl('/auth/callback', { 
+          return res.redirect(buildFrontendUrl('/auth/callback', {
             error: 'login_failed',
             auth: 'fail'
           }));
         }
 
         try {
+          // ✅ Enforce WEB-only roles BEFORE issuing cookie/token
+          const roleNum = getRoleNumber(user);
+          const WEB_ALLOWED = new Set([1, 2]); // Admin + Barangay (your rule)
+
+          if (roleNum === null || !WEB_ALLOWED.has(roleNum)) {
+            // ensure no auth cookie is left behind
+            res.clearCookie('token', {
+              httpOnly: true,
+              secure: config.NODE_ENV === 'production',
+              sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+              path: '/'
+            });
+
+            return res.redirect(buildFrontendUrl('/auth/callback', {
+              auth: 'fail',
+              error: 'platform_not_allowed',
+              message: 'Your account does not have access to this platform.'
+            }));
+          }
+
           const secret = config.JWT_SECRET || 'changeme';
           const payload: any = {
             Account_id: user.Account_id ?? user.AccountId ?? user.id,
             Roles: user.Roles ?? user.role ?? undefined,
+            IsFirstLogin: user.IsFirstLogin
           };
           const token = jwt.sign(payload, secret, { expiresIn: '7d' });
+
+          // ✅ Set HTTP-only cookie (WEB only)
+          res.cookie('token', token, {
+            httpOnly: true,
+            secure: config.NODE_ENV === 'production',
+            sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/'
+          });
 
           const userSafe = {
             Account_id: user.Account_id,
@@ -60,16 +103,17 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
             FirstName: user.FirstName,
             LastName: user.LastName,
             Email: user.Email,
+            IsFirstLogin: user.IsFirstLogin
           };
 
+          // ✅ IMPORTANT: do NOT pre-encode; URLSearchParams will encode it
           return res.redirect(buildFrontendUrl('/auth/callback', {
-            token,
-            user: encodeURIComponent(JSON.stringify(userSafe)),
+            user: JSON.stringify(userSafe),
             auth: 'success'
           }));
         } catch (tokenErr) {
           console.error('JWT creation failed:', tokenErr);
-          return res.redirect(buildFrontendUrl('/auth/callback', { 
+          return res.redirect(buildFrontendUrl('/auth/callback', {
             error: 'token_failed',
             auth: 'fail'
           }));
@@ -77,8 +121,6 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
       });
     } else if (info && typeof info === 'object') {
       const { message, email, redirectTo, firstName, lastName, username } = info as any;
-      
-      console.log('📤 Redirecting with info:', { message, email, redirectTo, username });
       
       const params: Record<string, string> = {
         message: message || '',
@@ -95,7 +137,7 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
       } else if (redirectTo === 'pending-approval') {
         params.message = 'admin_pending';
         params.sso = 'true';
-        if (username) params.username = username; // IMPORTANT: Pass username
+        if (username) params.username = username;
       } else {
         params.auth = 'fail';
       }
@@ -111,19 +153,29 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
   })(req, res, next);
 }
 
-export async function getMe(req: Request, res: Response) {
-  if (req.user) {
-    return res.json({ success: true, user: req.user });
-  }
-  return res.status(401).json({ success: false, message: 'Not authenticated' });
-}
-
+// ✅ Add logout endpoint to clear cookie
 export async function logout(req: Request, res: Response) {
   req.logout((err: any) => {
     if (err) {
       console.error('Logout error:', err);
       return res.status(500).json({ success: false, message: 'Logout failed' });
     }
+    
+    // Clear the token cookie
+    res.clearCookie('token', {
+      httpOnly: true,
+      secure: config.NODE_ENV === 'production',
+      sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
+      path: '/'
+    });
+    
     return res.json({ success: true, message: 'Logged out successfully' });
   });
+}
+
+export async function getMe(req: Request, res: Response) {
+  if (req.user) {
+    return res.json({ success: true, user: req.user });
+  }
+  return res.status(401).json({ success: false, message: 'Not authenticated' });
 }

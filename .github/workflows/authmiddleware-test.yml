@@ -2,10 +2,16 @@ name: Auth Middleware Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/**'
       - '.github/workflows/authmiddleware-test.yml'
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/**'
 

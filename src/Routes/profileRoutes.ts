@@ -1,12 +1,24 @@
 import { Router } from 'express';
-import { handleUpdateProfile, handleGetProfile } from '../controllers/profileController.js';
+import {
+  handleUpdateProfile,
+  handleGetProfile,
+  handleGetMyPoints,
+  handleGetMyProfile,
+  handleUpdateMyProfile
+} from '../controllers/profileController';
+import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
 
-// GET /api/profile/:accountId - fetch profile (public, for schedules)
-router.get('/:accountId', handleGetProfile);
+// ✅ NEW: Get authenticated user's points (requires auth)
+router.get('/points', authenticate, handleGetMyPoints);
 
-// PUT /api/profile/:accountId - update user's profile (requires auth)
-router.put('/:accountId', handleUpdateProfile);
+// ✅ NEW: logged-in user's profile
+router.get('/me', authenticate, handleGetMyProfile);
+router.put('/me', authenticate, handleUpdateMyProfile);
+
+// existing
+router.get('/:accountId', handleGetProfile);
+router.put('/:accountId', authenticate, handleUpdateProfile);
 
 export default router;

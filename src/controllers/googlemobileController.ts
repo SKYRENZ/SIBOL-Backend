@@ -21,69 +21,90 @@ export async function handleGoogleAuth(req: Request, res: Response) {
       return res.status(400).json({ error: 'ID token is required' });
     }
 
+    // ✅ Basic token validation before verification
+    if (typeof idToken !== 'string' || idToken.length < 10) {
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
     console.log('[GoogleMobile Controller] Verifying ID token...');
 
-    // 1. Verify ID token with Google
-    const googleUser = await verifyGoogleIdToken(idToken);
-    console.log('[GoogleMobile Controller] Token verified for:', googleUser.email);
+    try {
+      // 1. Verify ID token with Google
+      const googleUser = await verifyGoogleIdToken(idToken);
+      console.log('[GoogleMobile Controller] Token verified for:', googleUser.email);
 
-    // 2. Check if user exists in ACTIVE accounts first
-    const user = await findUserByEmail(googleUser.email);
+      // 2. Check if user exists in ACTIVE accounts first
+      const user = await findUserByEmail(googleUser.email);
 
-    if (user) {
-      // User exists in active accounts
-      if (!isAccountActive(user)) {
+      if (user) {
+        if (!isAccountActive(user)) {
+          return res.json({
+            status: 'pending',
+            email: user.Email,
+            message: 'Your account is pending admin approval',
+          });
+        }
+
+        const roleNum = Number(user.Roles ?? NaN);
+        const MOBILE_ALLOWED = new Set([3, 4]);
+        if (!MOBILE_ALLOWED.has(roleNum)) {
+          return res.status(403).json({
+            error: 'Your account does not have access to this platform.',
+          });
+        }
+
+        const token = generateUserToken(user);
+
         return res.json({
-          status: 'pending',
-          email: user.Email,
-          message: 'Your account is pending admin approval',
+          status: 'success',
+          token,
+          user: formatUserResponse(user),
         });
       }
 
-      // Generate JWT token for active user
-      const token = generateUserToken(user);
+      // 3. Check if user exists in PENDING accounts (only if not in active)
+      const pendingAccount = await findPendingAccountByEmail(googleUser.email);
 
-      return res.json({
-        status: 'success',
-        token,
-        user: formatUserResponse(user),
-      });
-    }
+      if (pendingAccount) {
+        // SSO users don't need email verification - their email is already verified by Google
+        // Just check admin approval status
+        console.log('[GoogleMobile Controller] Found pending SSO account:', pendingAccount.Email);
 
-    // 3. Check if user exists in PENDING accounts (only if not in active)
-    const pendingAccount = await findPendingAccountByEmail(googleUser.email);
+        if (!pendingAccount.IsAdminVerified || Number(pendingAccount.IsAdminVerified) === 0) {
+          return res.json({
+            status: 'pending',
+            email: pendingAccount.Email,
+            message: 'Your account is pending admin approval',
+          });
+        }
 
-    if (pendingAccount) {
-      // SSO users don't need email verification - their email is already verified by Google
-      // Just check admin approval status
-      console.log('[GoogleMobile Controller] Found pending SSO account:', pendingAccount.Email);
-
-      if (!pendingAccount.IsAdminVerified || Number(pendingAccount.IsAdminVerified) === 0) {
+        // If admin approved but still in pending table, treat as pending
         return res.json({
           status: 'pending',
           email: pendingAccount.Email,
-          message: 'Your account is pending admin approval',
+          message: 'Your account is being processed',
         });
       }
 
-      // If admin approved but still in pending table, treat as pending
+      // 4. User doesn't exist anywhere - redirect to signup
+      console.log('[GoogleMobile Controller] No account found, redirecting to signup');
       return res.json({
-        status: 'pending',
-        email: pendingAccount.Email,
-        message: 'Your account is being processed',
+        status: 'signup',
+        email: googleUser.email,
+        firstName: googleUser.firstName,
+        lastName: googleUser.lastName,
+        picture: googleUser.picture,
+        message: 'Please complete your registration',
+      });
+
+    } catch (verifyError: any) {
+      // ✅ Handle token verification errors gracefully
+      console.error('[GoogleMobile Controller] Token verification failed:', verifyError.message);
+      return res.status(401).json({ 
+        error: 'Invalid Google token',
+        details: verifyError.message 
       });
     }
-
-    // 4. User doesn't exist anywhere - redirect to signup
-    console.log('[GoogleMobile Controller] No account found, redirecting to signup');
-    return res.json({
-      status: 'signup',
-      email: googleUser.email,
-      firstName: googleUser.firstName,
-      lastName: googleUser.lastName,
-      picture: googleUser.picture,
-      message: 'Please complete your registration',
-    });
 
   } catch (error: any) {
     console.error('[GoogleMobile Controller] Error:', error);

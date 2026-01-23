@@ -2,11 +2,17 @@ name: Run RewardService Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/rewardService.ts'
       - 'src/test/rewardService.test.ts'
       - '.github/workflows/rewardservice-test.yml'
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/rewardService.ts'
       - 'src/test/rewardService.test.ts'

@@ -1,12 +1,6 @@
 import db from '../config/db';
 import * as conversionService from './conversionService';
 
-export function calculatePointsFromWeight(weight: number): number {
-    // conversion: 2 kg -> 10 points => 5 points per kg
-    if (!Number.isFinite(weight) || weight <= 0) return 0;
-    return Math.floor(weight * 5);
-}
-
 export async function getAccountIdByQr(qr: string): Promise<number | null> {
     const [rows]: any = await db.execute(
         'SELECT Account_id FROM profile_tbl WHERE QR_code = ? LIMIT 1',
@@ -14,6 +8,29 @@ export async function getAccountIdByQr(qr: string): Promise<number | null> {
     );
     if (!Array.isArray(rows) || rows.length === 0) return null;
     return rows[0].Account_id ?? null;
+}
+
+export async function isQRAlreadyScanned(qrCode: string, accountId: number): Promise<boolean> {
+    const [rows]: any = await db.execute(
+        `SELECT COUNT(*) as count 
+         FROM qr_scans_tbl 
+         WHERE QR_code = ? AND Account_id = ? AND IsUsed = 1`,
+        [qrCode, accountId]
+    );
+    return (Array.isArray(rows) && rows[0]) ? rows[0].count > 0 : false;
+}
+
+export async function recordQRScan(
+    qrCode: string, 
+    accountId: number, 
+    weight: number, 
+    pointsAwarded: number
+): Promise<void> {
+    await db.execute(
+        `INSERT INTO qr_scans_tbl (QR_code, Account_id, Weight, Points_awarded, IsUsed, Scanned_at) 
+         VALUES (?, ?, ?, ?, 1, NOW())`,
+        [qrCode, accountId, weight, pointsAwarded]
+    );
 }
 
 export async function addPointsToAccount(accountId: number, points: number): Promise<number> {
@@ -28,24 +45,23 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
     return (Array.isArray(rows) && rows[0]) ? Number(rows[0].Points) : 0;
 }
 
-/**
- * High-level operation for scanning QR and awarding points.
- * Returns { awarded, totalPoints, accountId } or throws on error / not found.
- */
-export async function processQrScan(qr: string, weight: number) {
-    const accountId = await getAccountIdByQr(qr);
-    if (!accountId) return { found: false };
+export async function awardPointsForAccount(accountId: number, weight: number, qrCode: string) {
+    const alreadyScanned = await isQRAlreadyScanned(qrCode, accountId);
+    if (alreadyScanned) {
+        throw new Error('QR_ALREADY_SCANNED');
+    }
 
     const pointsPerKg = await conversionService.getPointsPerKg();
     const awarded = conversionService.calculatePointsFromWeight(weight, pointsPerKg);
 
     if (awarded <= 0) {
-        const total = await getCurrentPoints(accountId);
-        return { found: true, awarded: 0, totalPoints: total, accountId };
+        return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
+    await recordQRScan(qrCode, accountId, weight, awarded);
     const totalPoints = await addPointsToAccount(accountId, awarded);
-    return { found: true, awarded, totalPoints, accountId };
+    
+    return { awarded, totalPoints };
 }
 
 async function getCurrentPoints(accountId: number): Promise<number> {

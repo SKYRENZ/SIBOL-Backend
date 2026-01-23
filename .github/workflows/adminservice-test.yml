@@ -2,11 +2,17 @@ name: Admin Service Integration Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/adminService.ts'
       - 'src/test/adminService.test.ts'
       - '.github/workflows/adminservice-test.yml'
   pull_request:
+    branches:
+      - main
+      - develop
     paths:
       - 'src/services/adminService.ts'
       - 'src/test/adminService.test.ts'

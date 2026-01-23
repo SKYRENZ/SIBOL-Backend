@@ -1,49 +1,48 @@
 import { Request, Response } from "express";
-import pool from "../config/db";
+import * as wasteContainerService from "../services/wasteContainerService";
 
-const GET_ALL_QUERY = `
-    SELECT 
-        wc.container_id,
-        wc.container_name,
-        wc.area_id,
-        a.Area_Name as area_name,
-        a.Latitude as latitude,
-        a.Longitude as longitude,
-        wc.status,
-        DATE_FORMAT(wc.deployment_date, '%b %d, %Y') as deployment_date,
-        wc.last_updated
-    FROM 
-        waste_containers_tbl wc
-    JOIN 
-        area_tbl a ON wc.area_id = a.Area_id
-    ORDER BY 
-        wc.container_id DESC;
-`;
+/**
+ * Create a new waste container.
+ * Expects body: { container_name, area_name, fullAddress, deployment_date? }
+ * - Geocodes the fullAddress
+ * - Reuses existing area (by name + address) or creates it (with lat/lon)
+ * - Inserts into waste_containers_tbl (links to area_tbl)
+ */
+export async function createContainer(req: Request, res: Response) {
+  const { container_name, area_name, fullAddress, latitude, longitude } = req.body;
 
-export async function list(req: Request, res: Response) {
+  console.log("Creating container with:", { container_name, area_name, fullAddress });
+
+  if (!container_name || !area_name || !fullAddress) {
+    return res.status(400).json({ error: "container_name, area_name and fullAddress are required." });
+  }
+
   try {
-    const [rows] = await pool.query(GET_ALL_QUERY);
-    res.json({ data: rows });
+    const created = await wasteContainerService.createContainer({
+      container_name,
+      area_name,
+      fullAddress,
+      latitude,
+      longitude,
+    });
+
+    return res.status(201).json({ data: created });
   } catch (err) {
-    console.error("Failed to fetch waste containers:", err);
-    res.status(500).json({ error: "Failed to fetch waste containers" });
+    const message = err instanceof Error ? err.message : "Failed to create waste container.";
+    return res.status(500).json({ error: message });
   }
 }
 
-export async function create(req: Request, res: Response) {
-  const { container_name, area_id, deployment_date } = req.body;
-  if (!container_name || !area_id || !deployment_date) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
+/**
+ * List all containers joined with area info.
+ * Uses existing waste_containers_tbl schema.
+ */
+export async function listContainers(_req: Request, res: Response) {
   try {
-    const [result] = await pool.query<any>(
-      "INSERT INTO waste_containers_tbl (container_name, area_id, deployment_date) VALUES (?, ?, ?)",
-      [container_name, area_id, deployment_date]
-    );
-    res.status(201).json({ container_id: result.insertId, ...req.body });
+    const rows = await wasteContainerService.listContainers();
+    return res.json({ data: rows });
   } catch (err) {
-    console.error("Failed to create waste container:", err);
-    res.status(500).json({ error: "Failed to create waste container" });
+    console.error("Database error:", err);
+    return res.status(500).json({ error: "Failed to fetch containers." });
   }
 }
