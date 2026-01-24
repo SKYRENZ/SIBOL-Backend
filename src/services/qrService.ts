@@ -10,12 +10,12 @@ export async function getAccountIdByQr(qr: string): Promise<number | null> {
     return rows[0].Account_id ?? null;
 }
 
-export async function isQRAlreadyScanned(qrCode: string, accountId: number): Promise<boolean> {
+export async function isQRAlreadyScanned(qrCode: string): Promise<boolean> {
     const [rows]: any = await db.execute(
         `SELECT COUNT(*) as count 
          FROM qr_scans_tbl 
-         WHERE QR_code = ? AND Account_id = ? AND IsUsed = 1`,
-        [qrCode, accountId]
+         WHERE QR_code = ? AND IsUsed = 1`,
+        [qrCode]
     );
     return (Array.isArray(rows) && rows[0]) ? rows[0].count > 0 : false;
 }
@@ -46,7 +46,7 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
 }
 
 export async function awardPointsForAccount(accountId: number, weight: number, qrCode: string) {
-    const alreadyScanned = await isQRAlreadyScanned(qrCode, accountId);
+    const alreadyScanned = await isQRAlreadyScanned(qrCode); // <-- only qrCode
     if (alreadyScanned) {
         throw new Error('QR_ALREADY_SCANNED');
     }
