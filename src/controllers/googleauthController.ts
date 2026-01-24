@@ -3,6 +3,8 @@ import passport from '../services/googleauthService';
 import config from '../config/env';
 import jwt from 'jsonwebtoken';
 
+console.log('FRONT_END_PORT at startup:', config.FRONT_END_PORT);
+
 const RAW_FRONTEND = (config.FRONT_END_PORT ?? '').trim();
 const FRONTEND_BASE = (RAW_FRONTEND && RAW_FRONTEND !== '/' ? RAW_FRONTEND.replace(/\/+$/, '') : 'http://localhost:5173');
 
