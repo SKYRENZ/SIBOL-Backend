@@ -1,8 +1,7 @@
 // filepath: c:\Users\Renz\OneDrive\Documents\GitHub\SIBOL\SIBOL-Backend\src\controllers\areaController.ts
 import { Request, Response } from "express";
-import pool from "../config/db";
-import { geocodeAddress } from "../utils/geocode";
-import * as wasteService from '../services/wasteCollectionService';
+import * as areaService from "../services/areaService";
+import * as wasteService from "../services/wasteCollectionService";
 
 /**
  * Creates a new area, geocoding the address to get coordinates.
@@ -14,27 +13,13 @@ export async function createArea(req: Request, res: Response) {
     return res.status(400).json({ error: "Area name and full address are required." });
   }
 
-  const coordinates = await geocodeAddress(fullAddress);
-
-  if (!coordinates) {
-    return res.status(400).json({ error: "Could not find coordinates for the provided address. Please check the address and try again." });
-  }
-
   try {
-    const [result] = await pool.query<any>(
-      "INSERT INTO area_tbl (Area_Name, Full_Address, Latitude, Longitude) VALUES (?, ?, ?, ?)",
-      [areaName, fullAddress, coordinates.lat, coordinates.lon]
-    );
-    res.status(201).json({
-      Area_id: result.insertId,
-      Area_Name: areaName,
-      Full_Address: fullAddress,
-      Latitude: coordinates.lat,
-      Longitude: coordinates.lon,
-    });
+    const created = await areaService.createArea({ areaName, fullAddress });
+    return res.status(201).json(created);
   } catch (err) {
-    console.error("Database error:", err);
-    res.status(500).json({ error: "Failed to save the new area." });
+    const message = err instanceof Error ? err.message : "Failed to save the new area.";
+    const status = message.toLowerCase().includes("coordinates") ? 400 : 500;
+    return res.status(status).json({ error: message });
   }
 }
 
@@ -43,11 +28,11 @@ export async function createArea(req: Request, res: Response) {
  */
 export async function list(req: Request, res: Response) {
   try {
-    const [rows] = await pool.query("SELECT Area_id, Area_Name, Full_Address FROM area_tbl ORDER BY Area_Name ASC");
-    res.json({ data: rows });
+    const rows = await areaService.listAreas();
+    return res.json({ data: rows });
   } catch (err) {
     console.error("Database error:", err);
-    res.status(500).json({ error: "Failed to fetch areas." });
+    return res.status(500).json({ error: "Failed to fetch areas." });
   }
 }
 

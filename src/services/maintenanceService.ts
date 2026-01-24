@@ -583,7 +583,46 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     params.push(filters.created_by);
   }
 
-  sql += " GROUP BY m.Request_Id ORDER BY m.Request_date DESC";
+  sql += `
+  GROUP BY
+    m.Request_Id,
+    m.Title,
+    m.Details,
+    m.Priority_Id,
+    m.Created_by,
+    m.Due_date,
+    m.Main_stat_id,
+    m.Assigned_to,
+    m.Request_date,
+    m.IsDeleted,
+    m.Cancel_requested_by,
+    m.Cancel_requested_at,
+    m.Cancel_reason,
+    m.Cancelled_by,
+    m.Cancelled_at,
+    m.Completed_at,
+    m.Deleted_by,
+    m.Deleted_at,
+    m.Deleted_reason,
+    p.Priority,
+    s.Status,
+    op_profile.FirstName,
+    op_profile.LastName,
+    creator_profile.FirstName,
+    creator_profile.LastName,
+    creator_account.Roles,
+    cr_profile.FirstName,
+    cr_profile.LastName,
+    cr_account.Roles,
+    cr_role.Roles,
+    c_profile.FirstName,
+    c_profile.LastName,
+    c_account.Roles,
+    c_role.Roles,
+    last_op_profile.FirstName,
+    last_op_profile.LastName
+  ORDER BY m.Request_date DESC
+`;
 
   const [rows] = await pool.query<Row[]>(sql, params);
   return rows;

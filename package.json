@@ -7,7 +7,7 @@
     "dev:local": "echo \"Bun uses .env files by default. Create a .env file and run 'bun dev'\"",
     "dev:proddb": "echo \"Set environment variables directly in your shell and run 'bun dev'\"",
     "clean": "rmdir /s /q dist",
-    "build": "bun build ./src/server.ts --outdir ./dist",
+    "build": "bun build ./src/server.ts --outdir ./dist --target node",
     "start": "bun src/server.ts",
     "pretest": "bun run clean",
     "test": "bun test",

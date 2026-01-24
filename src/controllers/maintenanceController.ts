@@ -127,6 +127,7 @@ export async function listTickets(req: Request, res: Response) {
     const rows = await service.listTickets(filters);
     return res.json(rows);
   } catch (err: any) {
+    console.error("listTickets error:", err); // <--- Add this line
     return res.status(500).json({ message: "Server error" });
   }
 }
