@@ -26,9 +26,14 @@ export async function getProfileByAccountId(accountId: number) {
 // ✅ NEW: Get user's current points
 export async function getPointsByAccountId(accountId: number) {
   const sql = `
-    SELECT Account_id, Username, Points 
-    FROM accounts_tbl 
-    WHERE Account_id = ? 
+    SELECT
+      a.Account_id,
+      a.Username,
+      a.Points,
+      COALESCE(t.Total_kg, 0) AS total_contributions
+    FROM accounts_tbl a
+    LEFT JOIN account_waste_totals_tbl t ON t.Account_id = a.Account_id
+    WHERE a.Account_id = ?
     LIMIT 1
   `;
   const [rows]: any = await pool.query(sql, [accountId]);
