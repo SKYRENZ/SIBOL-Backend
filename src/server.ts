@@ -10,6 +10,7 @@ console.log('Server starting', { NODE_ENV: config.NODE_ENV, DB_HOST: config.DB_H
 
 import uploadRoutes from "./Routes/uploadRoutes.js";
 import chatRoutes from "./Routes/chat.route.js";
+import leaderboardRoutes from './Routes/leaderboardRoutes';
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -129,6 +130,7 @@ app.use("/api/users", userRoutes); // 2. Register user routes
 app.use('/api/additives', additivesRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);
 app.use('/api/chat', authenticate, chatRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);

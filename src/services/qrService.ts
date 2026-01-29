@@ -31,6 +31,14 @@ export async function recordQRScan(
          VALUES (?, ?, ?, ?, 1, NOW())`,
         [qrCode, accountId, weight, pointsAwarded]
     );
+
+    // increment aggregate total for leaderboard
+    await db.execute(
+      `INSERT INTO account_waste_totals_tbl (Account_id, Total_kg, Updated_at)
+       VALUES (?, ?, NOW())
+       ON DUPLICATE KEY UPDATE Total_kg = Total_kg + VALUES(Total_kg), Updated_at = NOW()`,
+      [accountId, weight]
+    );
 }
 
 export async function addPointsToAccount(accountId: number, points: number): Promise<number> {
