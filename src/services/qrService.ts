@@ -1,5 +1,6 @@
 import db from '../config/db';
 import * as conversionService from './conversionService';
+import { createSnapshot } from './leaderboardService'; // <-- new import
 
 export async function getAccountIdByQr(qr: string): Promise<number | null> {
     const [rows]: any = await db.execute(
@@ -54,7 +55,7 @@ export async function addPointsToAccount(accountId: number, points: number): Pro
 }
 
 export async function awardPointsForAccount(accountId: number, weight: number, qrCode: string) {
-    const alreadyScanned = await isQRAlreadyScanned(qrCode); // <-- only qrCode
+    const alreadyScanned = await isQRAlreadyScanned(qrCode);
     if (alreadyScanned) {
         throw new Error('QR_ALREADY_SCANNED');
     }
@@ -66,9 +67,17 @@ export async function awardPointsForAccount(accountId: number, weight: number, q
         return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
+    // create a snapshot BEFORE applying the new scan so it becomes the "previous" snapshot
+    try {
+      await createSnapshot();
+    } catch (err) {
+      console.error('createSnapshot failed', err);
+      // do not fail the scan flow if snapshot fails
+    }
+
     await recordQRScan(qrCode, accountId, weight, awarded);
     const totalPoints = await addPointsToAccount(accountId, awarded);
-    
+
     return { awarded, totalPoints };
 }
 
