@@ -10,6 +10,7 @@ console.log('Server starting', { NODE_ENV: config.NODE_ENV, DB_HOST: config.DB_H
 
 import uploadRoutes from "./Routes/uploadRoutes.js";
 import chatRoutes from "./Routes/chat.route.js";
+import aiRoutes from "./Routes/ai";
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -119,6 +120,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/modules', moduleRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use("/api/areas", areaRoutes);
+app.use("/api/ai", aiRoutes);
 app.use("/api/operators", operatorRoutes);
 app.use('/api/filters', filtersRoutes);
 app.use('/api/qr', qrRoutes);
