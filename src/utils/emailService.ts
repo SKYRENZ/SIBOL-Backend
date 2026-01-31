@@ -1,6 +1,7 @@
 import config from '../config/env';
 import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
+import sgMail from '@sendgrid/mail';
 
 // normalize frontend base and remove trailing slashes
 const FRONTEND_BASE = (config.FRONT_END_PORT || 'http://localhost:5173').replace(/\/+$/, '');
@@ -18,48 +19,53 @@ function buildFrontendUrl(path: string, params?: Record<string, string>) {
   }
 }
 
-// Provider switches
+// --- SendGrid client ---
+const USE_SENDGRID = Boolean(config.SENDGRID_API_KEY);
+if (USE_SENDGRID) {
+  sgMail.setApiKey(config.SENDGRID_API_KEY);
+}
+
+// --- Resend client ---
 const USE_RESEND = Boolean(config.RESEND_API_KEY);
+
+// --- SMTP transporter (lazy) ---
 const USE_SMTP = Boolean(config.EMAIL_SMTP_HOST && config.EMAIL_SMTP_PORT && config.EMAIL_USER && config.EMAIL_PASSWORD);
 
 console.log(
-  `📧 Outbound email: Resend API ${USE_RESEND ? '(enabled)' : '(disabled)'} | SMTP ${USE_SMTP ? '(enabled)' : '(disabled)'}`
+  `📧 Outbound email: SendGrid ${USE_SENDGRID ? '(enabled)' : '(disabled)'} | Resend ${USE_RESEND ? '(enabled)' : '(disabled)'} | SMTP ${USE_SMTP ? '(enabled)' : '(disabled)'}`
 );
 
-// --- Resend client ---
+function defaultFrom() {
+  // Prefer SENDGRID_FROM, then RESEND_FROM, then EMAIL_FROM
+  const from = (config.EMAIL_FROM || config.RESEND_FROM || '').trim();
+  if (!from) throw new Error('Missing sender: set EMAIL_FROM or RESEND_FROM');
+  return from;
+}
+
+// --- SendGrid send ---
+async function sendgridSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
+  const from = (mailOptions.from || defaultFrom()).trim();
+  const to = (mailOptions.to || '').trim();
+  if (!to) throw new Error('Missing recipient email (to)');
+
+  const msg = {
+    to,
+    from,
+    subject: mailOptions.subject,
+    html: mailOptions.html,
+  };
+
+  const result = await sgMail.send(msg);
+  return result;
+}
+
+// --- Resend send ---
 let resendClient: Resend | null = null;
 function getResendClient() {
   if (resendClient) return resendClient;
   if (!config.RESEND_API_KEY) throw new Error('RESEND_API_KEY is not set');
   resendClient = new Resend(config.RESEND_API_KEY);
   return resendClient;
-}
-
-function defaultFrom() {
-  // Prefer RESEND_FROM; fallback to EMAIL_FROM
-  const from = (config.RESEND_FROM || config.EMAIL_FROM || '').trim();
-  if (!from) throw new Error('Missing sender: set RESEND_FROM or EMAIL_FROM');
-  return from;
-}
-
-// --- SMTP transporter (lazy) ---
-let smtpTransporter: nodemailer.Transporter | null = null;
-function getSmtpTransporter() {
-  if (smtpTransporter) return smtpTransporter;
-  if (!USE_SMTP) throw new Error('SMTP is not configured (EMAIL_SMTP_HOST/PORT/USER/PASSWORD)');
-
-  const port = Number(config.EMAIL_SMTP_PORT);
-  smtpTransporter = nodemailer.createTransport({
-    host: config.EMAIL_SMTP_HOST,
-    port,
-    secure: port === 465,
-    auth: {
-      user: config.EMAIL_USER,
-      pass: config.EMAIL_PASSWORD,
-    },
-  } as any);
-
-  return smtpTransporter;
 }
 
 async function resendSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
@@ -82,6 +88,26 @@ async function resendSend(mailOptions: { to: string; subject: string; html: stri
   return result;
 }
 
+// --- SMTP send ---
+let smtpTransporter: nodemailer.Transporter | null = null;
+function getSmtpTransporter() {
+  if (smtpTransporter) return smtpTransporter;
+  if (!USE_SMTP) throw new Error('SMTP is not configured (EMAIL_SMTP_HOST/PORT/USER/PASSWORD)');
+
+  const port = Number(config.EMAIL_SMTP_PORT);
+  smtpTransporter = nodemailer.createTransport({
+    host: config.EMAIL_SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: config.EMAIL_USER,
+      pass: config.EMAIL_PASSWORD,
+    },
+  } as any);
+
+  return smtpTransporter;
+}
+
 async function smtpSend(mailOptions: { to: string; subject: string; html: string; from?: string }) {
   const transporter = getSmtpTransporter();
 
@@ -99,8 +125,20 @@ async function smtpSend(mailOptions: { to: string; subject: string; html: string
   return info;
 }
 
+// --- Unified sendEmail with priority: SendGrid > Resend > SMTP ---
 async function sendEmail(mailOptions: { to: string; subject: string; html: string; from?: string }) {
-  // Try Resend first if enabled; on error fallback to SMTP (if configured)
+  // 1. Try SendGrid
+  if (USE_SENDGRID) {
+    try {
+      const result = await sendgridSend(mailOptions);
+      return { provider: 'sendgrid', result };
+    } catch (err: any) {
+      console.warn('⚠️ SendGrid failed; attempting Resend fallback:', err?.message ?? err);
+      if (!USE_RESEND && !USE_SMTP) throw err;
+    }
+  }
+
+  // 2. Try Resend
   if (USE_RESEND) {
     try {
       const result = await resendSend(mailOptions);
@@ -111,8 +149,13 @@ async function sendEmail(mailOptions: { to: string; subject: string; html: strin
     }
   }
 
-  const result = await smtpSend(mailOptions);
-  return { provider: 'smtp', messageId: (result as any)?.messageId, result };
+  // 3. Try SMTP
+  if (USE_SMTP) {
+    const result = await smtpSend(mailOptions);
+    return { provider: 'smtp', messageId: (result as any)?.messageId, result };
+  }
+
+  throw new Error('No email provider is configured');
 }
 
 // --- exported helpers use sendEmail and handle normalized result ---
