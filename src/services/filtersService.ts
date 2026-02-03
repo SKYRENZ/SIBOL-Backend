@@ -64,6 +64,13 @@ export const FiltersService = {
     return rows as any[];
   },
 
+  async getRewardStatuses() {
+    return [
+      { id: 1, name: "Claimed" },
+      { id: 2, name: "Unclaimed" },
+    ];
+  },
+
   async getAllFilters() {
     const [
       machineStatuses,
@@ -74,7 +81,8 @@ export const FiltersService = {
       containerStatuses,
       wasteTypes,
       additiveStages,
-      machines
+      machines,
+      rewardStatuses,
     ] = await Promise.all([
       this.getMachineStatuses(),
       this.getAreas(),
@@ -85,6 +93,7 @@ export const FiltersService = {
       this.getWasteTypes(),
       this.getAdditiveStages(),
       this.getMachines(),
+      this.getRewardStatuses(),
     ]);
     
     return {
@@ -96,7 +105,8 @@ export const FiltersService = {
       containerStatuses,
       wasteTypes,
       additiveStages,
-      machines
+      machines,
+      rewardStatuses,
     };
   },
 
@@ -150,6 +160,11 @@ export const FiltersService = {
       case 'machine':
       case 'machines':
         return this.getMachines();
+
+      // Reward Status
+      case 'rewardstatus':
+      case 'rewardstatuses':
+        return this.getRewardStatuses();
 
       default:
         throw new Error(`Unknown filter type: ${type}`);
