@@ -44,7 +44,7 @@ import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 import S1_esp32Routes from './Routes/S1_esp32Routes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
-
+import mapRoutes from './Routes/mapRoutes';
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -135,7 +135,7 @@ app.use('/api/additives', additivesRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);
 app.use('/api/chat', authenticate, chatRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
-
+app.use('/api/map', mapRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
