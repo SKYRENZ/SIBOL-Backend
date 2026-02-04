@@ -445,33 +445,33 @@ export async function changePassword(req: Request, res: Response) {
 export async function getQueuePosition(req: Request, res: Response) {
   try {
     const { email } = req.query;
-    
+
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email is required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Email is required'
       });
     }
 
-    const queueInfo = await authService.getQueuePosition(email);
+    const queueInfo = await authService.getQueuePosition(String(email));
 
-    res.json({ 
-      success: true, 
-      ...queueInfo 
+    // If service returns position === null treat as not found / already approved
+    if (!queueInfo || queueInfo.position === null) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found or already approved'
+      });
+    }
+
+    return res.json({
+      success: true,
+      ...queueInfo
     });
   } catch (error: any) {
     console.error('getQueuePosition error:', error);
-    
-    if (error.message === 'Account not found in pending queue') {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Account not found or already approved' 
-      });
-    }
-    
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to get queue position' 
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get queue position'
     });
   }
 }

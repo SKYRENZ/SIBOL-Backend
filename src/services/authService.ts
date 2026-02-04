@@ -619,8 +619,6 @@ export async function checkSSOEligibility(email: string) {
 // NEW: Get queue position for pending account
 export async function getQueuePosition(email: string) {
   try {
-    // ✅ FIXED: Query pending_accounts_tbl instead of accounts_tbl
-    // pending accounts are in pending_accounts_tbl, not accounts_tbl
     const [pendingAccounts]: any = await pool.execute(
       `SELECT Pending_id, Email, Username, Created_at
        FROM pending_accounts_tbl
@@ -628,17 +626,33 @@ export async function getQueuePosition(email: string) {
        ORDER BY Created_at ASC`
     );
 
-    // Find the position of the user in the queue
-    const position = pendingAccounts.findIndex((acc: any) => acc.Email.toLowerCase() === email.toLowerCase());
-    
-    if (position === -1) {
-      throw new Error('Account not found in pending queue');
+    const list = Array.isArray(pendingAccounts) ? pendingAccounts : [];
+    const lowerEmail = String(email ?? '').toLowerCase();
+
+    if (list.length === 0) {
+      return {
+        position: null,
+        totalPending: 0,
+        estimatedWaitTime: null,
+      };
     }
 
+    const idx = list.findIndex((acc: any) => String(acc.Email ?? '').toLowerCase() === lowerEmail);
+
+    if (idx === -1) {
+      // do NOT throw — return null so callers can handle gracefully
+      return {
+        position: null,
+        totalPending: list.length,
+        estimatedWaitTime: null,
+      };
+    }
+
+    const position = idx + 1;
     return {
-      position: position + 1, // 1-indexed
-      totalPending: pendingAccounts.length,
-      estimatedWaitTime: calculateEstimatedWaitTime(position + 1)
+      position,
+      totalPending: list.length,
+      estimatedWaitTime: calculateEstimatedWaitTime(position),
     };
   } catch (error) {
     console.error('getQueuePosition error:', error);
