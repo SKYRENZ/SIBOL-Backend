@@ -110,6 +110,10 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+import healthRoutes from './Routes/healthRoutes.js';
+
+app.use('/api/health', healthRoutes);
+
 // mount feature routers
 app.use('/api/auth', authRoutes);  // Mount auth routes first
 app.use('/api/machines', machineRoutes);
