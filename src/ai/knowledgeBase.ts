@@ -3,6 +3,7 @@ import { RowDataPacket } from "mysql2/promise";
 
 export type RRLRow = {
   id: number;
+  ai_role_id: number; // NEW: 1 = digester, 2 = water/feed calc
   ph: number | null;
   temperature_c: number | null;
   pressure_psi: number | null;
@@ -12,18 +13,17 @@ export type RRLRow = {
   ts_percent: number | null;
   vs_percent: number | null;
   olr: number | null;
-  status: "normal" | "warning" | "critical";
-  explanation: string;
+  notes: string | null;
 };
 
-export async function getRRLData(): Promise<RRLRow[]> {
+// Fetch RRL data by AI role
+export async function getRRLData(ai_role_id: number): Promise<RRLRow[]> {
   try {
-    // Each row is RRLRow & RowDataPacket
     const [rows] = await db.query<(RRLRow & RowDataPacket)[]>(
-      "SELECT * FROM rrl_reference_data"
+      "SELECT * FROM rrl_reference_data WHERE ai_role_id = ?",
+      [ai_role_id]
     );
-
-    return rows; // TS now understands this is an array of objects
+    return rows;
   } catch (err) {
     console.error("Error fetching RRL data:", err);
     return [];

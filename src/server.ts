@@ -12,6 +12,7 @@ import uploadRoutes from "./Routes/uploadRoutes.js";
 import chatRoutes from "./Routes/chat.route.js";
 import leaderboardRoutes from './Routes/leaderboardRoutes';
 import aiRoutes from "./Routes/ai";
+import waterRoutes from './Routes/waterRoutes';
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -43,7 +44,7 @@ import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 import S1_esp32Routes from './Routes/S1_esp32Routes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
-
+import mapRoutes from './Routes/mapRoutes';
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -109,6 +110,10 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+import healthRoutes from './Routes/healthRoutes.js';
+
+app.use('/api/health', healthRoutes);
+
 // mount feature routers
 app.use('/api/auth', authRoutes);  // Mount auth routes first
 app.use('/api/machines', machineRoutes);
@@ -122,6 +127,7 @@ app.use('/api/modules', moduleRoutes);
 app.use('/api/auth', googleAuthRoutes);
 app.use("/api/areas", areaRoutes);
 app.use("/api/ai", aiRoutes);
+app.use('/api/ai', waterRoutes);
 app.use("/api/operators", operatorRoutes);
 app.use('/api/filters', filtersRoutes);
 app.use('/api/qr', qrRoutes);
@@ -133,7 +139,7 @@ app.use('/api/additives', additivesRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);
 app.use('/api/chat', authenticate, chatRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
-
+app.use('/api/map', mapRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 
