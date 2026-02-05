@@ -63,6 +63,8 @@ const corsOptions = {
 
 const app = express();
 
+app.disable('etag');
+
 app.use(cors(corsOptions)); // ✅ Only this one
 
 const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT) || 5000
