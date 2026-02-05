@@ -6,7 +6,6 @@ export interface AdditiveRow {
   machine_id: number;
   additive_type_id: number;
   additive_input: string;
-  stage: string;
   value: number;
   units: string;
   date: string; // YYYY-MM-DD
@@ -37,7 +36,6 @@ export const getAdditiveTypes = async (): Promise<AdditiveTypeRow[]> => {
 export const createAdditive = async (payload: {
   machine_id: number;
   additive_type_id: number;
-  stage: string;
   value: number;
   units: string;
   account_id?: number | null;
@@ -52,14 +50,13 @@ export const createAdditive = async (payload: {
 
   const sql = `
     INSERT INTO additives_tbl
-      (machine_id, additive_type_id, additive_input, stage, value, units, date, time, person_in_charge, account_id)
-    VALUES (?, ?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?, ?)
+      (machine_id, additive_type_id, additive_input, value, units, date, time, person_in_charge, account_id)
+    VALUES (?, ?, ?, ?, ?, CURDATE(), CURTIME(), ?, ?)
   `;
   const params = [
     payload.machine_id,
     payload.additive_type_id,
     type.name,
-    payload.stage,
     payload.value,
     payload.units,
     payload.person_in_charge || null,
