@@ -1,20 +1,25 @@
 import { Router } from 'express';
 import * as controller from '../controllers/additivesController';
+import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
 
 /**
- * POST /api/additives
- * body: {
- *  machine_id, additive_input, stage, value, units, date (YYYY-MM-DD), time (HH:MM), person_in_charge
- * }
+ * GET /api/additives/types
+ * returns active additive types
  */
-router.post('/', controller.createAdditive);
+router.get('/types', controller.listAdditiveTypes);
+
+/**
+ * POST /api/additives
+ * body: { machine_id, additive_type_id, stage?, value, units }
+ * date/time auto-set on server, operator from auth
+ */
+router.post('/', authenticate, controller.createAdditive);
 
 /**
  * GET /api/additives
  * optional query: ?machine_id=1
- * returns additives ordered by machine_id, date desc, time desc and includes machine_name
  */
 router.get('/', controller.listAdditives);
 
