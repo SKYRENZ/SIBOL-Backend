@@ -9,6 +9,7 @@ router.post("/analyze", async (req, res) => {
     const currentData = req.body; // { ph, temperature_c, pressure_mv, testHour? }
 
     const now = new Date();
+
     // Allow overriding the hour for local testing via body or query param: testHour (0-23)
     const rawTestHour =
       typeof req.body?.testHour !== "undefined"
@@ -16,6 +17,7 @@ router.post("/analyze", async (req, res) => {
         : typeof req.query?.testHour !== "undefined"
         ? req.query.testHour
         : null;
+
     let hour = now.getHours();
     if (rawTestHour !== null) {
       const parsed = Number(rawTestHour);
@@ -27,51 +29,46 @@ router.post("/analyze", async (req, res) => {
     // 1️⃣ Digester AI role (ID = 1)
     const rrlData: RRLRow[] = await getRRLData(1);
 
-    const currentPressure_psi = currentData.pressure_mv
-      ? mvToPsi(currentData.pressure_mv)
-      : null;
+    const currentPressure_psi =
+      typeof currentData.pressure_mv === "number"
+        ? mvToPsi(currentData.pressure_mv)
+        : null;
 
-    let avgPH: number | null = null;
-    let detailedMessage: string | null = null;
+    // Compute avgPH from RRL
+    const normalPHs = rrlData
+      .map(r => r.ph)
+      .filter((v): v is number => v !== null);
 
-    // Full digester analysis only at 6 AM
-    if (hour === 6) {
-      const normalPHs = rrlData
-        .map(r => r.ph)
-        .filter((v): v is number => v !== null);
-      avgPH =
-        normalPHs.length > 0
-          ? normalPHs.reduce((a, b) => a + b, 0) / normalPHs.length
-          : null;
+    const avgPH =
+      normalPHs.length > 0
+        ? normalPHs.reduce((a, b) => a + b, 0) / normalPHs.length
+        : null;
 
-      if (avgPH !== null) {
-        detailedMessage = `
-Your current pH is ${currentData.ph}, which is ${
-          currentData.ph < avgPH ? "lower" : "within"
-        } the normal range
-based on literature sources. The average normal pH calculated from multiple reference studies (RRLs) is ${avgPH.toFixed(
-          2
-        )}.
-
-A drop in pH can indicate that the digester is becoming acidic, which might slow down or stress the digestion process. 
-To help the digester recover, it is suggested to reduce or temporarily stop feeding and monitor pH closely.
-
-"Normal" here means the pH values reported in previous scientific studies for stable anaerobic digestion.
-        `;
-      }
-    }
-
-    // Quick message based on pH
+    // Quick status message
     let message = "System is normal.";
     if (avgPH !== null && currentData.ph < avgPH - 0.5) {
       message =
-        "pH dropped below normal range. Possible acidification. Suggest reducing or stopping feeding.";
+        "pH dropped below the expected range. Possible acidification detected. Consider reducing or stopping feeding.";
     }
 
-    // 2️⃣ Feeding calculation every 4 hours (8 AM, 12 PM, 4 PM, 8 PM)
+    // Detailed message (always computed if avgPH exists)
+    let detailedMessage: string | null = null;
+    if (avgPH !== null) {
+      detailedMessage = `
+Your current pH is ${currentData.ph}, which is ${
+        currentData.ph < avgPH ? "lower than" : "within"
+      } the expected operating range.
+
+A stable digester usually has a pH around ${avgPH.toFixed(2)}.
+
+A drop in pH may indicate that the digester environment is becoming acidic. This can slow down or stress the digestion process.
+To help stabilize the system, it is recommended to reduce or temporarily stop feeding and continue monitoring pH levels closely.
+      `;
+    }
+
+    // Feeding message only at 6 AM
     let feedingMessage: string | null = null;
-    // We define feeding check hours: 8, 12, 16, 20
-    if ([8, 12, 16, 20].includes(hour)) {
+    if (hour === 6) {
       const recommendedFeedKg = computeFeeding(
         currentData.ph,
         currentData.temperature_c
