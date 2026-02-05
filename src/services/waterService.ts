@@ -20,13 +20,6 @@ export async function analyzeWaterRequirement(foodWasteKg: number) {
   return {
     foodWasteKg,
     recommendedWater,
-    explanation: `
-Based on previous biogas studies, raw food waste contains high moisture
-but still needs dilution to form a slurry suitable for anaerobic digestion.
-
-Scientific literature suggests maintaining a total solids content of
-around 8–12%. Using reference data, the system calculated an average
-water-to-waste ratio and applied it to your input.
-`
+    explanation: `For your ${foodWasteKg}kg of food waste, Lili recommends ${recommendedWater}L of water to achieve the optimal 8-12% solids content for anaerobic digestion.`
   };
 }
