@@ -81,7 +81,13 @@ export async function googleAuthCallback(req: Request, res: Response, next: Next
             }));
           }
 
-          const secret = config.JWT_SECRET || 'changeme';
+          const secret = config.JWT_SECRET;
+          if (!secret) {
+            return res.redirect(buildFrontendUrl('/auth/callback', {
+              error: 'server_misconfigured',
+              auth: 'fail'
+            }));
+          }
           const payload: any = {
             Account_id: user.Account_id ?? user.AccountId ?? user.id,
             Roles: user.Roles ?? user.role ?? undefined,

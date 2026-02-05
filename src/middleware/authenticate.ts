@@ -5,19 +5,28 @@ import config from '../config/env';
 
 export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
-    // try cookie first (set by login on web), then headers
     const cookieToken = (req as any).cookies?.token as string | undefined;
-    const headerAuth = (req.headers.authorization as string) || (req.headers['x-auth-token'] as string) || null;
-    const auth = headerAuth ?? (cookieToken ? `Bearer ${cookieToken}` : null);
+    const headerAuth =
+      (req.headers.authorization as string) ||
+      (req.headers['x-auth-token'] as string) ||
+      null;
 
+    const auth = headerAuth ?? (cookieToken ? `Bearer ${cookieToken}` : null);
     if (!auth) return res.status(401).json({ message: 'Missing auth token (header or cookie)' });
 
     const token = auth.replace(/^Bearer\s+/i, '');
-    let decoded;
+
+    const SECRET = config.JWT_SECRET;
+    if (!SECRET) {
+      // fail fast; otherwise tokens will randomly break depending on fallback
+      console.error('[auth] JWT_SECRET missing in config');
+      return res.status(500).json({ message: 'Server misconfigured (missing JWT secret)' });
+    }
+
+    let decoded: any;
     try {
-      const SECRET = process.env.JWT_SECRET ?? config?.JWT_SECRET ?? 'changeme';
-      decoded = jwt.verify(token, SECRET as string) as any;
-    } catch (err) {
+      decoded = jwt.verify(token, SECRET) as any;
+    } catch {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
