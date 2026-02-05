@@ -3,7 +3,7 @@ import * as service from '../services/additivesService';
 
 export const createAdditive = async (req: Request, res: Response) => {
   try {
-    const { machine_id, additive_type_id, stage, value, units } = req.body;
+    const { machine_id, additive_type_id, value, units } = req.body;
 
     if (!machine_id || !additive_type_id || value === undefined || !units) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -12,7 +12,6 @@ export const createAdditive = async (req: Request, res: Response) => {
     const payload: Parameters<typeof service.createAdditive>[0] = {
       machine_id: Number(machine_id),
       additive_type_id: Number(additive_type_id),
-      stage: stage ? String(stage) : 'N/A',
       value: Number(value),
       units: String(units),
       account_id: req.user?.Account_id ?? null,
