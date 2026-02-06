@@ -6,49 +6,41 @@ import * as rewardService from "../services/rewardService"; // ✅ used by uploa
 
 const storage = multer.memoryStorage();
 
-// existing generic upload (maintenance_attachments, allows docs)
-const upload = multer({
+// default generic upload (if you use it elsewhere)
+const upload = multer({ storage });
+
+// signup attachment: allow images only, increase size limit e.g. 10MB
+const signupUpload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
-    const mimetype = allowedTypes.test(file.mimetype);
-    if (mimetype) {
-      return cb(null, true);
-    } else {
-      cb(new Error("Invalid file type"));
-    }
+    console.log('[signupUpload] incoming file:', { fieldname: file.fieldname, originalname: file.originalname, mimetype: file.mimetype });
+    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    const err: any = new multer.MulterError('LIMIT_UNEXPECTED_FILE');
+    err.message = 'Invalid file type: only images are allowed';
+    return cb(err);
+  },
+});
+
+// --- NEW: reward uploads only accept jpeg/jpg/png and limit size (5MB) ---
+const rewardUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (req, file, cb) => {
+    // accept image/jpeg and image/png (jpeg covers .jpg)
+    const ok = /^image\/(jpeg|png)$/i.test(file.mimetype);
+    if (ok) return cb(null, true);
+    const err: any = new multer.MulterError('LIMIT_UNEXPECTED_FILE');
+    err.message = 'Invalid file type: only JPEG and PNG images are allowed for rewards';
+    return cb(err);
   },
 });
 
 export const uploadMiddleware = upload.single("file");
-
-// ✅ NEW: signup attachment middleware (REQUIRED image-only)
-const signupUpload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB (adjust)
-  fileFilter: (req, file, cb) => {
-    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
-    if (ok) return cb(null, true);
-    return cb(new Error("Invalid file type (signup attachment must be an image)"));
-  },
-});
-
-// field name for signup: "attachment"
 export const signupAttachmentMiddleware = signupUpload.single("attachment");
-
-// ✅ Reward image upload (image-only)
-const rewardImageUpload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const ok = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype);
-    if (ok) return cb(null, true);
-    return cb(new Error("Invalid file type (reward image must be an image)"));
-  },
-});
-
-export const rewardImageUploadMiddleware = rewardImageUpload.single("file");
+// use rewardUpload for reward image routes
+export const rewardImageUploadMiddleware = rewardUpload.single("file");
 
 export async function uploadFile(req: Request, res: Response) {
   try {
@@ -81,6 +73,11 @@ export async function uploadRewardImage(req: Request, res: Response) {
   try {
     if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
+    // extra guard (should be enforced by multer already)
+    if (!/^image\/(jpeg|png)$/i.test(req.file.mimetype)) {
+      return res.status(400).json({ message: "Only JPEG/PNG images are allowed" });
+    }
+
     const base64Data = req.file.buffer.toString("base64");
     const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
 
@@ -95,6 +92,10 @@ export async function uploadRewardImage(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error("Reward image upload error:", err?.message || err);
+    // If multer threw a MulterError, surface it clearly
+    if (err && err.name === 'MulterError') {
+      return res.status(400).json({ message: err.message || 'Upload validation failed', code: err.code });
+    }
     return res.status(500).json({ message: err.message || "File upload failed" });
   }
 }
@@ -111,6 +112,11 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     const file = req.file;
     if (!file) return res.status(400).json({ message: "No file uploaded" });
 
+    // enforce image-only for reward attachments as well
+    if (!/^image\/(jpeg|png)$/i.test(file.mimetype)) {
+      return res.status(400).json({ message: "Only JPEG/PNG images are allowed for reward attachments" });
+    }
+
     const txId = Number(req.body.reward_transaction_id ?? req.body.Reward_transaction_id);
     if (!txId) return res.status(400).json({ message: "Missing reward_transaction_id" });
 
@@ -122,7 +128,7 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     const folder = `reward_attachments/tx_${txId}`;
     const result = await cloudinary.uploader.upload(dataURI, {
       folder,
-      resource_type: "auto",
+      resource_type: "image",
     });
 
     const authUser: any = (req as any).user;
@@ -142,6 +148,9 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     return res.status(201).json({ attachment });
   } catch (err: any) {
     console.error("uploadClaimedRewardAttachment error:", err);
+    if (err && err.name === 'MulterError') {
+      return res.status(400).json({ message: err.message || 'Upload validation failed', code: err.code });
+    }
     return res.status(500).json({ message: err?.message ?? "Upload failed" });
   }
 }

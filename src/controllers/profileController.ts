@@ -19,25 +19,23 @@ export async function handleGetProfile(req: Request, res: Response) {
 export async function handleGetMyPoints(req: Request, res: Response) {
   try {
     const user = (req as any).user;
-
     if (!user) return res.status(401).json({ message: 'Not authenticated' });
 
     const accountId = Number(user?.Account_id ?? user?.account_id ?? user?.id);
-
     if (!accountId) return res.status(400).json({ message: 'Invalid account id' });
 
     const account = await getPointsByAccountId(accountId);
-
     if (!account) return res.status(404).json({ message: 'Account not found' });
 
-    // Normalize DB/row field casing (some rows use Points / Username)
     const pointsVal = account?.points ?? account?.Points ?? user?.Points ?? 0;
     const usernameVal = account?.username ?? account?.Username ?? user?.Username ?? user?.username ?? '';
+    const totalContrib = Number(account?.total_contributions ?? account?.Total_kg ?? 0);
 
     return res.json({
       account_id: accountId,
       points: Number(pointsVal) || 0,
-      username: usernameVal
+      username: usernameVal,
+      total_contributions: totalContrib
     });
   } catch (err) {
     console.error('handleGetMyPoints error', err);
