@@ -54,29 +54,27 @@ export function calculatePointsFromWeight(weight: number, pointsPerKg: number): 
   return Math.round(points * 100) / 100;
 }
 
-export async function getAuditEntries(limit = 100) {
-  const [rows]: any = await db.execute(
-    `SELECT
-       ca.id,
-       ca.old_points_per_kg AS oldPoints,
-       ca.new_points_per_kg AS newPoints,
-       ca.remark,
-       ca.changed_by AS changedBy,
-       ac.Username AS changedByUsername,
-       ca.created_at AS createdAt
-     FROM conversion_audit_tbl ca
-     LEFT JOIN accounts_tbl ac ON ac.Account_id = ca.changed_by
-     ORDER BY ca.created_at DESC
-     LIMIT ?`,
-    [limit]
-  );
-  return Array.isArray(rows) ? rows.map((r: any) => ({
-    id: r.id,
-    oldPoints: r.oldPoints == null ? null : Number(r.oldPoints),
-    newPoints: Number(r.newPoints),
-    remark: String(r.remark ?? ''),
-    changedBy: r.changedBy ?? null,
-    changedByUsername: r.changedByUsername ?? '—',
-    createdAt: r.createdAt
-  })) : [];
+export async function getAuditEntries(limit: number) {
+  try {
+    console.log('Executing query with limit:', limit, typeof limit); // Debug log
+    const [rows]: any = await db.execute(
+      `SELECT
+         ca.id,
+         ca.old_points_per_kg AS oldPoints,
+         ca.new_points_per_kg AS newPoints,
+         ca.remark,
+         ca.changed_by AS changedBy,
+         ac.Username AS changedByUsername,
+         ca.created_at AS createdAt
+       FROM conversion_audit_tbl ca
+       LEFT JOIN accounts_tbl ac ON ac.Account_id = ca.changed_by
+       ORDER BY ca.created_at DESC
+       LIMIT ?`,
+      [Number(limit)] // Ensure it's a number
+    );
+    return Array.isArray(rows) ? rows : [];
+  } catch (error) {
+    console.error('Error in getAuditEntries:', error);
+    throw error;
+  }
 }
