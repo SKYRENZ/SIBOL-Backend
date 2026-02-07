@@ -15,8 +15,10 @@ router.post("/", ctrl.uploadMiddleware, ctrl.uploadFile);
 // reward image upload (admin only)
 router.post("/reward-image", isAdmin, ctrl.rewardImageUploadMiddleware, ctrl.uploadRewardImage);
 
-// reward attachment upload (admin/staff)
-router.post("/reward-attachment", isAdmin, ctrl.uploadMiddleware, ctrl.uploadClaimedRewardAttachment);
+// ✅ reward attachment upload (admin/staff) - now accepts "file" OR "attachment"
+router.post("/reward-attachment", isAdmin, ctrl.rewardAttachmentUploadMiddleware, ctrl.uploadClaimedRewardAttachment);
 
-// NOTE: listing and deleting attachments moved to rewardRoutes/rewardController
+// ✅ return clean JSON for Multer errors (implemented in controller)
+router.use(ctrl.uploadMulterErrorHandler);
+
 export default router;
