@@ -75,6 +75,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       acc.Username AS actor_username,
       NULL AS machine_name,
       NULL AS area_name,
+      NULL AS container_names,
       NULL AS weight,
       NULL AS first_name,
       NULL AS last_name,
@@ -107,6 +108,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       acc.Username AS actor_username,
       m.Name AS machine_name,
       NULL AS area_name,
+      NULL AS container_names,
       wi.Weight AS weight,
       NULL AS first_name,
       NULL AS last_name,
@@ -137,6 +139,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       acc.Username AS actor_username,
       NULL AS machine_name,
       a.Area_Name AS area_name,
+      c.container_names AS container_names,
       wc.weight AS weight,
       NULL AS first_name,
       NULL AS last_name,
@@ -145,6 +148,11 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM waste_collection_tbl wc
     LEFT JOIN area_tbl a ON wc.area_id = a.Area_id
+    LEFT JOIN (
+      SELECT area_id, GROUP_CONCAT(container_name ORDER BY container_name SEPARATOR ', ') AS container_names
+      FROM waste_containers_tbl
+      GROUP BY area_id
+    ) c ON wc.area_id = c.area_id
     LEFT JOIN accounts_tbl acc ON wc.operator_id = acc.Account_id
     LEFT JOIN profile_tbl p ON acc.Account_id = p.Account_id
     LEFT JOIN notification_reads_tbl nr
@@ -166,7 +174,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS actor_name,
       sn.Username AS actor_username,
       NULL AS machine_name,
-      NULL AS area_name,
+      sn.Area_name AS area_name,
+      sn.Container_name AS container_names,
       NULL AS weight,
       sn.FirstName AS first_name,
       sn.LastName AS last_name,
@@ -239,11 +248,12 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
 
     if (row.notif_type === "collection") {
       const areaLabel = row.area_name ? `${row.area_name}` : "Area";
+      const containerLabel = row.container_names ? ` • ${row.container_names}` : "";
       return {
         id: Number(row.id),
         type: "collection" as const,
-        title: `Collection logged: ${areaLabel}`,
-        message: `${actorName || "Someone"} collected ${Number(row.weight ?? 0).toFixed(2)} kg in ${areaLabel}.`,
+        title: `Collection logged: ${areaLabel}${containerLabel}`,
+        message: `${actorName || "Someone"} collected ${Number(row.weight ?? 0).toFixed(2)} kg in ${areaLabel}${containerLabel}.`,
         timestamp: row.created_at,
         read: Boolean(row.read_flag),
         priority: null,
@@ -257,6 +267,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       const nameLabel = fullName || row.actor_username || "User";
       const emailLabel = row.email ? ` (${row.email})` : "";
       const roleLabel = row.role_name ? ` as ${row.role_name}` : "";
+      const containerLabel = row.container_names ? `${row.container_names}` : "Container";
+      const areaLabel = row.area_name ? `${row.area_name}` : "Area";
 
       let title = "System update";
       let message = `${nameLabel}${emailLabel} has a system update.`;
@@ -271,6 +283,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       } else if (eventType === "REJECTED") {
         title = `Registration rejected: ${nameLabel}`;
         message = `${nameLabel}${emailLabel} was rejected${roleLabel}.`;
+      } else if (eventType === "CONTAINER_ADDED") {
+        title = `Container added: ${containerLabel}`;
+        message = `A new container (${containerLabel}) was added in ${areaLabel}.`;
       }
 
       return {
