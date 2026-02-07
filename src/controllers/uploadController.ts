@@ -1,5 +1,5 @@
 // 1. Create uploadController.ts
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import cloudinary from "../config/cloudinary.js";
 import * as rewardService from "../services/rewardService"; // ✅ used by uploadClaimedRewardAttachment
@@ -28,7 +28,6 @@ const rewardUpload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
   fileFilter: (req, file, cb) => {
-    // accept image/jpeg and image/png (jpeg covers .jpg)
     const ok = /^image\/(jpeg|png)$/i.test(file.mimetype);
     if (ok) return cb(null, true);
     const err: any = new multer.MulterError('LIMIT_UNEXPECTED_FILE');
@@ -39,8 +38,13 @@ const rewardUpload = multer({
 
 export const uploadMiddleware = upload.single("file");
 export const signupAttachmentMiddleware = signupUpload.single("attachment");
-// use rewardUpload for reward image routes
 export const rewardImageUploadMiddleware = rewardUpload.single("file");
+
+// ✅ NEW: reward attachment upload should accept either "file" or "attachment"
+export const rewardAttachmentUploadMiddleware = rewardUpload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "attachment", maxCount: 1 },
+]);
 
 export async function uploadFile(req: Request, res: Response) {
   try {
@@ -109,7 +113,16 @@ export async function uploadRewardImage(req: Request, res: Response) {
  */
 export async function uploadClaimedRewardAttachment(req: Request, res: Response) {
   try {
-    const file = req.file;
+    // Multer fields() puts files in req.files
+    const files = (req as any).files as
+      | { file?: Express.Multer.File[]; attachment?: Express.Multer.File[] }
+      | undefined;
+
+    const file =
+      files?.file?.[0] ??
+      files?.attachment?.[0] ??
+      (req as any).file; // fallback if you ever switch back to single()
+
     if (!file) return res.status(400).json({ message: "No file uploaded" });
 
     // enforce image-only for reward attachments as well
@@ -126,6 +139,7 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     const base64Data = file.buffer.toString("base64");
     const dataURI = `data:${file.mimetype};base64,${base64Data}`;
     const folder = `reward_attachments/tx_${txId}`;
+
     const result = await cloudinary.uploader.upload(dataURI, {
       folder,
       resource_type: "image",
@@ -148,9 +162,22 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     return res.status(201).json({ attachment });
   } catch (err: any) {
     console.error("uploadClaimedRewardAttachment error:", err);
-    if (err && err.name === 'MulterError') {
-      return res.status(400).json({ message: err.message || 'Upload validation failed', code: err.code });
-    }
     return res.status(500).json({ message: err?.message ?? "Upload failed" });
   }
+}
+
+// ✅ Router-level Multer error handler (kept here since it’s upload-related controller logic)
+export function uploadMulterErrorHandler(err: any, req: Request, res: Response, next: NextFunction) {
+  if (err?.name === "MulterError") {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "File too large. Max size is 5MB.", code: err.code });
+    }
+    return res.status(400).json({ message: err.message || "Upload validation failed", code: err.code });
+  }
+
+  if (String(err?.message || "").toLowerCase().includes("unexpected field")) {
+    return res.status(400).json({ message: "Unexpected upload field. Use 'file' (or 'attachment')." });
+  }
+
+  return next(err);
 }
