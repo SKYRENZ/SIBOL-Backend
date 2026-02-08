@@ -201,6 +201,18 @@ export async function approveAccount(pendingId: number) {
       [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
     );
 
+    // ✅ log system notification for approval (best-effort)
+    try {
+      await conn.execute(
+        `INSERT INTO system_notifications_tbl
+         (Event_type, Username, FirstName, LastName, Email, Role_id, Created_at)
+         VALUES ('APPROVED', ?, ?, ?, ?, ?, NOW())`,
+        [pendingAccount.Username, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Email, pendingAccount.Roles]
+      );
+    } catch (notifErr) {
+      console.warn('[approveAccount] Failed to log system notification:', notifErr);
+    }
+
     // ✅ best-effort Cloudinary cleanup (do not fail approval if destroy fails)
     for (const a of attRows || []) {
       const publicId = a?.Public_id;
@@ -678,6 +690,18 @@ export async function rejectAccount(pendingId: number, reason?: string) {
       throw new Error("Pending account not found");
     }
     const pending = rows[0];
+
+    // ✅ log system notification for rejection (best-effort)
+    try {
+      await pool.execute(
+        `INSERT INTO system_notifications_tbl
+         (Event_type, Username, FirstName, LastName, Email, Role_id, Created_at)
+         VALUES ('REJECTED', ?, ?, ?, ?, ?, NOW())`,
+        [pending.Username, pending.FirstName, pending.LastName, pending.Email, pending.Roles]
+      );
+    } catch (notifErr) {
+      console.warn('[rejectAccount] Failed to log system notification:', notifErr);
+    }
 
     const [attRows]: any = await pool.execute(
       `SELECT Public_id FROM pending_account_attachments_tbl WHERE Pending_id = ?`,
