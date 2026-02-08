@@ -61,7 +61,7 @@ export async function handleUpdateProfile(req: Request, res: Response) {
     return res.json({ message: 'Profile updated', data: updated });
   } catch (err: any) {
     if (err?.code === 'TOO_EARLY') {
-      return res.status(429).json({ message: err.message, retryAt: err.retryAt });
+      return res.status(429).json({ message: err.message, retryAt: err.retryAt, kind: err.kind }); // ✅ include kind
     }
     return res.status(400).json({ message: err?.message || 'Update failed' });
   }
@@ -94,7 +94,7 @@ export async function handleUpdateMyProfile(req: Request, res: Response) {
     return res.json({ message: 'Profile updated', data: updated });
   } catch (err: any) {
     if (err?.code === 'TOO_EARLY') {
-      return res.status(429).json({ message: err.message, retryAt: err.retryAt });
+      return res.status(429).json({ message: err.message, retryAt: err.retryAt, kind: err.kind }); // ✅ include kind
     }
     return res.status(400).json({ message: err?.message || 'Update failed' });
   }
