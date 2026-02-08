@@ -29,8 +29,12 @@ export interface Schedule {
 export interface Machine {
   Machine_id?: number;
   Name: string;
+  Device_id: string;
   Area_id?: number;
   Status?: number;
+  Mac_address: string;
+  Cert_fingerprint?: string;
+  Certificate_PEM?: string; 
 }
 
 export interface MachineStatus {
