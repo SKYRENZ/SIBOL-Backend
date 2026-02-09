@@ -188,6 +188,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = sn.Notification_id
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
+    WHERE sn.Event_type <> 'REGISTERED'
   `;
 
   let sql = "";
@@ -277,6 +278,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       if (eventType === "REGISTERED") {
         title = `New registration: ${nameLabel}`;
         message = `${nameLabel}${emailLabel} registered${roleLabel}.`;
+      } else if (eventType === "REGISTERED_VERIFIED") {
+        title = `New registration (verified): ${nameLabel}`;
+        message = `${nameLabel}${emailLabel} registered and verified their email${roleLabel}.`;
       } else if (eventType === "APPROVED") {
         title = `Registration approved: ${nameLabel}`;
         message = `${nameLabel}${emailLabel} was approved${roleLabel}.`;
