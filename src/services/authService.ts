@@ -567,15 +567,77 @@ export async function changeUserPassword(
 // NEW: Login user and return user data (for cookie-based auth)
 type ClientType = 'web' | 'mobile';
 
-export async function loginUser(username: string, password: string, clientType: ClientType) {
-  try {
-    const [rows]: any = await pool.execute(
-      'SELECT Account_id, Username, Password, Roles, IsFirstLogin FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1',
-      [username]
-    );
+function isEmailIdentifier(v: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v ?? '').trim());
+}
 
-    const user = rows?.[0];
-    if (!user) throw new Error('Invalid credentials');
+// ✅ UPDATED: Login user by username OR email (profile_tbl.Email)
+export async function loginUser(identifier: string, password: string, clientType: ClientType) {
+  try {
+    const id = String(identifier ?? '').trim();
+    if (!id || !password) throw new Error('Invalid credentials');
+
+    let user: any = null;
+
+    if (isEmailIdentifier(id)) {
+      // login by email
+      const [rows]: any = await pool.execute(
+        `SELECT a.Account_id, a.Username, a.Password, a.Roles, a.IsFirstLogin
+         FROM accounts_tbl a
+         JOIN profile_tbl p ON a.Account_id = p.Account_id
+         WHERE LOWER(p.Email) = LOWER(?) AND a.IsActive = 1
+         LIMIT 1`,
+        [id]
+      );
+      user = rows?.[0] ?? null;
+
+      // optional: nicer pending messages when email exists in pending
+      if (!user) {
+        const [pendingRows]: any = await pool.execute(
+          `SELECT IsEmailVerified, IsAdminVerified
+           FROM pending_accounts_tbl
+           WHERE LOWER(Email) = LOWER(?)
+           LIMIT 1`,
+          [id]
+        );
+
+        if (pendingRows?.length) {
+          const pending = pendingRows[0];
+          if (!pending.IsEmailVerified) throw new Error('Please verify your email first');
+          if (!pending.IsAdminVerified) throw new Error('Account is pending admin approval');
+        }
+
+        throw new Error('Invalid credentials');
+      }
+    } else {
+      // login by username (existing behavior)
+      const [rows]: any = await pool.execute(
+        `SELECT Account_id, Username, Password, Roles, IsFirstLogin
+         FROM accounts_tbl
+         WHERE Username = ? AND IsActive = 1
+         LIMIT 1`,
+        [id]
+      );
+      user = rows?.[0] ?? null;
+
+      if (!user) {
+        const [pendingRows]: any = await pool.execute(
+          `SELECT IsEmailVerified, IsAdminVerified
+           FROM pending_accounts_tbl
+           WHERE Username = ?
+           LIMIT 1`,
+          [id]
+        );
+
+        if (pendingRows?.length) {
+          const pending = pendingRows[0];
+          if (!pending.IsEmailVerified) throw new Error('Please verify your email first');
+          if (!pending.IsAdminVerified) throw new Error('Account is pending admin approval');
+        }
+
+        throw new Error('Invalid credentials');
+      }
+    }
 
     const isValid = await bcrypt.compare(password, user.Password);
     if (!isValid) throw new Error('Invalid credentials');
@@ -585,9 +647,7 @@ export async function loginUser(username: string, password: string, clientType: 
     const WEB_ALLOWED = new Set([1, 2]);
     const MOBILE_ALLOWED = new Set([3, 4]);
 
-    const allowed =
-      clientType === 'web' ? WEB_ALLOWED.has(roleNum) : MOBILE_ALLOWED.has(roleNum);
-
+    const allowed = clientType === 'web' ? WEB_ALLOWED.has(roleNum) : MOBILE_ALLOWED.has(roleNum);
     if (!allowed) {
       const err: any = new Error('Your account does not have access to this platform.');
       err.code = 'PLATFORM_NOT_ALLOWED';
@@ -598,7 +658,7 @@ export async function loginUser(username: string, password: string, clientType: 
       Account_id: user.Account_id,
       Username: user.Username,
       Roles: user.Roles,
-      IsFirstLogin: user.IsFirstLogin
+      IsFirstLogin: user.IsFirstLogin,
     };
   } catch (error) {
     throw error;

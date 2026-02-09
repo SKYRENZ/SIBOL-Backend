@@ -173,12 +173,18 @@ export async function checkStatus(req: Request, res: Response) {
 // ✅ REFACTORED: Now uses authService.loginUser()
 export const login = async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) return res.status(400).json({ message: 'Username and password are required' });
+    // ✅ accept username OR email OR identifier (backwards compatible)
+    const identifier = (req.body?.identifier ?? req.body?.username ?? req.body?.email ?? '').trim();
+    const password = (req.body?.password ?? '').trim();
+
+    if (!identifier || !password) {
+      return res.status(400).json({ message: 'Username/email and password are required' });
+    }
 
     const clientType = getClientType(req);
 
-    const user = await authService.loginUser(username, password, clientType);
+    // ✅ now logs in by username OR email
+    const user = await authService.loginUser(identifier, password, clientType);
 
     const payload = {
       Account_id: user.Account_id,
