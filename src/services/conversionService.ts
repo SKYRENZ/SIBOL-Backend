@@ -1,6 +1,36 @@
 import db from '../config/db';
 
+type DbExecutor = {
+  execute: (sql: string, params?: any[]) => Promise<any>;
+};
+
+function isAuditSchemaError(err: unknown): boolean {
+  const code = (err as { code?: string } | null | undefined)?.code;
+  return code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR' || code === 'ER_PARSE_ERROR';
+}
+
+async function ensureConversionTables(executor: DbExecutor) {
+  await executor.execute(
+    `CREATE TABLE IF NOT EXISTS conversion_rate_tbl (
+      id INT PRIMARY KEY,
+      points_per_kg DECIMAL(10,2) NOT NULL
+    )`
+  );
+
+  await executor.execute(
+    `CREATE TABLE IF NOT EXISTS conversion_audit_tbl (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      old_points_per_kg DECIMAL(10,2) NULL,
+      new_points_per_kg DECIMAL(10,2) NOT NULL,
+      remark VARCHAR(255) NOT NULL,
+      changed_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+}
+
 export async function getPointsPerKg(): Promise<number> {
+  await ensureConversionTables(db);
   const [rows]: any = await db.execute(
     'SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1'
   );
@@ -16,6 +46,8 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
     throw new Error('Remark is required');
   }
 
+  await ensureConversionTables(db);
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -28,10 +60,17 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
       [pointsPerKg, pointsPerKg]
     );
 
-    await conn.execute(
-      'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
-      [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
-    );
+    try {
+      await conn.execute(
+        'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
+        [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
+      );
+    } catch (err) {
+      if (!isAuditSchemaError(err)) {
+        throw err;
+      }
+      console.warn('Audit insert skipped due to schema issue:', (err as { code?: string } | null | undefined)?.code ?? err);
+    }
 
     await conn.commit();
   } catch (err) {
@@ -56,7 +95,8 @@ export function calculatePointsFromWeight(weight: number, pointsPerKg: number): 
 
 export async function getAuditEntries(limit: number) {
   try {
-    console.log('Executing query with limit:', limit, typeof limit); // Debug log
+    await ensureConversionTables(db);
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 100;
     const [rows]: any = await db.execute(
       `SELECT
          ca.id,
@@ -69,11 +109,14 @@ export async function getAuditEntries(limit: number) {
        FROM conversion_audit_tbl ca
        LEFT JOIN accounts_tbl ac ON ac.Account_id = ca.changed_by
        ORDER BY ca.created_at DESC
-       LIMIT ?`,
-      [Number(limit)] // Ensure it's a number
+       LIMIT ${safeLimit}`
     );
     return Array.isArray(rows) ? rows : [];
   } catch (error) {
+    if (isAuditSchemaError(error)) {
+      console.warn('Audit query skipped due to schema issue:', (error as { code?: string } | null | undefined)?.code ?? error);
+      return [];
+    }
     console.error('Error in getAuditEntries:', error);
     throw error;
   }
