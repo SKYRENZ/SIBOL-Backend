@@ -277,6 +277,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       if (eventType === "REGISTERED") {
         title = `New registration: ${nameLabel}`;
         message = `${nameLabel}${emailLabel} registered${roleLabel}.`;
+      } else if (eventType === "REGISTERED_VERIFIED") {
+        title = `New registration (verified): ${nameLabel}`;
+        message = `${nameLabel}${emailLabel} registered and verified their email${roleLabel}.`;
       } else if (eventType === "APPROVED") {
         title = `Registration approved: ${nameLabel}`;
         message = `${nameLabel}${emailLabel} was approved${roleLabel}.`;

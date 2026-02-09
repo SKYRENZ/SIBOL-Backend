@@ -100,11 +100,12 @@ export async function registerUser(
 
     // 6b. Insert system notification for registration (best-effort)
     try {
+      const registrationEventType = isSSO ? "REGISTERED_VERIFIED" : "REGISTERED";
       await pool.execute(
         `INSERT INTO system_notifications_tbl
          (Event_type, Username, FirstName, LastName, Email, Role_id, Created_at)
-         VALUES ('REGISTERED', ?, ?, ?, ?, ?, NOW())`,
-        [username, firstName, lastName, email, roleId]
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [registrationEventType, username, firstName, lastName, email, roleId]
       );
     } catch (notifErr) {
       if (process.env.NODE_ENV !== 'test') {
