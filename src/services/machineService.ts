@@ -1,22 +1,29 @@
 import { pool } from '../config/db';
 
 // CREATE - Function to add new machine
-export async function createMachine(areaId: number, status?: number) {
+export async function createMachine(
+  deviceId: string,
+  areaId: number,
+  macAddress: string,
+  certFingerprint?: string,
+  certificatePEM?: string,
+  status?: number
+) {
   // Validation
-  if (!areaId) {
-    throw new Error("Area ID is required");
+  if (!deviceId || !areaId || !macAddress) {
+    throw new Error("Device ID, Area ID, and MAC address are required");
   }
 
   try {
     // First insert with a temporary name to get the actual auto-increment ID
     const [result]: any = await pool.execute(
-      "INSERT INTO machine_tbl (Name, Area_id, Status) VALUES (?, ?, ?)",
-      ["TEMP_NAME", areaId, status || null]
+      `INSERT INTO machine_tbl (Device_id, Name, Area_id, Status, Mac_address, Cert_fingerprint, Certificate_PEM) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [deviceId, "TEMP_NAME", areaId, status || null, macAddress, certFingerprint || null, certificatePEM || null]
     );
 
     // Get the actual inserted ID
     const actualId = result.insertId;
-    
+
     // Generate machine name with the actual ID and current date
     const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     const machineName = `SIBOL_MACHINE_${actualId}_${currentDate}`;
@@ -31,9 +38,13 @@ export async function createMachine(areaId: number, status?: number) {
       success: true,
       message: "Machine created successfully",
       machineId: actualId,
-      machine: { 
-        name: machineName, 
-        areaId, 
+      machine: {
+        name: machineName,
+        deviceId,
+        areaId,
+        macAddress,
+        certFingerprint,
+        certificatePEM,
         status,
         createdDate: currentDate,
         actualId: actualId

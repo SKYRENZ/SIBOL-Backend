@@ -64,6 +64,18 @@ export async function createContainer(input: CreateContainerInput) {
     [container_name, areaId, deploymentDate, "Empty"]
   );
 
+  // best-effort: log system notification for container addition
+  try {
+    await pool.query(
+      `INSERT INTO system_notifications_tbl
+       (Event_type, Container_name, Area_name, Created_at)
+       VALUES ('CONTAINER_ADDED', ?, ?, NOW())`,
+      [container_name, area_name]
+    );
+  } catch (notifErr) {
+    console.warn('⚠️ Failed to log container notification:', notifErr);
+  }
+
   return {
     container_id: containerResult.insertId,
     container_name,

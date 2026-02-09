@@ -13,6 +13,7 @@ import chatRoutes from "./Routes/chat.route.js";
 import leaderboardRoutes from './Routes/leaderboardRoutes';
 import aiRoutes from "./Routes/ai";
 import waterRoutes from './Routes/waterRoutes';
+import notificationRoutes from './Routes/notificationRoutes';
 
 import {pool, testDbConnection} from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -113,8 +114,10 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 import healthRoutes from './Routes/healthRoutes.js';
+import historyRoutes from './Routes/historyRoutes.js';
 
 app.use('/api/health', healthRoutes);
+app.use('/history', historyRoutes); // or '/api/history' depending on your convention
 
 // mount feature routers
 app.use('/api/auth', authRoutes);  // Mount auth routes first
@@ -142,6 +145,7 @@ app.use("/api/waste-inputs", wasteInputRoutes);
 app.use('/api/chat', authenticate, chatRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/map', mapRoutes);
+app.use('/api/notifications', notificationRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
 

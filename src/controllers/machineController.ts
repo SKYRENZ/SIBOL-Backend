@@ -2,11 +2,27 @@ import type { Request, Response } from "express";
 import * as machineService from "../services/machineService";
 
 export async function createMachine(req: Request, res: Response) {
-  const { areaId, status } = req.body;
-  if (!areaId) return res.status(400).json({ message: "Area ID is required" });
+  const {
+    deviceId,
+    areaId,
+    macAddress,
+    certFingerprint,
+    certificatePEM,
+    status
+  } = req.body;
+  if (!deviceId || !areaId || !macAddress) {
+    return res.status(400).json({ message: "Device ID, Area ID, and MAC address are required" });
+  }
 
   try {
-    const result = await machineService.createMachine(areaId, status);
+    const result = await machineService.createMachine(
+      deviceId,
+      areaId,
+      macAddress,
+      certFingerprint,
+      certificatePEM,
+      status
+    );
     return res.status(201).json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create machine";

@@ -98,6 +98,20 @@ export async function registerUser(
       [username, hashedPassword, firstName, lastName, email, barangayId, roleId, verificationToken, tokenExpiration, isEmailVerified]
     );
 
+    // 6b. Insert system notification for registration (best-effort)
+    try {
+      await pool.execute(
+        `INSERT INTO system_notifications_tbl
+         (Event_type, Username, FirstName, LastName, Email, Role_id, Created_at)
+         VALUES ('REGISTERED', ?, ?, ?, ?, ?, NOW())`,
+        [username, firstName, lastName, email, roleId]
+      );
+    } catch (notifErr) {
+      if (process.env.NODE_ENV !== 'test') {
+        console.warn('⚠️ Failed to log system registration notification:', notifErr);
+      }
+    }
+
     // 7. Send verification (only for non-SSO users and only if not in test environment)
     if (!isSSO && process.env.NODE_ENV !== 'test') {
       try {
