@@ -8,6 +8,11 @@ export async function getPointsPerKg(): Promise<number> {
   return Number(rows[0].points_per_kg) || 5;
 }
 
+function isAuditSchemaError(err: unknown): boolean {
+  const code = (err as { code?: string } | null | undefined)?.code;
+  return code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR' || code === 'ER_PARSE_ERROR';
+}
+
 export async function setPointsPerKg(pointsPerKg: number, remark: string, changedBy?: number): Promise<number> {
   if (!Number.isFinite(pointsPerKg) || pointsPerKg <= 0) {
     throw new Error('Invalid pointsPerKg');
@@ -28,10 +33,17 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
       [pointsPerKg, pointsPerKg]
     );
 
-    await conn.execute(
-      'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
-      [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
-    );
+    try {
+      await conn.execute(
+        'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
+        [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
+      );
+    } catch (err) {
+      if (!isAuditSchemaError(err)) {
+        throw err;
+      }
+      console.warn('Audit insert skipped due to schema issue:', (err as { code?: string } | null | undefined)?.code ?? err);
+    }
 
     await conn.commit();
   } catch (err) {
@@ -56,7 +68,7 @@ export function calculatePointsFromWeight(weight: number, pointsPerKg: number): 
 
 export async function getAuditEntries(limit: number) {
   try {
-    console.log('Executing query with limit:', limit, typeof limit); // Debug log
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 100;
     const [rows]: any = await db.execute(
       `SELECT
          ca.id,
@@ -70,10 +82,14 @@ export async function getAuditEntries(limit: number) {
        LEFT JOIN accounts_tbl ac ON ac.Account_id = ca.changed_by
        ORDER BY ca.created_at DESC
        LIMIT ?`,
-      [Number(limit)] // Ensure it's a number
+      [safeLimit]
     );
     return Array.isArray(rows) ? rows : [];
   } catch (error) {
+    if (isAuditSchemaError(error)) {
+      console.warn('Audit query skipped due to schema issue:', (error as { code?: string } | null | undefined)?.code ?? error);
+      return [];
+    }
     console.error('Error in getAuditEntries:', error);
     throw error;
   }
