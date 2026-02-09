@@ -188,6 +188,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = sn.Notification_id
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
+    WHERE sn.Event_type <> 'REGISTERED'
   `;
 
   let sql = "";
