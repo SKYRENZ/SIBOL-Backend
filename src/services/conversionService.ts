@@ -1,41 +1,41 @@
 import db from '../config/db';
 
-export async function getPointsPerKg(): Promise<number> {
-  const [rows]: any = await db.execute(
-    'SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1'
-  import db from '../config/db';
-
-  type DbExecutor = {
-    execute: (sql: string, params?: any[]) => Promise<any>;
-  };
-  if (!Array.isArray(rows) || rows.length === 0) return 5;
-  return Number(rows[0].points_per_kg) || 5;
-}
+type DbExecutor = {
+  execute: (sql: string, params?: any[]) => Promise<any>;
+};
 
 function isAuditSchemaError(err: unknown): boolean {
-
-  async function ensureConversionTables(executor: DbExecutor) {
-    await executor.execute(
-      `CREATE TABLE IF NOT EXISTS conversion_rate_tbl (
-        id INT PRIMARY KEY,
-        points_per_kg DECIMAL(10,2) NOT NULL
-      )`
-    );
-
-    await executor.execute(
-      `CREATE TABLE IF NOT EXISTS conversion_audit_tbl (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        old_points_per_kg DECIMAL(10,2) NULL,
-        new_points_per_kg DECIMAL(10,2) NOT NULL,
-        remark VARCHAR(255) NOT NULL,
-        changed_by INT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-      )`
-    );
-  }
   const code = (err as { code?: string } | null | undefined)?.code;
   return code === 'ER_NO_SUCH_TABLE' || code === 'ER_BAD_FIELD_ERROR' || code === 'ER_PARSE_ERROR';
-    await ensureConversionTables(db);
+}
+
+async function ensureConversionTables(executor: DbExecutor) {
+  await executor.execute(
+    `CREATE TABLE IF NOT EXISTS conversion_rate_tbl (
+      id INT PRIMARY KEY,
+      points_per_kg DECIMAL(10,2) NOT NULL
+    )`
+  );
+
+  await executor.execute(
+    `CREATE TABLE IF NOT EXISTS conversion_audit_tbl (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      old_points_per_kg DECIMAL(10,2) NULL,
+      new_points_per_kg DECIMAL(10,2) NOT NULL,
+      remark VARCHAR(255) NOT NULL,
+      changed_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  );
+}
+
+export async function getPointsPerKg(): Promise<number> {
+  await ensureConversionTables(db);
+  const [rows]: any = await db.execute(
+    'SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1'
+  );
+  if (!Array.isArray(rows) || rows.length === 0) return 5;
+  return Number(rows[0].points_per_kg) || 5;
 }
 
 export async function setPointsPerKg(pointsPerKg: number, remark: string, changedBy?: number): Promise<number> {
@@ -46,12 +46,12 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
     throw new Error('Remark is required');
   }
 
+  await ensureConversionTables(db);
+
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-
-    await ensureConversionTables(db);
     const [rows]: any = await conn.execute('SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1');
     const oldValue = (Array.isArray(rows) && rows[0]) ? Number(rows[0].points_per_kg) : null;
 
@@ -90,12 +90,12 @@ export function calculatePointsFromWeight(weight: number, pointsPerKg: number): 
   
   // ✅ Calculate and round to 2 decimal places
   const points = weight * pointsPerKg;
-      await ensureConversionTables(db);
   return Math.round(points * 100) / 100;
 }
 
 export async function getAuditEntries(limit: number) {
   try {
+    await ensureConversionTables(db);
     const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 100;
     const [rows]: any = await db.execute(
       `SELECT
