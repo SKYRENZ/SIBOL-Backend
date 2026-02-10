@@ -142,3 +142,27 @@ export async function getTotalWasteByRange(range: 'weekly' | 'monthly' | 'yearly
     conn.release();
   }
 }
+
+export async function getMonthlyWasteAllAreas(year: number) {
+  const sql = `
+    SELECT MONTH(collected_at) AS month, COALESCE(SUM(weight),0) AS total_kg
+    FROM waste_collection_tbl
+    WHERE YEAR(collected_at) = ?
+    GROUP BY MONTH(collected_at)
+    ORDER BY MONTH(collected_at)
+  `;
+  const params = [year];
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(sql, params) as any;
+    const out = Array(12).fill(0);
+    for (const r of rows) {
+      const m = Number(r.month);
+      if (m >= 1 && m <= 12) out[m - 1] = Number(r.total_kg) || 0;
+    }
+    return out;
+  } finally {
+    conn.release();
+  }
+}

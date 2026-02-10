@@ -73,3 +73,16 @@ export async function getTotalWaste(req: Request, res: Response) {
     return res.status(500).json({ message: err?.message || 'Failed to fetch total waste' });
   }
 }
+
+export async function getMonthlyWaste(req: Request, res: Response) {
+  try {
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    if (Number.isNaN(year) || year < 2000) return res.status(400).json({ message: 'Invalid year' });
+
+    const arr = await wasteService.getMonthlyWasteAllAreas(year);
+    return res.status(200).json({ data: arr });
+  } catch (err: any) {
+    console.error('getMonthlyWaste error', err);
+    return res.status(500).json({ message: err?.message || 'Failed to fetch monthly waste' });
+  }
+}

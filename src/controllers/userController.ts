@@ -1,5 +1,5 @@
 import * as userService from "../services/userService.js";
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response } from "express";
 
 // Role constants for easy reference
 const ROLES = {
@@ -8,6 +8,30 @@ const ROLES = {
   Operator: 3,
   Household: 4
 };
+
+/** Cache for detected accounts timestamp column name */
+let _accountsCreatedCol: string | null | undefined;
+
+/** Probe likely created-timestamp column names on first use and cache result. */
+async function resolveAccountsCreatedColumn(): Promise<string | null> {
+  if (_accountsCreatedCol !== undefined) return _accountsCreatedCol;
+  const candidates = ["created_at", "Created_at", "Created_At", "CreatedAt", "Created"];
+  for (const col of candidates) {
+    try {
+      // use a safe probe that selects the column with LIMIT 1
+      const sql = `SELECT \`${col}\` FROM accounts_tbl LIMIT 1`;
+      await pool.query(sql);
+      _accountsCreatedCol = col;
+      console.info('Detected accounts timestamp column:', col);
+      return col;
+    } catch (e) {
+      // ignore and try next candidate
+    }
+  }
+  _accountsCreatedCol = null;
+  console.warn('No accounts timestamp column detected; falling back to totals');
+  return null;
+}
 
 /**
  * A scalable controller to get users by any role name.
@@ -99,4 +123,113 @@ export function checkUserRole(
   }
 
   return true;
+}
+
+// append to src/controllers/userController.ts
+
+export async function getUsersByRoleMonthly(req: Request, res: Response) {
+  try {
+    const rawRole = req.params.roleName;
+    if (!rawRole) return res.status(400).json({ message: "Role name required" });
+
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    if (Number.isNaN(year) || year < 2000) return res.status(400).json({ message: "Invalid year" });
+
+    const roleName = rawRole.charAt(0).toUpperCase() + rawRole.slice(1);
+
+    // parse cumulative flag: ?cumulative=1 or ?cumulative=true
+    const cumulative = String(req.query.cumulative || "").toLowerCase();
+    const isCumulative = cumulative === "1" || cumulative === "true";
+
+    const arr = await userService.getMonthlyUsersByRoleName(roleName, year, isCumulative);
+
+    return res.json({ data: arr, cumulative: isCumulative });
+  } catch (err: any) {
+    console.error("Failed to fetch monthly users by role:", {
+      role: req.params.roleName,
+      year: req.query.year,
+      error: err?.stack ?? err,
+    });
+    return res.status(500).json({ message: "Server error" });
+  }
+}
+
+/**
+ * Returns an array of 12 numbers representing counts of users
+ * for the given roleName by month in the given year (indexes 0..11).
+ * If `cumulative` is true, returns cumulative totals up to each month.
+ * The function auto-detects the accounts timestamp column and falls back
+ * to a sensible total-placement if no timestamp column exists.
+ */
+export async function getMonthlyUsersByRoleName(
+  roleName: string,
+  year: number,
+  cumulative: boolean = false
+): Promise<number[]> {
+  // Assumes getRoleIdByName is defined elsewhere in this file.
+  const roleId = await getRoleIdByName(roleName);
+  if (roleId === null) return Array(12).fill(0);
+
+  const empty = () => Array(12).fill(0);
+
+  const col = await resolveAccountsCreatedColumn();
+
+  // If we have a timestamp column, query per-month using it
+  if (col) {
+    try {
+      const sqlYear = `
+        SELECT MONTH(\`${col}\`) AS month, COUNT(*) AS cnt
+        FROM accounts_tbl
+        WHERE Roles = ? AND YEAR(\`${col}\`) = ?
+        GROUP BY MONTH(\`${col}\`)
+        ORDER BY MONTH(\`${col}\`)
+      `;
+      const params = [roleId, year];
+      const [rows] = (await pool.query<any[]>(sqlYear, params)) as any;
+
+      const monthly = Array(12).fill(0);
+      for (const r of rows) {
+        const m = Number(r.month);
+        if (m >= 1 && m <= 12) monthly[m - 1] = Number(r.cnt) || 0;
+      }
+
+      if (!cumulative) return monthly;
+
+      // cumulative: count before the year using the same column
+      const startOfYear = `${year}-01-01 00:00:00`;
+      const sqlBefore = `SELECT COUNT(*) AS cnt FROM accounts_tbl WHERE Roles = ? AND \`${col}\` < ?`;
+      const [beforeRows] = (await pool.query<any[]>(sqlBefore, [roleId, startOfYear])) as any;
+      const initial = Number(beforeRows?.[0]?.cnt) || 0;
+
+      const out = Array(12).fill(0);
+      let running = initial;
+      for (let i = 0; i < 12; i++) {
+        running += monthly[i];
+        out[i] = running;
+      }
+      return out;
+    } catch (err: any) {
+      console.warn('getMonthlyUsersByRoleName: monthly query failed even with detected column, falling back', { roleName, year, col, err: err?.message ?? err });
+      // fall through to totals fallback below
+    }
+  }
+
+  // Fallback: no timestamp column or queries failed — return total placed in current month
+  try {
+    const [totalRows] = (await pool.query<any[]>("SELECT COUNT(*) AS cnt FROM accounts_tbl WHERE Roles = ?", [roleId])) as any;
+    const total = Number(totalRows?.[0]?.cnt) || 0;
+    const idx = new Date().getMonth(); // 0..11
+    if (!cumulative) {
+      const monthly = Array(12).fill(0);
+      monthly[idx] = total;
+      return monthly;
+    } else {
+      const out = Array(12).fill(0);
+      for (let i = 0; i <= idx; i++) out[i] = total;
+      return out;
+    }
+  } catch (e) {
+    console.error('getMonthlyUsersByRoleName fallback total query failed', e);
+    return empty();
+  }
 }
