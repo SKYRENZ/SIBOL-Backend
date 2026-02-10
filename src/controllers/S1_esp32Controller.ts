@@ -7,13 +7,15 @@ interface SensorData {
   weight?: number;
   timestamp: string;
   deviceId: string;
+  qrImage?: string | null;
 }
 
 export class S1_ESP32Controller {
   // Receive sensor data from ESP32
   static async receiveSensorData(req: Request, res: Response): Promise<void> {
     try {
-      const { weight, deviceId = 'esp32-default' } = req.body;
+      const { weight, deviceId: bodyDeviceId, esp32Id, qrImage } = req.body;
+      const deviceId = bodyDeviceId || esp32Id || 'esp32-default';
 
       // Validate data
       if (weight === undefined) {
@@ -21,17 +23,21 @@ export class S1_ESP32Controller {
         return;
       }
 
+      // qrImage is optional for ESP32 ingest; scans already send qrImage.
+      const qrImageValue = (typeof qrImage === 'string' && qrImage.length > 0) ? qrImage : null;
+
       // Insert into database
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO esp32_sensor_data (device_id, weight, created_at) 
-         VALUES (?, ?, NOW())`,
-        [deviceId, weight]
+        `INSERT INTO weight_sensor_tbl (device_id, weight, qr_image, created_at) 
+         VALUES (?, ?, ?, NOW())`,
+        [deviceId, weight, qrImageValue]
       );
 
       const sensorData = {
         id: result.insertId,
         deviceId,
         weight,
+        qrImage: qrImageValue,
         timestamp: new Date().toISOString()
       };
 
@@ -56,9 +62,9 @@ export class S1_ESP32Controller {
       const deviceId = req.query.deviceId as string;
 
       let query = `
-        SELECT id, device_id as deviceId, weight, 
+         SELECT id, device_id as deviceId, weight, qr_image as qrImage,
                created_at as timestamp 
-        FROM esp32_sensor_data
+         FROM weight_sensor_tbl
       `;
       const params: any[] = [];
 
@@ -89,9 +95,9 @@ export class S1_ESP32Controller {
       const { deviceId } = req.params;
 
       const [rows] = await pool.execute<RowDataPacket[]>(
-        `SELECT id, device_id as deviceId, weight, 
+        `SELECT id, device_id as deviceId, weight, qr_image as qrImage,
                 created_at as timestamp 
-         FROM esp32_sensor_data 
+         FROM weight_sensor_tbl 
          WHERE device_id = ? 
          ORDER BY created_at DESC`,
         [deviceId]

@@ -51,6 +51,10 @@ const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // In development, allow all origins to simplify mobile/web testing.
+    if (config.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
@@ -67,6 +71,14 @@ const app = express();
 app.disable('etag');
 
 app.use(cors(corsOptions)); // ✅ Only this one
+
+// Return JSON for CORS errors instead of the default HTML error page
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (err && err.message === 'Not allowed by CORS') {
+    return res.status(403).json({ message: 'CORS blocked this origin', origin: req.headers.origin ?? null });
+  }
+  return next(err);
+});
 
 const PORT = config.PORT;  // Use config.PORT instead of Number(process.env.PORT) || 5000
 
@@ -111,7 +123,27 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+// Increase body size limit to support QR image uploads (base64 data URLs)
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
+
+// Return JSON for common body parser errors (instead of Express default HTML)
+app.use((err: any, req: Request, res: Response, next: any) => {
+  // body too large
+  if (err?.type === 'entity.too.large' || err?.status === 413) {
+    return res.status(413).json({
+      message: 'Payload too large',
+      error: 'QR image is too large to upload. Lower camera quality or resize.',
+    });
+  }
+
+  // invalid JSON
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ message: 'Invalid JSON body' });
+  }
+
+  return next(err);
+});
 
 import healthRoutes from './Routes/healthRoutes.js';
 import historyRoutes from './Routes/historyRoutes.js';

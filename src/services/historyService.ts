@@ -29,7 +29,7 @@ export async function listHistoryForAccount(opts: {
         CAST(qs.Weight AS DECIMAL(12,3)) AS kgDelta,
         'QR Scan' AS title,
         NULL AS code
-      FROM qr_scans_tbl qs
+      FROM household_wasteinput_tbl qs
       WHERE qs.Account_id = ?
 
       UNION ALL
