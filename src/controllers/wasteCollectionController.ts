@@ -58,3 +58,18 @@ export async function getMyCollections(req: Request, res: Response) {
     return res.status(500).json({ message: err?.message || 'Failed to fetch collections' });
   }
 }
+
+export async function getTotalWaste(req: Request, res: Response) {
+  try {
+    const range = String(req.query.range || 'monthly').toLowerCase();
+    if (!['weekly', 'monthly', 'yearly'].includes(range)) {
+      return res.status(400).json({ message: 'Invalid range. Use weekly|monthly|yearly' });
+    }
+
+    const total = await wasteService.getTotalWasteByRange(range as 'weekly' | 'monthly' | 'yearly');
+    return res.status(200).json({ data: { total_kg: total } });
+  } catch (err: any) {
+    console.error('getTotalWaste error', err);
+    return res.status(500).json({ message: err?.message || 'Failed to fetch total waste' });
+  }
+}

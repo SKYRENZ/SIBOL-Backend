@@ -13,4 +13,5 @@ router.post("/", areaController.createArea);
 // Route to get waste logs for a specific area
 router.get("/:id/logs", areaController.getLogsByArea);
 
+router.get("/:id/waste/monthly", areaController.getMonthlyWasteByArea);
 export default router;
