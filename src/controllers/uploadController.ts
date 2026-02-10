@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import multer from "multer";
 import cloudinary from "../config/cloudinary.js";
 import * as rewardService from "../services/rewardService"; // ✅ used by uploadClaimedRewardAttachment
+import * as profileService from "../services/profileService"; // used by uploadProfileImage
 
 const storage = multer.memoryStorage();
 
@@ -101,6 +102,64 @@ export async function uploadRewardImage(req: Request, res: Response) {
       return res.status(400).json({ message: err.message || 'Upload validation failed', code: err.code });
     }
     return res.status(500).json({ message: err.message || "File upload failed" });
+  }
+}
+
+export const profileImageUploadMiddleware = rewardUpload.single("file");
+
+export async function uploadProfileImage(req: Request, res: Response) {
+  try {
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+    // extra guard (should be enforced by multer already)
+    if (!/^image\/(jpeg|png)$/i.test(req.file.mimetype)) {
+      return res.status(400).json({ message: "Only JPEG/PNG images are allowed" });
+    }
+
+    const base64Data = req.file.buffer.toString("base64");
+    const dataURI = `data:${req.file.mimetype};base64,${base64Data}`;
+
+    const result = await cloudinary.uploader.upload(dataURI, {
+      folder: "profile_images",
+      resource_type: "image",
+    });
+
+    const authUser: any = (req as any).user;
+    const accountId = Number(authUser?.Account_id ?? null);
+    if (!accountId) return res.status(401).json({ message: "Not authenticated" });
+
+    // try to remove previous image if there is one
+    try {
+      const existing = await profileService.getProfileByAccountId(accountId);
+      const prevPublicId = existing?.Image_public_id ?? existing?.image_public_id ?? null;
+      if (prevPublicId) {
+        try {
+          const delRes = await cloudinary.uploader.destroy(prevPublicId, { resource_type: 'image' });
+          console.info('Cloudinary destroy result for', prevPublicId, delRes);
+        } catch (de) {
+          console.warn('Failed to destroy previous profile image (cloudinary):', de);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to lookup/destroy previous profile image:", e);
+    }
+
+    // debug: log cloudinary upload result
+    try {
+      console.info('Cloudinary upload result:', { public_id: result.public_id, secure_url: result.secure_url });
+    } catch (e) {
+      // ignore
+    }
+
+    const updated = await profileService.updateProfileImage(accountId, result.secure_url, result.public_id);
+
+    return res.status(200).json({ message: "Profile image updated", data: updated });
+  } catch (err: any) {
+    console.error("uploadProfileImage error:", err?.message || err);
+    if (err && err.name === 'MulterError') {
+      return res.status(400).json({ message: err.message || 'Upload validation failed', code: err.code });
+    }
+    return res.status(500).json({ message: err?.message || "File upload failed" });
   }
 }
 
