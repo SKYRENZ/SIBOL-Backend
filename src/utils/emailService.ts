@@ -160,6 +160,14 @@ async function sendEmail(mailOptions: { to: string; subject: string; html: strin
 
 // --- exported helpers use sendEmail and handle normalized result ---
 
+const escapeHtml = (input: string) =>
+  String(input ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
 export async function sendVerificationEmail(email: string, verificationToken: string, firstName: string) {
   const verificationUrl = buildFrontendUrl('/email-verification', { token: verificationToken });
   const html = `
@@ -328,5 +336,53 @@ export async function sendVerificationCodeEmail(email: string, code: string, fir
     </div>
   `;
   const info = await sendEmail({ to: email, subject: 'SIBOL - Email Verification Code', html });
+  return { success: true, info };
+}
+
+export async function sendAccountRejectionEmail(
+  email: string,
+  firstName: string,
+  username: string,
+  reason?: string
+) {
+  const to = String(email ?? '').trim();
+  if (!to) throw new Error('Missing recipient email');
+
+  const safeName = escapeHtml(firstName || 'there');
+  const safeUsername = escapeHtml(username || '');
+  const safeReason = escapeHtml(String(reason ?? '').trim() || 'No reason provided.');
+
+  const subject = 'SIBOL - Account Application Rejected';
+
+  const signupUrl = buildFrontendUrl('/signup');
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 24px;">
+      <h2 style="color:#b91c1c; margin:0 0 12px 0;">Account Application Update</h2>
+      <p style="color:#111827; font-size:14px; line-height:1.6; margin:0 0 12px 0;">
+        Hello ${safeName},
+      </p>
+      <p style="color:#111827; font-size:14px; line-height:1.6; margin:0 0 12px 0;">
+        Your account application${safeUsername ? ` (<strong>${safeUsername}</strong>)` : ''} was not approved.
+      </p>
+
+      <div style="background:#fff7ed; border:1px solid #fed7aa; padding:14px; border-radius:8px; margin:16px 0;">
+        <div style="font-size:13px; font-weight:bold; color:#9a3412; margin-bottom:8px;">Reason from admin</div>
+        <div style="white-space:pre-wrap; font-size:13px; color:#7c2d12;">${safeReason}</div>
+      </div>
+
+      <p style="color:#374151; font-size:13px; line-height:1.6; margin:0 0 16px 0;">
+        You may register again with corrected information or contact your administrator.
+      </p>
+
+      <div style="text-align:center; margin-top: 18px;">
+        <a href="${signupUrl}"
+           style="display:inline-block; background:#2e523a; color:#ffffff; padding:12px 18px; text-decoration:none; border-radius:6px; font-size:13px; font-weight:bold;">
+          Register Again
+        </a>
+      </div>
+    </div>
+  `;
+
+  const info = await sendEmail({ to, subject, html });
   return { success: true, info };
 }
