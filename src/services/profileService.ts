@@ -107,6 +107,42 @@ export async function updateProfile(accountId: number, payload: ProfileUpdate) {
     }
   }
 
+  // ✅ Require current password when changing username
+  if (wantsUsername) {
+    const nextUsername = String(payload.username).trim();
+
+    const currentPassword = String((payload as any)?.currentPassword ?? '').trim();
+    if (!currentPassword) {
+      throw new Error('Current password is required to change username');
+    }
+
+    const [rows]: any = await pool.query(
+      'SELECT Password FROM accounts_tbl WHERE Account_id = ? LIMIT 1',
+      [accountId]
+    );
+
+    const hash = rows?.[0]?.Password;
+    if (!hash) throw new Error('Account not found');
+
+    const ok = await bcrypt.compare(currentPassword, String(hash));
+    if (!ok) throw new Error('Password is incorrect');
+
+    // ✅ NEW: username must be unique (case-insensitive), excluding current user
+    const [taken]: any = await pool.query(
+      `SELECT Account_id FROM accounts_tbl
+       WHERE LOWER(Username) = LOWER(?) AND Account_id <> ?
+       LIMIT 1`,
+      [nextUsername, accountId]
+    );
+
+    if (taken?.length) {
+      const err: any = new Error('Username is already taken');
+      err.code = 'USERNAME_TAKEN';
+      err.kind = 'USERNAME';
+      throw err;
+    }
+  }
+
   // Begin update
   const connection = await pool.getConnection();
   try {
