@@ -46,6 +46,8 @@ import S1_esp32Routes from './Routes/S1_esp32Routes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
+import S3_sensorsRoutes from './Routes/S3_sensorsRoutes';
+
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -154,6 +156,7 @@ app.use("/api/upload", uploadRoutes);
 // mount esp32 stages
 app.use('/api/s1-esp32', S1_esp32Routes)
 
+app.use('/api/s3-sensors', S3_sensorsRoutes);
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
