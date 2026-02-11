@@ -414,20 +414,19 @@ export async function verifyToken(req: Request, res: Response) {
 export async function changePassword(req: Request, res: Response) {
   try {
     const { currentPassword, newPassword } = req.body;
-    const user = (req as any).user; // From authenticate middleware
+    const user = (req as any).user;
 
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Current password and new password are required' 
+      return res.status(400).json({
+        success: false,
+        error: 'Current password and new password are required',
       });
     }
 
-    // Validate new password strength
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol' 
+      return res.status(400).json({
+        success: false,
+        error: 'Password must be at least 8 characters and include uppercase, lowercase, number, and symbol',
       });
     }
 
@@ -437,12 +436,24 @@ export async function changePassword(req: Request, res: Response) {
       newPassword
     );
 
-    res.json(result);
+    return res.json(result);
   } catch (error: any) {
     console.error('changePassword error:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message || 'Failed to change password' 
+
+    // ✅ restriction case
+    if (error?.code === 'TOO_EARLY') {
+      return res.status(429).json({
+        success: false,
+        message: error.message,
+        error: error.message,   // keep backward compatible
+        kind: error.kind,       // "PASSWORD"
+        retryAt: error.retryAt,
+      });
+    }
+
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to change password',
     });
   }
 }

@@ -154,8 +154,6 @@ app.use("/api/upload", uploadRoutes);
 // mount esp32 stages
 app.use('/api/s1-esp32', S1_esp32Routes)
 
-// ❌ REMOVE THIS LINE - it's causing issues
-// app.use(authenticate);  // Don't apply global auth middleware
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);

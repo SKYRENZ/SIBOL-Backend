@@ -21,17 +21,26 @@ export class S1_ESP32Controller {
         return;
       }
 
+      // Store weights in kilograms.
+      // Backward compatible: if a legacy device sends grams (typically > 1000), convert to kg.
+      const weightNum = Number(weight);
+      if (!Number.isFinite(weightNum)) {
+        res.status(400).json({ error: 'Weight must be a number' });
+        return;
+      }
+      const weightKg = weightNum > 1000 ? weightNum / 1000 : weightNum;
+
       // Insert into database
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO esp32_sensor_data (device_id, weight, created_at) 
+        `INSERT INTO weight_sensor_tbl (device_id, weight, created_at) 
          VALUES (?, ?, NOW())`,
-        [deviceId, weight]
+        [deviceId, weightKg]
       );
 
       const sensorData = {
         id: result.insertId,
         deviceId,
-        weight,
+        weight: weightKg,
         timestamp: new Date().toISOString()
       };
 
@@ -58,7 +67,7 @@ export class S1_ESP32Controller {
       let query = `
         SELECT id, device_id as deviceId, weight, 
                created_at as timestamp 
-        FROM esp32_sensor_data
+        FROM weight_sensor_tbl
       `;
       const params: any[] = [];
 
@@ -91,7 +100,7 @@ export class S1_ESP32Controller {
       const [rows] = await pool.execute<RowDataPacket[]>(
         `SELECT id, device_id as deviceId, weight, 
                 created_at as timestamp 
-         FROM esp32_sensor_data 
+         FROM weight_sensor_tbl 
          WHERE device_id = ? 
          ORDER BY created_at DESC`,
         [deviceId]

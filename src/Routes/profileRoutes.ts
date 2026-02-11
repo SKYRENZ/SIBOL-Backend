@@ -6,6 +6,7 @@ import {
   handleGetMyProfile,
   handleUpdateMyProfile
 } from '../controllers/profileController';
+import * as uploadCtrl from '../controllers/uploadController';
 import { authenticate } from '../middleware/authenticate';
 
 const router = Router();
@@ -16,6 +17,9 @@ router.get('/points', authenticate, handleGetMyPoints);
 // ✅ NEW: logged-in user's profile
 router.get('/me', authenticate, handleGetMyProfile);
 router.put('/me', authenticate, handleUpdateMyProfile);
+
+// upload profile image (authenticated)
+router.post('/me/image', authenticate, uploadCtrl.profileImageUploadMiddleware, uploadCtrl.uploadProfileImage);
 
 // existing
 router.get('/:accountId', handleGetProfile);

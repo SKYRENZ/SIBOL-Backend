@@ -30,6 +30,11 @@ export async function createCollection(req: Request, res: Response) {
       return res.status(401).json({ message: 'Operator not authenticated' });
     }
 
+    const hasWeightData = await wasteService.areaHasContainerWeightData(parsedAreaId);
+    if (!hasWeightData) {
+      return res.status(400).json({ message: 'No container weight data available for this area. Collection cannot be recorded.' });
+    }
+
     const created = await wasteService.createWasteCollection(parsedAreaId, Number(operatorId), parsedWeight);
 
     return res.status(201).json({ message: 'Collection recorded', data: created });
@@ -56,5 +61,33 @@ export async function getMyCollections(req: Request, res: Response) {
   } catch (err: any) {
     console.error('getMyCollections error', err);
     return res.status(500).json({ message: err?.message || 'Failed to fetch collections' });
+  }
+}
+
+export async function getTotalWaste(req: Request, res: Response) {
+  try {
+    const range = String(req.query.range || 'monthly').toLowerCase();
+    if (!['weekly', 'monthly', 'yearly'].includes(range)) {
+      return res.status(400).json({ message: 'Invalid range. Use weekly|monthly|yearly' });
+    }
+
+    const total = await wasteService.getTotalWasteByRange(range as 'weekly' | 'monthly' | 'yearly');
+    return res.status(200).json({ data: { total_kg: total } });
+  } catch (err: any) {
+    console.error('getTotalWaste error', err);
+    return res.status(500).json({ message: err?.message || 'Failed to fetch total waste' });
+  }
+}
+
+export async function getMonthlyWaste(req: Request, res: Response) {
+  try {
+    const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+    if (Number.isNaN(year) || year < 2000) return res.status(400).json({ message: 'Invalid year' });
+
+    const arr = await wasteService.getMonthlyWasteAllAreas(year);
+    return res.status(200).json({ data: arr });
+  } catch (err: any) {
+    console.error('getMonthlyWaste error', err);
+    return res.status(500).json({ message: err?.message || 'Failed to fetch monthly waste' });
   }
 }

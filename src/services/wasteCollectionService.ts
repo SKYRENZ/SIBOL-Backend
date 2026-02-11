@@ -1,5 +1,22 @@
 import { pool } from '../config/db';
 
+export async function areaHasContainerWeightData(areaId: number): Promise<boolean> {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT 1
+       FROM waste_containers_tbl wc
+       WHERE wc.area_id = ?
+         AND wc.current_weight_kg > 0
+       LIMIT 1`,
+      [areaId]
+    ) as any;
+    return Array.isArray(rows) && rows.length > 0;
+  } finally {
+    conn.release();
+  }
+}
+
 export async function createWasteCollection(areaId: number, operatorId: number, weight: number) {
     const sql = `
     INSERT INTO waste_collection_tbl (area_id, operator_id, weight, collected_at)
@@ -80,6 +97,88 @@ export async function getCollectionsByOperator(operatorId: number, limit = 100, 
   try {
     const [rows] = await conn.query(sql, params) as any;
     return rows;
+  } finally {
+    conn.release();
+  }
+}
+
+// Returns monthly aggregated waste (kg) for a given area and year
+export async function getMonthlyWasteByArea(areaId: number, year: number) {
+  const sql = `
+    SELECT MONTH(collected_at) AS month, COALESCE(SUM(weight),0) AS total_kg
+    FROM waste_collection_tbl
+    WHERE area_id = ? AND YEAR(collected_at) = ?
+    GROUP BY MONTH(collected_at)
+    ORDER BY MONTH(collected_at)
+  `;
+  const params = [areaId, year];
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(sql, params) as any;
+    // build array for 12 months
+    const out = Array(12).fill(0);
+    for (const r of rows) {
+      const m = Number(r.month);
+      if (m >= 1 && m <= 12) out[m - 1] = Number(r.total_kg) || 0;
+    }
+    return out;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function getTotalWasteByRange(range: 'weekly' | 'monthly' | 'yearly' = 'monthly') {
+  const conn = await pool.getConnection();
+  try {
+    let sql = '';
+    if (range === 'weekly') {
+      // current week (ISO-like: Monday-start)
+      sql = `
+        SELECT COALESCE(SUM(weight), 0) AS total_kg
+        FROM waste_collection_tbl
+        WHERE YEARWEEK(collected_at, 1) = YEARWEEK(CURDATE(), 1)
+      `;
+    } else if (range === 'monthly') {
+      sql = `
+        SELECT COALESCE(SUM(weight), 0) AS total_kg
+        FROM waste_collection_tbl
+        WHERE MONTH(collected_at) = MONTH(CURDATE()) AND YEAR(collected_at) = YEAR(CURDATE())
+      `;
+    } else {
+      sql = `
+        SELECT COALESCE(SUM(weight), 0) AS total_kg
+        FROM waste_collection_tbl
+        WHERE YEAR(collected_at) = YEAR(CURDATE())
+      `;
+    }
+
+    const [rows] = await conn.query(sql) as any;
+    return Number(rows?.[0]?.total_kg || 0);
+  } finally {
+    conn.release();
+  }
+}
+
+export async function getMonthlyWasteAllAreas(year: number) {
+  const sql = `
+    SELECT MONTH(collected_at) AS month, COALESCE(SUM(weight),0) AS total_kg
+    FROM waste_collection_tbl
+    WHERE YEAR(collected_at) = ?
+    GROUP BY MONTH(collected_at)
+    ORDER BY MONTH(collected_at)
+  `;
+  const params = [year];
+
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(sql, params) as any;
+    const out = Array(12).fill(0);
+    for (const r of rows) {
+      const m = Number(r.month);
+      if (m >= 1 && m <= 12) out[m - 1] = Number(r.total_kg) || 0;
+    }
+    return out;
   } finally {
     conn.release();
   }

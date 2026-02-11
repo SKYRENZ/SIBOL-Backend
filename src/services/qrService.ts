@@ -14,7 +14,7 @@ export async function getAccountIdByQr(qr: string): Promise<number | null> {
 export async function isQRAlreadyScanned(qrCode: string): Promise<boolean> {
     const [rows]: any = await db.execute(
         `SELECT COUNT(*) as count 
-         FROM qr_scans_tbl 
+         FROM household_wasteinput_tbl 
          WHERE QR_code = ? AND IsUsed = 1`,
         [qrCode]
     );
@@ -28,18 +28,18 @@ export async function recordQRScan(
     pointsAwarded: number
 ): Promise<void> {
     await db.execute(
-        `INSERT INTO qr_scans_tbl (QR_code, Account_id, Weight, Points_awarded, IsUsed, Scanned_at) 
-         VALUES (?, ?, ?, ?, 1, NOW())`,
+        `INSERT INTO household_wasteinput_tbl (QR_code, Account_id, Weight, Points_Awarded, QR_image, IsUsed, Scanned_at) 
+         VALUES (?, ?, ?, ?, NULL, 1, NOW())`,
         [qrCode, accountId, weight, pointsAwarded]
     );
 
     // increment aggregate total for leaderboard
-    await db.execute(
-      `INSERT INTO account_waste_totals_tbl (Account_id, Total_kg, Updated_at)
-       VALUES (?, ?, NOW())
-       ON DUPLICATE KEY UPDATE Total_kg = Total_kg + VALUES(Total_kg), Updated_at = NOW()`,
-      [accountId, weight]
-    );
+        await db.execute(
+            `INSERT INTO account_waste_totals_tbl (Account_id, Total_kg, Updated_at)
+             VALUES (?, ?, NOW())
+             ON DUPLICATE KEY UPDATE Total_kg = Total_kg + VALUES(Total_kg), Updated_at = NOW()`,
+            [accountId, weight]
+        );
 }
 
 export async function addPointsToAccount(accountId: number, points: number): Promise<number> {

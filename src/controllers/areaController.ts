@@ -59,3 +59,27 @@ export async function getLogsByArea(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch area logs.' });
   }
 }
+
+/**
+ * Gets monthly waste data for a specific area.
+ */
+export async function getMonthlyWasteByArea(req: Request, res: Response) {
+  const { id } = req.params;
+  const areaId = Number(id);
+  if (Number.isNaN(areaId) || areaId <= 0) {
+    return res.status(400).json({ error: 'Invalid area id' });
+  }
+
+  const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
+  if (Number.isNaN(year) || year < 2000) {
+    return res.status(400).json({ error: 'Invalid year' });
+  }
+
+  try {
+    const arr = await wasteService.getMonthlyWasteByArea(areaId, year);
+    return res.json({ data: arr });
+  } catch (err) {
+    console.error('Failed to fetch monthly waste by area', err);
+    return res.status(500).json({ error: 'Failed to fetch monthly waste' });
+  }
+}

@@ -11,5 +11,6 @@ router.get("/role/:roleName", userController.getUsersByRole);
 
 // New (protected) — same controller, but restricted to Admin
 router.get("/admin/role/:roleName", authenticate, authorizeRoles([1]), userController.getUsersByRole);
-
+// add to userRoutes.ts (near the existing /role/:roleName route)
+router.get("/role/:roleName/monthly", userController.getUsersByRoleMonthly);
 export default router;

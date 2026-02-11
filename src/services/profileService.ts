@@ -31,6 +31,8 @@ export async function getProfileByAccountId(accountId: number) {
   const sql = `
     SELECT
       p.*,
+      -- provide a stable key for the frontend: Image_path (alias for Profile_image_path)
+      p.Profile_image_path AS Image_path,
       a.Username,
       a.Username_last_updated,
       a.Password_last_updated,
@@ -105,6 +107,42 @@ export async function updateProfile(accountId: number, payload: ProfileUpdate) {
     }
   }
 
+  // ✅ Require current password when changing username
+  if (wantsUsername) {
+    const nextUsername = String(payload.username).trim();
+
+    const currentPassword = String((payload as any)?.currentPassword ?? '').trim();
+    if (!currentPassword) {
+      throw new Error('Current password is required to change username');
+    }
+
+    const [rows]: any = await pool.query(
+      'SELECT Password FROM accounts_tbl WHERE Account_id = ? LIMIT 1',
+      [accountId]
+    );
+
+    const hash = rows?.[0]?.Password;
+    if (!hash) throw new Error('Account not found');
+
+    const ok = await bcrypt.compare(currentPassword, String(hash));
+    if (!ok) throw new Error('Password is incorrect');
+
+    // ✅ NEW: username must be unique (case-insensitive), excluding current user
+    const [taken]: any = await pool.query(
+      `SELECT Account_id FROM accounts_tbl
+       WHERE LOWER(Username) = LOWER(?) AND Account_id <> ?
+       LIMIT 1`,
+      [nextUsername, accountId]
+    );
+
+    if (taken?.length) {
+      const err: any = new Error('Username is already taken');
+      err.code = 'USERNAME_TAKEN';
+      err.kind = 'USERNAME';
+      throw err;
+    }
+  }
+
   // Begin update
   const connection = await pool.getConnection();
   try {
@@ -150,6 +188,35 @@ export async function updateProfile(accountId: number, payload: ProfileUpdate) {
       pParams.push(accountId);
       await connection.query(profileSql, pParams);
     }
+
+    await connection.commit();
+
+    const updated = await getProfileByAccountId(accountId);
+    return updated;
+  } catch (e) {
+    await connection.rollback();
+    throw e;
+  } finally {
+    connection.release();
+  }
+}
+
+export async function updateProfileImage(accountId: number, imagePath: string | null, publicId: string | null) {
+  const existing = await getProfileByAccountId(accountId);
+  if (!existing) throw new Error('Profile not found');
+
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // This database schema uses `Profile_image_path` for the avatar URL.
+    // Update that column and the Profile_last_updated timestamp.
+    const sql = `UPDATE profile_tbl SET Profile_image_path = ?, Profile_last_updated = CURRENT_TIMESTAMP WHERE Account_id = ?`;
+    await connection.query(sql, [imagePath, accountId]);
+
+    // NOTE: We currently do not persist Cloudinary public_id because the schema
+    // provided uses `Profile_image_path` only. If you add a column for public_id,
+    // we can store it here as well.
 
     await connection.commit();
 

@@ -11,6 +11,7 @@ const ADMIN_ROLE = 1;
 
 // Email verification token expiration (24 hours)
 const TOKEN_EXPIRATION_HOURS = 24;
+const PASSWORD_DAYS_RESTRICTION = 15;
 
 function generateRandomPassword(length = 10) {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
@@ -20,6 +21,16 @@ function generateRandomPassword(length = 10) {
     password += charset[randomIndex];
   }
   return password;
+}
+
+function buildTooEarlyError(kind: 'PASSWORD', lastUpdated: any) {
+  const last = new Date(lastUpdated);
+  const retryAt = new Date(last.getTime() + PASSWORD_DAYS_RESTRICTION * 24 * 60 * 60 * 1000).toISOString();
+  const err: any = new Error(`You can update your password again after: ${new Date(retryAt).toLocaleString()}`);
+  err.code = 'TOO_EARLY';
+  err.kind = kind;
+  err.retryAt = retryAt;
+  return err;
 }
 
 // When creating users (use DEFAULT_PASSWORD fallback if password param missing)
@@ -527,36 +538,48 @@ export async function changeUserPassword(
   newPassword: string
 ) {
   try {
-    // Get current user data
+    // ✅ Fetch hash + last updated timestamp
     const [rows]: any = await pool.execute(
-      'SELECT Password FROM accounts_tbl WHERE Account_id = ? AND IsActive = 1',
+      'SELECT Password, Password_last_updated FROM accounts_tbl WHERE Account_id = ? AND IsActive = 1 LIMIT 1',
       [accountId]
     );
 
-    if (!rows || rows.length === 0) {
-      throw new Error('Account not found');
-    }
+    if (!rows || rows.length === 0) throw new Error('Account not found');
 
     const user = rows[0];
 
-    // Verify current password
+    // ✅ Verify current password
     const isValid = await bcrypt.compare(currentPassword, user.Password);
-    if (!isValid) {
-      throw new Error('Current password is incorrect');
+    if (!isValid) throw new Error('Current password is incorrect');
+
+    // ✅ New password must NOT be the same as old password
+    const isSameAsOld = await bcrypt.compare(newPassword, user.Password);
+    if (isSameAsOld) {
+      throw new Error('New password must be different from the current password');
     }
 
-    // Hash new password
+    // ✅ Enforce restriction window
+    if (user.Password_last_updated) {
+      const last = new Date(user.Password_last_updated);
+      if (!Number.isNaN(last.getTime())) {
+        const days = (Date.now() - last.getTime()) / (1000 * 60 * 60 * 24);
+        if (days < PASSWORD_DAYS_RESTRICTION) {
+          throw buildTooEarlyError('PASSWORD', user.Password_last_updated);
+        }
+      }
+    }
+
+    // ✅ Update password + last updated + clear first login flag
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    // Update password and clear first login flag
     await pool.execute(
-      'UPDATE accounts_tbl SET Password = ?, IsFirstLogin = 0 WHERE Account_id = ?',
+      'UPDATE accounts_tbl SET Password = ?, Password_last_updated = CURRENT_TIMESTAMP, IsFirstLogin = 0 WHERE Account_id = ?',
       [hashedPassword, accountId]
     );
 
-    return { 
-      success: true, 
-      message: 'Password changed successfully' 
+    return {
+      success: true,
+      message: 'Password changed successfully',
     };
   } catch (error: any) {
     console.error('changeUserPassword error:', error);
