@@ -100,7 +100,7 @@ export async function getPendingAccounts() {
         p.IsEmailVerified,
         p.IsAdminVerified,
         p.Created_at,
-        a.Area_Name,
+        a.Area_name,
         r.Roles as RoleName,
         pa.File_path AS AttachmentUrl,
         pa.Public_id AS AttachmentPublicId,
@@ -131,7 +131,7 @@ export async function getPendingAccountById(pendingId: number) {
     const [rows]: any = await pool.execute(`
       SELECT 
         p.*,
-        a.Area_Name,
+        a.Area_name,
         r.Roles as RoleName,
         pa.File_path AS AttachmentUrl,
         pa.Public_id AS AttachmentPublicId,
@@ -559,7 +559,7 @@ export async function assignRolesToUser(userId: number, roleIds: number[]) {
 export async function getUserAreaAssignments(userId: number) {
   try {
     const [rows]: any = await pool.execute(`
-      SELECT ua.Area_id, a.Area_Name
+      SELECT ua.Area_id, a.Area_name
       FROM user_area_tbl ua
       JOIN area_tbl a ON ua.Area_id = a.Area_id
       WHERE ua.Account_id = ?
@@ -686,9 +686,7 @@ export async function setAccountActive(accountId: number, isActive: number) {
 export async function rejectAccount(pendingId: number, reason?: string) {
   try {
     const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
-    if (!rows || rows.length === 0) {
-      throw new Error("Pending account not found");
-    }
+    if (!rows || rows.length === 0) throw new Error('Pending account not found');
     const pending = rows[0];
 
     // ✅ log system notification for rejection (best-effort)
@@ -718,23 +716,25 @@ export async function rejectAccount(pendingId: number, reason?: string) {
       }
     }
 
-    try {
-      if (pending.Email && (emailService as any).sendRejectionEmail) {
-        await (emailService as any).sendRejectionEmail(pending.Email, pending.FirstName, reason);
-      }
-    } catch (emailErr) {
-      console.warn("Warning: failed to send rejection email:", emailErr);
-    }
-
+    // ✅ Reject first (DB)
     await pool.execute(`DELETE FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
 
-    return {
-      success: true,
-      message: 'Pending account rejected and removed'
-    };
+    // ✅ Email after deletion (best-effort)
+    try {
+      await emailService.sendAccountRejectionEmail(
+        pending.Email,
+        pending.FirstName,
+        pending.Username,
+        reason
+      );
+    } catch (emailErr: any) {
+      console.warn('sendAccountRejectionEmail failed (non-blocking):', emailErr?.message ?? emailErr);
+    }
+
+    return { success: true, message: 'Pending account rejected and removed' };
   } catch (error) {
     console.error("❌ Error rejecting pending account:", error);
-    throw new Error("Failed to reject pending account");
+    throw error;
   }
 }
 
