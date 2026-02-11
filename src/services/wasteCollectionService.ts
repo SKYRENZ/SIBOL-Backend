@@ -1,5 +1,22 @@
 import { pool } from '../config/db';
 
+export async function areaHasContainerWeightData(areaId: number): Promise<boolean> {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query(
+      `SELECT 1
+       FROM waste_containers_tbl wc
+       WHERE wc.area_id = ?
+         AND wc.current_weight_kg > 0
+       LIMIT 1`,
+      [areaId]
+    ) as any;
+    return Array.isArray(rows) && rows.length > 0;
+  } finally {
+    conn.release();
+  }
+}
+
 export async function createWasteCollection(areaId: number, operatorId: number, weight: number) {
     const sql = `
     INSERT INTO waste_collection_tbl (area_id, operator_id, weight, collected_at)

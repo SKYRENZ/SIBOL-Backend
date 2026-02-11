@@ -151,6 +151,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     LEFT JOIN (
       SELECT area_id, GROUP_CONCAT(container_name ORDER BY container_name SEPARATOR ', ') AS container_names
       FROM waste_containers_tbl
+      WHERE device_id IS NOT NULL
+        AND current_weight_kg > 0
       GROUP BY area_id
     ) c ON wc.area_id = c.area_id
     LEFT JOIN accounts_tbl acc ON wc.operator_id = acc.Account_id
@@ -290,6 +292,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       } else if (eventType === "CONTAINER_ADDED") {
         title = `Container added: ${containerLabel}`;
         message = `A new container (${containerLabel}) was added in ${areaLabel}.`;
+      } else if (eventType === "CONTAINER_FULL") {
+        title = `Container full: ${containerLabel}`;
+        message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
       }
 
       return {

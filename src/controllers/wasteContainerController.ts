@@ -9,9 +9,9 @@ import * as wasteContainerService from "../services/wasteContainerService";
  * - Inserts into waste_containers_tbl (links to area_tbl)
  */
 export async function createContainer(req: Request, res: Response) {
-  const { container_name, area_name, fullAddress, latitude, longitude } = req.body;
+  const { container_name, area_name, fullAddress, device_id, latitude, longitude } = req.body;
 
-  console.log("Creating container with:", { container_name, area_name, fullAddress });
+  console.log("Creating container with:", { container_name, area_name, fullAddress, device_id });
 
   if (!container_name || !area_name || !fullAddress) {
     return res.status(400).json({ error: "container_name, area_name and fullAddress are required." });
@@ -22,6 +22,7 @@ export async function createContainer(req: Request, res: Response) {
       container_name,
       area_name,
       fullAddress,
+      device_id,
       latitude,
       longitude,
     });
