@@ -43,6 +43,8 @@ import additivesRoutes from './Routes/additivesRoutes';
 import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 // I.O.T Stages imports:
 import S1_esp32Routes from './Routes/S1_esp32Routes';
+import S3_sensorsRoutes from './Routes/S3_sensorsRoutes';
+import machineAuthRoutes from './Routes/machineAuthRoutes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
@@ -153,13 +155,19 @@ app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes
 
 app.use("/api/upload", uploadRoutes);
 
+// mount machine authentication
+app.use('/api/machine-auth', machineAuthRoutes);
+
 // mount esp32 stages
 app.use('/api/s1-esp32', S1_esp32Routes)
+app.use('/api/s3-sensors', S3_sensorsRoutes)
 
 app.use('/api/s3-sensors', S3_sensorsRoutes);
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
+  console.log(`📡 Network accessible at http://192.168.1.41:${PORT}`);
+  console.log(`🌐 Accept connections from: ${allowedOrigins.join(', ')}`);
 });
 
 export default app;
