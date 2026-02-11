@@ -30,6 +30,11 @@ export async function createCollection(req: Request, res: Response) {
       return res.status(401).json({ message: 'Operator not authenticated' });
     }
 
+    const hasWeightData = await wasteService.areaHasContainerWeightData(parsedAreaId);
+    if (!hasWeightData) {
+      return res.status(400).json({ message: 'No container weight data available for this area. Collection cannot be recorded.' });
+    }
+
     const created = await wasteService.createWasteCollection(parsedAreaId, Number(operatorId), parsedWeight);
 
     return res.status(201).json({ message: 'Collection recorded', data: created });

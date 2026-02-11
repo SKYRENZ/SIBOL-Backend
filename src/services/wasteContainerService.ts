@@ -5,6 +5,7 @@ export type CreateContainerInput = {
   container_name: string;
   area_name: string;
   fullAddress: string;
+  device_id?: string;
   latitude?: number;
   longitude?: number;
 };
@@ -13,7 +14,7 @@ const isFiniteNumber = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v);
 
 export async function createContainer(input: CreateContainerInput) {
-  const { container_name, area_name, fullAddress, latitude, longitude } = input;
+  const { container_name, area_name, fullAddress, device_id, latitude, longitude } = input;
 
   const coords =
     isFiniteNumber(latitude) && isFiniteNumber(longitude)
@@ -60,8 +61,8 @@ export async function createContainer(input: CreateContainerInput) {
 
   const deploymentDate = new Date().toISOString().split("T")[0];
   const [containerResult]: any = await pool.query(
-    "INSERT INTO waste_containers_tbl (container_name, area_id, deployment_date, status) VALUES (?, ?, ?, ?)",
-    [container_name, areaId, deploymentDate, "Empty"]
+    "INSERT INTO waste_containers_tbl (container_name, area_id, deployment_date, status, device_id) VALUES (?, ?, ?, ?, ?)",
+    [container_name, areaId, deploymentDate, "Empty", device_id ?? null]
   );
 
   // best-effort: log system notification for container addition
@@ -83,6 +84,7 @@ export async function createContainer(input: CreateContainerInput) {
     area_name,
     deployment_date: deploymentDate,
     status: "Empty",
+    device_id: device_id ?? null,
     latitude: areaLat,
     longitude: areaLon,
   };
@@ -95,11 +97,26 @@ export async function listContainers() {
        wc.container_name,
        wc.deployment_date,
        wc.status,
+       wc.device_id,
        a.Area_id AS area_id,
        a.Area_Name AS area_name,
        a.Full_Address AS full_address,
        a.Latitude AS latitude,
-       a.Longitude AS longitude
+       a.Longitude AS longitude,
+       wc.current_weight_kg AS current_kg,
+       wc.last_weight_at AS last_weight_at,
+       CASE
+         WHEN wc.device_id IS NULL THEN 0
+         WHEN wc.last_weight_at IS NULL THEN 0
+         ELSE 1
+       END AS has_weight_data,
+       CASE
+         WHEN wc.device_id IS NULL THEN 'No data'
+         WHEN wc.last_weight_at IS NULL THEN 'No data'
+         WHEN wc.current_weight_kg IS NULL OR wc.current_weight_kg <= 0 THEN CONCAT('Empty • ', FORMAT(0, 2), ' kg')
+         WHEN wc.current_weight_kg >= 20 THEN CONCAT('Full • ', FORMAT(wc.current_weight_kg, 2), ' kg')
+         ELSE CONCAT('Has waste • ', FORMAT(wc.current_weight_kg, 2), ' kg')
+       END AS status_label
      FROM waste_containers_tbl wc
      LEFT JOIN area_tbl a ON wc.area_id = a.Area_id
      ORDER BY wc.container_id DESC`

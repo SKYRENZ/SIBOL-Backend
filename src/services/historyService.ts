@@ -25,11 +25,11 @@ export async function listHistoryForAccount(opts: {
         CONCAT('qr:', qs.QR_code) AS id,
         'QR_SCAN' AS type,
         qs.Scanned_at AS createdAt,
-        CAST(qs.Points_awarded AS SIGNED) AS pointsDelta,
+        CAST(qs.Points_Awarded AS SIGNED) AS pointsDelta,
         CAST(qs.Weight AS DECIMAL(12,3)) AS kgDelta,
         'QR Scan' AS title,
         NULL AS code
-      FROM qr_scans_tbl qs
+      FROM household_wasteinput_tbl qs
       WHERE qs.Account_id = ?
 
       UNION ALL
