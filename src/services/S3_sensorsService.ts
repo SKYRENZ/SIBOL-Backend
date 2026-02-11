@@ -36,7 +36,7 @@ export async function insertSensorReading(input: S3SensorInsertInput) {
 
     // Insert reading
     const query = `
-      INSERT INTO S3_Sensor_tbl
+      INSERT INTO s3_sensor_tbl
         (Machine_id, Pressure_Sensor, Ph_Sensor, Temp_Sensor, Methane_Sensor, \`Timestamp\`)
       VALUES (?, ?, ?, ?, ?, ?)
     `;
@@ -77,7 +77,7 @@ export async function getLatestReadingsByMachine(machineId: number, limit = 100)
   try {
     const [rows] = await pool.execute<RowDataPacket[]>(
       `SELECT S3sensor_id, Machine_id, Pressure_Sensor, Ph_Sensor, Temp_Sensor, Methane_Sensor, \`Timestamp\`
-       FROM S3_Sensor_tbl
+       FROM s3_sensor_tbl
        WHERE Machine_id = ?
        ORDER BY \`Timestamp\` DESC
        LIMIT ?`,

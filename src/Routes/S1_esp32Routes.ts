@@ -1,11 +1,12 @@
 // Routes/S1_esp32Routes.ts
 import { Router } from 'express';
 import { S1_ESP32Controller } from '../controllers/S1_esp32Controller';
+;import { authenticateMachine } from '../middleware/authenticateMachine';
 
 const router = Router();
 
-// POST: Receive sensor data from ESP32
-router.post('/data', S1_ESP32Controller.receiveSensorData);
+// POST: Receive sensor data from ESP32 (protected)
+router.post('/data', authenticateMachine, S1_ESP32Controller.receiveSensorData);
 
 // GET: Retrieve latest sensor data
 router.get('/data', S1_ESP32Controller.getLatestData);
@@ -19,7 +20,7 @@ router.post('/command', S1_ESP32Controller.sendCommand);
 // GET: Get pending commands for a device (for ESP32 to poll)
 router.get('/commands/:deviceId', S1_ESP32Controller.getPendingCommands);
 
-// PUT: Mark command as executed
-router.put('/command/:commandId/executed', S1_ESP32Controller.markCommandExecuted);
+// PUT: Mark command as executed (protected)
+router.put('/command/:commandId/executed', authenticateMachine, S1_ESP32Controller.markCommandExecuted);
 
 export default router;
