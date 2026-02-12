@@ -48,7 +48,6 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
-import S3_sensorsRoutes from './Routes/S3_sensorsRoutes';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;

@@ -21,7 +21,12 @@ The IoT machine has 4 stages:
 
 STAGE 1 - WEIGHING:
 - This is where users can weigh the total kilograms of the food waste they have.
-- Components: (To be added)
+- This is where household users can also get their rewards by scanning the QR code on the IoT Machine.
+- Components: 
+  * Loadcell 20kg straight bar
+  * HX711 amplifier
+  * ESP32
+  * 3.2" TFT LCD display
 
 STAGE 2 - GRINDING:
 - This is the grinding process wherein the food waste would need water to properly dilute and make the food waste into a slurry for proper digestion.
