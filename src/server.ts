@@ -15,7 +15,7 @@ import aiRoutes from "./Routes/ai";
 import waterRoutes from './Routes/waterRoutes';
 import notificationRoutes from './Routes/notificationRoutes';
 
-import {pool, testDbConnection} from "./config/db.js";
+import { pool, testDbConnection } from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
 
 import session from 'express-session';
@@ -61,8 +61,8 @@ const corsOptions = {
     return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
-  methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With','x-client-type'],
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'x-client-type'],
 };
 
 const app = express();
@@ -158,9 +158,7 @@ app.use("/api/upload", uploadRoutes);
 app.use('/api/machine-auth', machineAuthRoutes);
 
 // mount esp32 stages
-app.use('/api/s1-esp32', S1_esp32Routes)
-app.use('/api/s3-sensors', S3_sensorsRoutes)
-
+app.use('/api/s1-esp32', S1_esp32Routes);
 app.use('/api/s3-sensors', S3_sensorsRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {

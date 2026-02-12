@@ -75,13 +75,16 @@ export async function getLatestReadingsByMachine(machineId: number, limit = 100)
   }
 
   try {
-    const [rows] = await pool.execute<RowDataPacket[]>(
+    // Use pool.query instead of pool.execute because MySQL prepared statements
+    // do not support placeholders in LIMIT clauses
+    const safeLimit = Math.max(1, Math.floor(Number(limit)));
+    const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT S3sensor_id, Machine_id, Pressure_Sensor, Ph_Sensor, Temp_Sensor, Methane_Sensor, \`Timestamp\`
        FROM s3_sensor_tbl
        WHERE Machine_id = ?
        ORDER BY \`Timestamp\` DESC
        LIMIT ?`,
-      [machineId, limit]
+      [machineId, safeLimit]
     );
 
     return {
