@@ -15,7 +15,7 @@ import aiRoutes from "./Routes/ai";
 import waterRoutes from './Routes/waterRoutes';
 import notificationRoutes from './Routes/notificationRoutes';
 
-import {pool, testDbConnection} from "./config/db.js";
+import { pool, testDbConnection } from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
 
 import session from 'express-session';
@@ -43,9 +43,12 @@ import additivesRoutes from './Routes/additivesRoutes';
 import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
 // I.O.T Stages imports:
 import S1_esp32Routes from './Routes/S1_esp32Routes';
+import S3_sensorsRoutes from './Routes/S3_sensorsRoutes';
+import machineAuthRoutes from './Routes/machineAuthRoutes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
+
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -58,8 +61,8 @@ const corsOptions = {
     return callback(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
-  methods: ['GET','HEAD','PUT','PATCH','POST','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','Accept','X-Requested-With','x-client-type'],
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With', 'x-client-type'],
 };
 
 const app = express();
@@ -163,9 +166,12 @@ app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes
 
 app.use("/api/upload", uploadRoutes);
 
-// mount esp32 stages
-app.use('/api/s1-esp32', S1_esp32Routes)
+// mount machine authentication
+app.use('/api/machine-auth', machineAuthRoutes);
 
+// mount esp32 stages
+app.use('/api/s1-esp32', S1_esp32Routes);
+app.use('/api/s3-sensors', S3_sensorsRoutes);
 
 // Express error handler (last middleware) - ensure JSON for API paths
 app.use((err: any, req: any, res: any, next: any) => {
@@ -188,6 +194,8 @@ process.on('unhandledRejection', (reason) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
+  console.log(`📡 Network accessible at http://192.168.1.41:${PORT}`);
+  console.log(`🌐 Accept connections from: ${allowedOrigins.join(', ')}`);
 });
 
 export default app;

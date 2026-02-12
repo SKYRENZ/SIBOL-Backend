@@ -1,12 +1,11 @@
-import db from '../config/db';
+import { pool } from '../config/db';
 
 export async function getLeaderboard(limit = 100): Promise<any[]> {
   const l = Number(limit) || 100;
 
   // 1) find latest snapshot time (if none, previous ranks are null)
-  const [[{ max_snapshot }]]: any = await db.execute(
-    `SELECT MAX(snapshot_at) AS max_snapshot FROM leaderboard_snapshots_tbl`
-  );
+  const [maxRows]: any = await pool.query(`SELECT MAX(snapshot_at) AS max_snapshot FROM leaderboard_snapshots_tbl`);
+  const max_snapshot = (Array.isArray(maxRows) && maxRows[0]?.max_snapshot) ? maxRows[0].max_snapshot : null;
 
   // 2) if snapshot exists, build previous rank mapping using window function
   let prevRanksMap: Record<number, number> = {};
@@ -18,7 +17,7 @@ export async function getLeaderboard(limit = 100): Promise<any[]> {
         WHERE snapshot_at = ?
       ) t
     `;
-    const [prevRows]: any = await db.execute(prevSql, [max_snapshot]);
+    const [prevRows]: any = await pool.query(prevSql, [max_snapshot]);
     if (Array.isArray(prevRows)) {
       prevRows.forEach((r: any) => {
         prevRanksMap[Number(r.Account_id)] = Number(r.previous_rank);
@@ -38,11 +37,10 @@ export async function getLeaderboard(limit = 100): Promise<any[]> {
     ORDER BY t.Total_kg DESC
     LIMIT ?
   `;
-  const [rows]: any = await db.execute(sql, [l]);
+  const [rows]: any = await pool.query(sql, [l]);
   const result = Array.isArray(rows) ? rows.map((r: any, i: number) => ({
     ...r,
     rank: i + 1,
-    // return undefined when we don't have a previous rank so frontend's typeof check works
     previous_rank: prevRanksMap[Number(r.Account_id)] as number | undefined
   })) : [];
 
@@ -52,7 +50,7 @@ export async function getLeaderboard(limit = 100): Promise<any[]> {
 export async function createSnapshot(): Promise<void> {
   // insert a snapshot row for every account's current total (single snapshot_at for all)
   const snapshotAt = new Date();
-  await db.execute(
+  await pool.query(
     `INSERT INTO leaderboard_snapshots_tbl (Account_id, Total_kg, snapshot_at)
      SELECT Account_id, Total_kg, ? FROM account_waste_totals_tbl`,
     [snapshotAt]

@@ -42,6 +42,16 @@ export interface MachineStatus {
   Status: string;
 }
 
+export interface S3Sensor {
+  S3sensor_id?: number;
+  Machine_id: number;
+  Pressure_Sensor?: number | null;
+  Ph_Sensor?: number | null;
+  Temp_Sensor?: number | null;
+  Methane_Sensor?: number | null;
+  Timestamp?: string | Date;
+}
+
 export interface Area {
   Area_id: number;
   Area_Name: string;
