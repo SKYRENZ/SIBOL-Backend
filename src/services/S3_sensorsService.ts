@@ -75,19 +75,31 @@ export async function getLatestReadingsByMachine(machineId: number, limit = 100)
   }
 
   try {
-    const [rows] = await pool.execute<RowDataPacket[]>(
+    // Use pool.query instead of pool.execute to avoid prepared statement issues with LIMIT
+    const [rows] = await pool.query<RowDataPacket[]>(
       `SELECT S3sensor_id, Machine_id, Pressure_Sensor, Ph_Sensor, Temp_Sensor, Methane_Sensor, \`Timestamp\`
        FROM s3_sensor_tbl
        WHERE Machine_id = ?
        ORDER BY \`Timestamp\` DESC
        LIMIT ?`,
-      [machineId, limit]
+      [Number(machineId), Number(limit)]
     );
+
+    // Normalize rows into plain objects to ensure JSON serialization is stable
+    const normalized = (rows as any[]).map((r) => ({
+      S3sensor_id: r.S3sensor_id,
+      Machine_id: r.Machine_id,
+      Pressure_Sensor: r.Pressure_Sensor != null ? Number(r.Pressure_Sensor) : null,
+      Ph_Sensor: r.Ph_Sensor != null ? Number(r.Ph_Sensor) : null,
+      Temp_Sensor: r.Temp_Sensor != null ? Number(r.Temp_Sensor) : null,
+      Methane_Sensor: r.Methane_Sensor != null ? Number(r.Methane_Sensor) : null,
+      Timestamp: r.Timestamp instanceof Date ? r.Timestamp.toISOString() : (r.Timestamp ?? null),
+    }));
 
     return {
       success: true,
-      count: (rows as any).length,
-      data: rows
+      count: normalized.length,
+      data: normalized,
     };
   } catch (err) {
     console.error('S3_sensorsService.getLatestReadingsByMachine error:', err);
