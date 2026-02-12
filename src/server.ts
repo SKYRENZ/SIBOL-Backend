@@ -48,6 +48,7 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
+
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
 
@@ -160,6 +161,7 @@ app.use('/api/machine-auth', machineAuthRoutes);
 app.use('/api/s1-esp32', S1_esp32Routes)
 app.use('/api/s3-sensors', S3_sensorsRoutes)
 
+app.use('/api/s3-sensors', S3_sensorsRoutes);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
