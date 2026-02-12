@@ -99,6 +99,27 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
     await conn.query(`UPDATE accounts_tbl SET Points = Points - ? WHERE Account_id = ?`, [totalCost, accountId]);
     await conn.query(`UPDATE rewards_tbl SET Quantity = Quantity - ? WHERE Reward_id = ?`, [quantity, rewardId]);
 
+    // Log system notification for reward redemption (user requested claim)
+    try {
+      const [userRows]: any = await conn.query(
+        'SELECT a.Username, p.FirstName, p.LastName FROM accounts_tbl a LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Account_id = ? LIMIT 1',
+        [accountId]
+      );
+      const user = Array.isArray(userRows) && userRows[0] ? userRows[0] : null;
+      const username = user?.Username ?? null;
+      const firstName = user?.FirstName ?? null;
+      const lastName = user?.LastName ?? null;
+
+      await conn.query(
+        `INSERT INTO system_notifications_tbl (Event_type, Username, FirstName, LastName, Container_name, Area_name, Created_at)
+         VALUES ('REWARD_REDEEMED', ?, ?, ?, ?, ?, NOW())`,
+        [username, firstName, lastName, reward.Item ?? null, String(totalCost)]
+      );
+    } catch (notifErr) {
+      console.warn('⚠️ Failed to log reward redemption notification:', notifErr);
+      // do not fail the main flow if notification logging fails
+    }
+
     await conn.commit();
 
     return {
@@ -129,6 +150,55 @@ export const markTransactionRedeemed = async (transactionId: number) => {
     [transactionId]
   );
   return Array.isArray(rows) && rows.length ? rows[0] : null;
+};
+
+export const markTransactionRedeemedWithNotification = async (transactionId: number) => {
+  // keep existing behavior but also log a system notification
+  const sql = `
+    UPDATE reward_transactions_tbl
+    SET Status = 'Claimed',
+        Redeemed_at = NOW()
+    WHERE Reward_transaction_id = ?
+  `;
+  const conn: any = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.query(sql, [transactionId]);
+    const [rows]: any = await conn.query(
+      `SELECT rt.*, r.Item FROM reward_transactions_tbl rt LEFT JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id WHERE rt.Reward_transaction_id = ?`,
+      [transactionId]
+    );
+    const tx = Array.isArray(rows) && rows[0] ? rows[0] : null;
+
+    if (tx) {
+      try {
+        const [userRows]: any = await conn.query(
+          'SELECT a.Username, p.FirstName, p.LastName FROM accounts_tbl a LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Account_id = ? LIMIT 1',
+          [tx.Account_id]
+        );
+        const user = Array.isArray(userRows) && userRows[0] ? userRows[0] : null;
+        const username = user?.Username ?? null;
+        const firstName = user?.FirstName ?? null;
+        const lastName = user?.LastName ?? null;
+
+        await conn.query(
+          `INSERT INTO system_notifications_tbl (Event_type, Username, FirstName, LastName, Container_name, Area_name, Created_at)
+           VALUES ('REWARD_CLAIMED', ?, ?, ?, ?, ?, NOW())`,
+          [username, firstName, lastName, tx.Item ?? null, String(tx.Total_points ?? '')]
+        );
+      } catch (notifErr) {
+        console.warn('⚠️ Failed to log reward claimed notification:', notifErr);
+      }
+    }
+
+    await conn.commit();
+    return tx;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 };
 
 /* get transaction by code */

@@ -105,7 +105,8 @@ export const markRedeemed = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Please upload at least one attachment before marking as claimed." });
     }
 
-    const updated = await rewardService.markTransactionRedeemed(id);
+    // mark as redeemed and log notification
+    const updated = await rewardService.markTransactionRedeemedWithNotification(id);
     return res.json({ message: "Transaction marked as Redeemed", transaction: updated });
   } catch (err: any) {
     console.error("markRedeemed error:", err);

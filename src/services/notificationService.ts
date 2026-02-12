@@ -295,6 +295,21 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       } else if (eventType === "CONTAINER_FULL") {
         title = `Container full: ${containerLabel}`;
         message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
+      } else if (eventType === "POINTS_AWARDED") {
+        title = `Points awarded`;
+        const pts = containerLabel || '0';
+        message = `${nameLabel} was awarded ${pts} points.`;
+      } else if (eventType === "REWARD_REDEEMED") {
+        // user redeemed (requested) a reward from the store
+        const item = containerLabel || 'reward';
+        const pts = areaLabel || '';
+        title = `Reward claimed: ${item}`;
+        message = `${nameLabel} requested to claim ${item}${pts ? ` for ${pts} points` : ''}.`;
+      } else if (eventType === "REWARD_CLAIMED") {
+        const item = containerLabel || 'reward';
+        const pts = areaLabel || '';
+        title = `Reward successfully claimed: ${item}`;
+        message = `${nameLabel} successfully claimed ${item}${pts ? ` for ${pts} points` : ''}.`;
       }
 
       return {

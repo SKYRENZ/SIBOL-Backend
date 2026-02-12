@@ -78,7 +78,28 @@ export async function awardPointsForAccount(accountId: number, weight: number, q
     await recordQRScan(qrCode, accountId, weight, awarded);
     const totalPoints = await addPointsToAccount(accountId, awarded);
 
-    return { awarded, totalPoints };
+        // Log system notification for points awarded
+        try {
+            // fetch user info
+            const [userRows]: any = await db.execute(
+                'SELECT a.Username, p.FirstName, p.LastName, p.Email FROM accounts_tbl a LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id WHERE a.Account_id = ? LIMIT 1',
+                [accountId]
+            );
+            const user = Array.isArray(userRows) && userRows[0] ? userRows[0] : null;
+            const username = user?.Username ?? null;
+            const firstName = user?.FirstName ?? null;
+            const lastName = user?.LastName ?? null;
+
+            await db.execute(
+                `INSERT INTO system_notifications_tbl (Event_type, Username, FirstName, LastName, Container_name, Created_at)
+                 VALUES ('POINTS_AWARDED', ?, ?, ?, ?, NOW())`,
+                [username, firstName, lastName, String(awarded)]
+            );
+        } catch (err) {
+            console.warn('⚠️ Failed to log points awarded notification', err);
+        }
+
+        return { awarded, totalPoints };
 }
 
 async function getCurrentPoints(accountId: number): Promise<number> {
