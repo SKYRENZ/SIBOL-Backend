@@ -113,6 +113,18 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Log incoming API requests (limited fields) to help diagnose runtime errors
+app.use((req, res, next) => {
+  try {
+    if (req.path.startsWith('/api')) {
+      console.log('[API request] %s %s body=%s', req.method, req.path, JSON.stringify(req.body || {}).slice(0, 500));
+    }
+  } catch (err) {
+    // ignore logging errors
+  }
+  next();
+});
+
 import healthRoutes from './Routes/healthRoutes.js';
 import historyRoutes from './Routes/historyRoutes.js';
 
@@ -154,6 +166,25 @@ app.use("/api/upload", uploadRoutes);
 // mount esp32 stages
 app.use('/api/s1-esp32', S1_esp32Routes)
 
+
+// Express error handler (last middleware) - ensure JSON for API paths
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error('[Express error handler] ', err && err.stack ? err.stack : err);
+  if (req && req.path && String(req.path).startsWith('/api')) {
+    const status = err?.status || 500;
+    return res.status(status).json({ error: err?.message || 'Internal Server Error' });
+  }
+  // fallback to default handler for non-API routes
+  next(err);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
 
 app.listen(PORT, () => {
   console.log(`✅ Backend running at http://localhost:${PORT}`);
