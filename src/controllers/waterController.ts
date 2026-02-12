@@ -18,10 +18,11 @@ export async function analyzeWater(req: Request, res: Response) {
     res.json(result);
   } catch (error: any) {
     console.error('[analyzeWater] Error:', error && error.stack ? error.stack : error);
-    // Ensure we return JSON (avoid HTML error pages)
+    // Ensure we return JSON (avoid HTML error pages). Include stack to help remote-host debugging.
     return res.status(500).json({
       error: 'Failed to analyze water requirement',
-      details: error?.message || 'Unknown error'
+      message: error?.message || 'Unknown error',
+      details: error?.stack || null
     });
   }
 }

@@ -25,8 +25,28 @@ export async function analyzeWaterRequirement(foodWasteKg: number) {
       (r: any) => r.recommended_water_l / r.food_waste_kg
     );
 
-    const avgRatio = computeAverage(ratios);
+    // Only use rows with valid numeric values and non-zero food_waste_kg
+    const validRatios = rows
+      .filter((r: any) => r && typeof r.recommended_water_l === 'number' && typeof r.food_waste_kg === 'number' && r.food_waste_kg > 0)
+      .map((r: any) => r.recommended_water_l / r.food_waste_kg)
+      .filter((v: any) => Number.isFinite(v));
+
+    if (!validRatios || validRatios.length === 0) {
+      console.warn('[analyzeWaterRequirement] No valid ratio rows, using fallback');
+      return getFallbackResult(foodWasteKg);
+    }
+
+    const avgRatio = computeAverage(validRatios);
+    if (!Number.isFinite(avgRatio) || Number.isNaN(avgRatio)) {
+      console.warn('[analyzeWaterRequirement] avgRatio not finite, using fallback', avgRatio);
+      return getFallbackResult(foodWasteKg);
+    }
+
     const recommendedWater = Number((avgRatio * foodWasteKg).toFixed(2));
+    if (!Number.isFinite(recommendedWater) || Number.isNaN(recommendedWater)) {
+      console.warn('[analyzeWaterRequirement] recommendedWater invalid, using fallback', recommendedWater);
+      return getFallbackResult(foodWasteKg);
+    }
 
     return {
       foodWasteKg,
