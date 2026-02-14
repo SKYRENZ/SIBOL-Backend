@@ -7,9 +7,14 @@ const openai = new OpenAI({
 
 export async function chatWithAI(
   roleId: number,
-  message: string
+  message: string,
+  username?: string
 ) {
-  const systemPrompt = getPromptByRole(roleId)
+  let systemPrompt = getPromptByRole(roleId)
+  
+  // Inject username into prompt if available
+  const displayName = username?.trim() || "User"
+  systemPrompt = systemPrompt.replace(/{{USERNAME}}/g, displayName)
 
   const completion = await openai.chat.completions.create({
     model: "gpt-3.5-turbo",
