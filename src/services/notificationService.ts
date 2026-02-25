@@ -85,6 +85,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM maintenance_events_tbl e
     JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
@@ -118,6 +121,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM machine_waste_input_tbl wi
     JOIN machine_tbl m ON wi.Machine_id = m.Machine_id
@@ -149,6 +155,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM waste_collection_tbl wc
     LEFT JOIN area_tbl a ON wc.area_id = a.Area_id
@@ -186,6 +195,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       sn.FirstName AS first_name,
       sn.LastName AS last_name,
       sn.Email AS email,
+      sn.Reward_item AS Reward_item,
+      sn.Reward_quantity AS Reward_quantity,
+      sn.Reward_points AS Reward_points,
       r.Roles AS role_name,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM system_notifications_tbl sn
@@ -306,9 +318,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
 
       // Reward-specific system notifications
       else if (eventType.startsWith("REWARD_")) {
-        const itemLabel = row.first_name || row.actor_username || "Reward";
-        const qtyLabel = row.container_names ? `${row.container_names}` : null; // we store Quantity in Container_name
-        const costLabel = row.area_name ? `${row.area_name}` : null; // we store Points_cost in Area_name
+        const itemLabel = row.Reward_item || row.first_name || row.actor_username || "Reward";
+        const qtyLabel = (row.Reward_quantity != null && row.Reward_quantity !== '') ? `${row.Reward_quantity}` : (row.container_names ? `${row.container_names}` : null);
+        const costLabel = (row.Reward_points != null && row.Reward_points !== '') ? `${row.Reward_points}` : (row.area_name ? `${row.area_name}` : null);
 
         if (eventType === "REWARD_NEW") {
           title = `New reward: ${itemLabel}`;

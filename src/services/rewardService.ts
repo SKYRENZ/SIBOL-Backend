@@ -16,11 +16,12 @@ export const createReward = async (reward: Reward): Promise<number> => {
   // NEW: create a system notification targeting household users
   try {
     const eventType = "REWARD_NEW";
-    // store Item in FirstName, Quantity in Container_name, Points_cost in Area_name
+    // Insert into explicit reward columns; leave unrelated columns NULL
     await pool.query(
-      `INSERT INTO system_notifications_tbl (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name)
-       VALUES (?, NULL, ?, NULL, NULL, ?, ?, ?)`,
-      [eventType, reward.Item, 4, String(reward.Quantity ?? ""), String(reward.Points_cost ?? "")]
+      `INSERT INTO system_notifications_tbl
+         (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
+      [eventType, 4, reward.Item, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
     );
   } catch (e) {
     // non-fatal: don't break reward creation if notif insert fails
@@ -70,10 +71,12 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
       eventType = "REWARD_UPDATED";
     }
 
+    // Insert into explicit reward columns; leave unrelated fields NULL
     await pool.query(
-      `INSERT INTO system_notifications_tbl (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name)
-       VALUES (?, NULL, ?, NULL, NULL, ?, ?, ?)`,
-      [eventType, itemName, 4, String(newQty), String(pointsCost ?? "")]
+      `INSERT INTO system_notifications_tbl
+         (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
+      [eventType, 4, itemName, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
     );
   } catch (e) {
     console.warn("updateReward: failed to insert system notification", e);
