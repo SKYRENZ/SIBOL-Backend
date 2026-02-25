@@ -61,6 +61,10 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     return [] as NotificationRow[];
   }
 
+  // Fetch account role so we only surface system notifications intended for this role
+  const [accRows]: any = await pool.query("SELECT Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+
   const maintenanceSelect = `
     SELECT
       e.Event_Id AS id,
@@ -138,7 +142,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       CONCAT(p.FirstName, ' ', p.LastName) AS actor_name,
       acc.Username AS actor_username,
       NULL AS machine_name,
-      a.Area_Name AS area_name,
+      a.Area_name AS area_name,
       c.container_names AS container_names,
       wc.weight AS weight,
       NULL AS first_name,
@@ -190,7 +194,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = sn.Notification_id
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
-    WHERE sn.Event_type <> 'REGISTERED'
+    -- allow REGISTERED and other event types; roleFilter below limits visibility by Role_id
+    ${accountRoleId !== null ? `WHERE (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `WHERE (sn.Role_id IS NULL)`}
   `;
 
   let sql = "";
@@ -220,6 +225,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         ${systemSelect}
       ) AS notif
     `;
+    // For the UNION we need to supply accountId for each select's notification_reads_tbl join.
+    // systemSelect also uses accountRoleId embedded above (no extra param), so push accountId 4 times.
     params.push(accountId, accountId, accountId, accountId);
   }
 
@@ -297,6 +304,27 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
       }
 
+      // Reward-specific system notifications
+      else if (eventType.startsWith("REWARD_")) {
+        const itemLabel = row.first_name || row.actor_username || "Reward";
+        const qtyLabel = row.container_names ? `${row.container_names}` : null; // we store Quantity in Container_name
+        const costLabel = row.area_name ? `${row.area_name}` : null; // we store Points_cost in Area_name
+
+        if (eventType === "REWARD_NEW") {
+          title = `New reward: ${itemLabel}`;
+          message = `A new reward (${itemLabel}) is available${costLabel ? ` for ${costLabel} points` : ""}${qtyLabel ? ` — ${qtyLabel} units` : ""}.`;
+        } else if (eventType === "REWARD_RESTOCKED") {
+          title = `Reward restocked: ${itemLabel}`;
+          message = `${itemLabel} has been restocked${qtyLabel ? ` to ${qtyLabel} units` : ""}${costLabel ? ` (cost: ${costLabel} pts)` : ""}.`;
+        } else if (eventType === "REWARD_UPDATED") {
+          title = `Reward updated: ${itemLabel}`;
+          message = `${itemLabel} details were updated${costLabel ? ` (cost: ${costLabel} pts)` : ""}${qtyLabel ? ` — now ${qtyLabel} units` : ""}.`;
+        } else {
+          title = `Reward notice: ${itemLabel}`;
+          message = `${itemLabel} has an update.`;
+        }
+      }
+
       return {
         id: Number(row.id),
         type: "system" as const,
@@ -339,6 +367,10 @@ export async function markNotificationRead(accountId: number, type: Notification
 }
 
 export async function markAllNotificationsRead(accountId: number, type: NotificationType) {
+  // Fetch account role so we only mark system notifications intended for this role
+  const [accRows]: any = await pool.query("SELECT Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+
   if (type === "maintenance") {
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
@@ -370,6 +402,10 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
   }
 
   if (type === "system") {
+    const roleFilter = accountRoleId !== null
+      ? `AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})`
+      : `AND (sn.Role_id IS NULL)`;
+
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'system', sn.Notification_id, NOW()
@@ -379,6 +415,7 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Notification_type = 'system'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
+      ${roleFilter}
     `;
     await pool.query(sql, [accountId, accountId]);
     return { success: true };
