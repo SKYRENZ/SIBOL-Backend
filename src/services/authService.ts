@@ -144,13 +144,13 @@ export async function registerUser(
     }
 
     // 8. Return registration data
-    const responseMessage = isSSO 
+    const responseMessage = isSSO
       ? "Registration successful. Your account is pending admin approval."
       : sendMethod === 'code'
         ? "Registration successful. A verification code was sent to your email."
         : "Registration successful. Please check your email to verify your account.";
 
-    const responseNote = isSSO 
+    const responseNote = isSSO
       ? "Email already verified via Google. Waiting for admin approval."
       : sendMethod === 'code'
         ? "Verification code sent. Check your inbox."
@@ -303,14 +303,14 @@ export async function checkAccountStatus(username: string) {
 // Login helper (no change)
 export async function validateUser(username: string, password: string) {
   const statusCheck = await checkAccountStatus(username);
-  
+
   if (statusCheck.status !== 'active') {
     throw new Error(statusCheck.message);
   }
 
   const query = "SELECT Account_id, Username, Password, Roles FROM accounts_tbl WHERE Username = ? AND IsActive = 1 LIMIT 1";
   const [rows]: any = await pool.execute(query, [username]);
-  
+
   if (Array.isArray(rows) && rows.length > 0) {
     const user = rows[0] as any;
     const match = await bcrypt.compare(password, user.Password);
@@ -324,99 +324,99 @@ export async function validateUser(username: string, password: string) {
 
 // Password reset & profile helpers (no change)
 export async function findProfileByEmail(email: string) {
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Invalid email format');
-    }
-    const [rows]: any = await pool.execute('SELECT * FROM profile_tbl WHERE Email = ?', [email]);
-    return rows[0];
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+  const [rows]: any = await pool.execute('SELECT * FROM profile_tbl WHERE Email = ?', [email]);
+  return rows[0];
 };
 
 export async function createPasswordReset(email: string, code: string, expiration: Date) {
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Invalid email format');
-    }
-    if (!code || !/^\d{6}$/.test(code)) {
-        throw new Error('Invalid code format. Must be a 6-digit number.');
-    }
-    const [existing]: any = await pool.execute(
-        `SELECT * FROM password_reset_tbl 
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+  if (!code || !/^\d{6}$/.test(code)) {
+    throw new Error('Invalid code format. Must be a 6-digit number.');
+  }
+  const [existing]: any = await pool.execute(
+    `SELECT * FROM password_reset_tbl 
          WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW()`,
-        [email]
-    );
-    if (existing.length > 0) {
-        throw new Error('A valid reset code already exists for this email. Please check your email.');
-    }
-    const profile = await findProfileByEmail(email);
-    if (!profile) throw new Error('No account found with that email');
+    [email]
+  );
+  if (existing.length > 0) {
+    throw new Error('A valid reset code already exists for this email. Please check your email.');
+  }
+  const profile = await findProfileByEmail(email);
+  if (!profile) throw new Error('No account found with that email');
 
-    await pool.execute(
-        `DELETE FROM password_reset_tbl WHERE Expiration <= NOW()`
-    );
+  await pool.execute(
+    `DELETE FROM password_reset_tbl WHERE Expiration <= NOW()`
+  );
 
-    const hashedCode = await bcrypt.hash(code, 10);
-    await pool.execute(
-        'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
-        [email, hashedCode, expiration]
-    );
+  const hashedCode = await bcrypt.hash(code, 10);
+  await pool.execute(
+    'INSERT INTO password_reset_tbl (Email, Reset_code, Expiration) VALUES (?, ?, ?)',
+    [email, hashedCode, expiration]
+  );
 
-    // return explicit result for tests and callers
-    return { success: true };
+  // return explicit result for tests and callers
+  return { success: true };
 };
 
 export async function verifyResetCode(email: string, code: string) {
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Invalid email format');
-    }
-    if (!code || !/^\d{6}$/.test(code)) {
-        throw new Error('Invalid code format. Must be a 6-digit number.');
-    }
-    const [rows]: any = await pool.execute(
-        `SELECT * FROM password_reset_tbl 
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+  if (!code || !/^\d{6}$/.test(code)) {
+    throw new Error('Invalid code format. Must be a 6-digit number.');
+  }
+  const [rows]: any = await pool.execute(
+    `SELECT * FROM password_reset_tbl 
          WHERE Email = ? AND IsUsed = 0 AND Expiration > NOW() 
          ORDER BY Created_at DESC LIMIT 1`,
-        [email]
-    );
-    if (!rows.length) throw new Error('No valid reset code found');
+    [email]
+  );
+  if (!rows.length) throw new Error('No valid reset code found');
 
-    const reset = rows[0];
-    const match = await bcrypt.compare(code, reset.Reset_code);
-    if (!match) throw new Error('Invalid reset code');
+  const reset = rows[0];
+  const match = await bcrypt.compare(code, reset.Reset_code);
+  if (!match) throw new Error('Invalid reset code');
 
-    return reset;
+  return reset;
 }
 
 export async function resetPassword(email: string, code: string, newPassword: string) {
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        throw new Error('Invalid email format');
-    }
-    if (!code || !/^\d{6}$/.test(code)) {
-        throw new Error('Invalid code format. Must be a 6-digit number.');
-    }
-    if (!newPassword || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
-        throw new Error('Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
-    }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Invalid email format');
+  }
+  if (!code || !/^\d{6}$/.test(code)) {
+    throw new Error('Invalid code format. Must be a 6-digit number.');
+  }
+  if (!newPassword || !/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}/.test(newPassword)) {
+    throw new Error('Password must be at least 8 characters and include uppercase, lowercase, number, and symbol.');
+  }
 
-    const reset = await verifyResetCode(email, code);
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const reset = await verifyResetCode(email, code);
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    const [profileRows]: any = await pool.execute(
-        'SELECT Account_id FROM profile_tbl WHERE Email = ?',
-        [email]
-    );
-    if (!profileRows.length) throw new Error('Profile not found');
-    const accountId = profileRows[0].Account_id;
+  const [profileRows]: any = await pool.execute(
+    'SELECT Account_id FROM profile_tbl WHERE Email = ?',
+    [email]
+  );
+  if (!profileRows.length) throw new Error('Profile not found');
+  const accountId = profileRows[0].Account_id;
 
-    await pool.execute(
-        'UPDATE accounts_tbl SET Password = ? WHERE Account_id = ?',
-        [hashedPassword, accountId]
-    );
+  await pool.execute(
+    'UPDATE accounts_tbl SET Password = ? WHERE Account_id = ?',
+    [hashedPassword, accountId]
+  );
 
-    await pool.execute(
-        'UPDATE password_reset_tbl SET IsUsed = 1 WHERE Reset_id = ?',
-        [reset.Reset_id]
-    );
+  await pool.execute(
+    'UPDATE password_reset_tbl SET IsUsed = 1 WHERE Reset_id = ?',
+    [reset.Reset_id]
+  );
 
-    return { success: true, message: 'Password reset successful' };
+  return { success: true, message: 'Password reset successful' };
 }
 
 // Test DB connection helper
@@ -667,7 +667,7 @@ export async function loginUser(identifier: string, password: string, clientType
 
     const roleNum = typeof user.Roles === 'string' ? Number(user.Roles) : user.Roles;
 
-    const WEB_ALLOWED = new Set([1, 2]);
+    const WEB_ALLOWED = new Set([1, 2, 5]);  // Admin, Barangay, SuperAdmin
     const MOBILE_ALLOWED = new Set([3, 4]);
 
     const allowed = clientType === 'web' ? WEB_ALLOWED.has(roleNum) : MOBILE_ALLOWED.has(roleNum);
@@ -766,7 +766,7 @@ function calculateEstimatedWaitTime(position: number): string {
   // Assuming admins process ~5 accounts per day
   const accountsPerDay = 5;
   const daysToWait = Math.ceil(position / accountsPerDay);
-  
+
   if (daysToWait === 0 || daysToWait === 1) {
     return 'within 24 hours';
   } else if (daysToWait <= 3) {

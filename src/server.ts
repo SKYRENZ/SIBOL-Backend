@@ -48,6 +48,7 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
+import superAdminRoutes from './Routes/superAdminRoutes.js';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -151,6 +152,8 @@ app.use('/api/map', mapRoutes);
 app.use('/api/notifications', notificationRoutes);
 // mount admin routes with required middleware (single mount with auth+authorize)
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
+// mount superadmin routes with auth (isSuperAdmin applied per-route inside router)
+app.use('/api/superadmin', authenticate, superAdminRoutes);
 
 app.use("/api/upload", uploadRoutes);
 
