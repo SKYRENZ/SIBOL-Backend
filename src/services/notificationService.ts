@@ -331,6 +331,15 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         } else if (eventType === "REWARD_UPDATED") {
           title = `Reward updated: ${itemLabel}`;
           message = `${itemLabel} details were updated${costLabel ? ` (cost: ${costLabel} pts)` : ""}${qtyLabel ? ` — now ${qtyLabel} units` : ""}.`;
+        } else if (eventType === "REWARD_UNCLAIMED") {
+          title = `Reward Redeemed: ${itemLabel}`;
+          message = `${itemLabel} was redeemed. Please claim it at your Barangay.` + (qtyLabel ? ` (${qtyLabel} units)` : "");
+        } else if (eventType === "REWARD_CLAIMED") {
+          title = `Reward Claimed: ${itemLabel}`;
+          message = `Congratulations! ${itemLabel} has been claimed successfully.`;
+        } else if (eventType === "REWARD_ELIGIBLE") {
+          title = `You can claim: ${itemLabel}`;
+          message = `You have enough points to claim ${itemLabel}${costLabel ? ` for ${costLabel} points` : ""}.`;
         } else {
           title = `Reward notice: ${itemLabel}`;
           message = `${itemLabel} has an update.`;
