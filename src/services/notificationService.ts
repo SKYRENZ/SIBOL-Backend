@@ -61,9 +61,10 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     return [] as NotificationRow[];
   }
 
-  // Fetch account role so we only surface system notifications intended for this role
-  const [accRows]: any = await pool.query("SELECT Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  // Fetch account role + username so we only surface system notifications intended for this role OR specifically targeted to this username
+  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
   const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+  const accountUsername: string | null = accRows?.[0]?.Username ?? null;
 
   const maintenanceSelect = `
     SELECT
@@ -206,8 +207,15 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = sn.Notification_id
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
-    -- allow REGISTERED and other event types; roleFilter below limits visibility by Role_id
-    ${accountRoleId !== null ? `WHERE (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `WHERE (sn.Role_id IS NULL)`}
+    WHERE (
+      -- targeted to this specific username
+      (sn.Username IS NOT NULL AND sn.Username = ?)
+      -- OR global/role-targeted: username is NULL and role is either null (all) or matches the account role
+      OR (
+        sn.Username IS NULL
+        AND (${accountRoleId !== null ? `(sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `sn.Role_id IS NULL`})
+      )
+    )
   `;
 
   let sql = "";
@@ -224,7 +232,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     params.push(accountId);
   } else if (type === "system") {
     sql = systemSelect;
-    params.push(accountId);
+    // systemSelect expects two params: accountId (for notification_reads_tbl) and accountUsername
+    params.push(accountId, accountUsername);
   } else {
     sql = `
       SELECT * FROM (
@@ -237,9 +246,10 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         ${systemSelect}
       ) AS notif
     `;
-    // For the UNION we need to supply accountId for each select's notification_reads_tbl join.
-    // systemSelect also uses accountRoleId embedded above (no extra param), so push accountId 4 times.
-    params.push(accountId, accountId, accountId, accountId);
+    // push params for each subselect in order:
+    // maintenanceSelect(accountId), wasteInputSelect(accountId), collectionSelect(accountId),
+    // systemSelect(accountId, accountUsername)
+    params.push(accountId, accountId, accountId, accountId, accountUsername);
   }
 
   if (unreadOnly) {
@@ -411,9 +421,10 @@ export async function markNotificationRead(accountId: number, type: Notification
 }
 
 export async function markAllNotificationsRead(accountId: number, type: NotificationType) {
-  // Fetch account role so we only mark system notifications intended for this role
-  const [accRows]: any = await pool.query("SELECT Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  // Fetch account role + username so we only mark system notifications intended for this role OR specifically targeted to this username
+  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
   const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+  const accountUsername: string | null = accRows?.[0]?.Username ?? null;
 
   if (type === "maintenance") {
     const sql = `
@@ -446,9 +457,12 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
   }
 
   if (type === "system") {
-    const roleFilter = accountRoleId !== null
-      ? `AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})`
-      : `AND (sn.Role_id IS NULL)`;
+    // Only mark system notifications that are either:
+    // - targeted specifically to this username, OR
+    // - global/role-targeted (sn.Username IS NULL and Role_id matches or is NULL)
+    const roleCondition = accountRoleId !== null
+      ? `(sn.Username = ? OR (sn.Username IS NULL AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})))`
+      : `(sn.Username = ? OR (sn.Username IS NULL AND sn.Role_id IS NULL))`;
 
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
@@ -459,12 +473,13 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Notification_type = 'system'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
-      ${roleFilter}
+      AND ${roleCondition}
     `;
-    await pool.query(sql, [accountId, accountId]);
+    await pool.query(sql, [accountId, accountId, accountUsername]);
     return { success: true };
   }
 
+  // fallback for collection
   const sql = `
     INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
     SELECT ?, 'collection', wc.collection_id, NOW()

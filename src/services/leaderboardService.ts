@@ -48,96 +48,133 @@ export async function getLeaderboard(limit = 100): Promise<any[]> {
 }
 
 export async function createSnapshot(): Promise<void> {
-  // create a snapshot and notify rank changes for top entries
-  const snapshotAt = new Date();
+  // compute leaderboard and notify only on real rank changes
+  const LIMIT = 100;
 
-  // Determine previous snapshot (if any)
-  const [maxRows]: any = await pool.query(`SELECT MAX(snapshot_at) AS max_snapshot FROM leaderboard_snapshots_tbl`);
-  const prevSnapshot = (Array.isArray(maxRows) && maxRows[0]?.max_snapshot) ? maxRows[0].max_snapshot : null;
+  // 1) load previous snapshot ranks (if exists)
+  const [[prevRow]]: any = await pool.query(`SELECT MAX(Snapshot_at) AS last_snapshot FROM leaderboard_snapshots_tbl LIMIT 1`);
+  const lastSnapshotAt = prevRow?.last_snapshot ?? null;
 
-  const TOP_N = 100;
-
-  // build previous ranks map for top N (if exists)
-  const prevRanksMap: Record<number, number> = {};
-  if (prevSnapshot) {
-    const prevSql = `
-      SELECT Account_id, previous_rank FROM (
-        SELECT Account_id, RANK() OVER (ORDER BY Total_kg DESC) AS previous_rank
-        FROM leaderboard_snapshots_tbl
-        WHERE snapshot_at = ?
-      ) t
-      WHERE previous_rank <= ?
-    `;
-    const [prevRows]: any = await pool.query(prevSql, [prevSnapshot, TOP_N]);
+  const prevRanks: Record<number, number> = {};
+  if (lastSnapshotAt) {
+    const [prevRows]: any = await pool.query(
+      `SELECT Account_id, Rank FROM leaderboard_snapshots_tbl WHERE Snapshot_at = ?`,
+      [lastSnapshotAt]
+    );
     if (Array.isArray(prevRows)) {
-      prevRows.forEach((r: any) => { prevRanksMap[Number(r.Account_id)] = Number(r.previous_rank); });
+      for (const r of prevRows) prevRanks[Number(r.Account_id)] = Number(r.Rank);
     }
   }
 
-  // build current ranks map (top N)
-  const currRanksMap: Record<number, number> = {};
-  const currSql = `
-    SELECT Account_id, curr_rank FROM (
-      SELECT Account_id, RANK() OVER (ORDER BY Total_kg DESC) AS curr_rank
-      FROM account_waste_totals_tbl
-    ) t
-    WHERE curr_rank <= ?
-  `;
-  const [currRows]: any = await pool.query(currSql, [TOP_N]);
-  if (Array.isArray(currRows)) {
-    currRows.forEach((r: any) => { currRanksMap[Number(r.Account_id)] = Number(r.curr_rank); });
-  }
-
-  // compute diffs and insert system notifications for moved/entered/exited
-  try {
-    // gather union of affected account ids
-    const ids = new Set<number>([...Object.keys(prevRanksMap).map(Number), ...Object.keys(currRanksMap).map(Number)]);
-    for (const id of ids) {
-      const prevRank = prevRanksMap[id] ?? null;
-      const currRank = currRanksMap[id] ?? null;
-
-      // no change -> skip
-      if (prevRank === currRank) continue;
-
-      // fetch username and role for the account (use household role as default target)
-      const [accRows]: any = await pool.query(`SELECT Username, Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1`, [id]);
-      const acct = accRows?.[0] ?? null;
-      const username = acct?.Username ?? null;
-      const roleId = Number(acct?.Roles ?? 4);
-
-      let eventType = '';
-      let containerName: string | null = null; // we reuse Container_name to hold rank info (prev->curr)
-
-      if (prevRank == null && currRank != null) {
-        eventType = 'LEADERBOARD_ENTERED';
-        containerName = String(currRank);
-      } else if (prevRank != null && currRank == null) {
-        eventType = 'LEADERBOARD_EXITED';
-        containerName = String(prevRank);
-      } else {
-        eventType = 'LEADERBOARD_MOVED';
-        containerName = `${prevRank}->${currRank}`;
-      }
-
-      try {
-        await pool.query(
-          `INSERT INTO system_notifications_tbl
-             (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-           VALUES (?, ?, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, NULL, NOW())`,
-          [eventType, username, roleId, containerName]
-        );
-      } catch (e) {
-        console.warn('createSnapshot: failed to insert leaderboard notification for account', id, e);
-      }
-    }
-  } catch (e) {
-    console.warn('createSnapshot: error computing leaderboard diffs', e);
-  }
-
-  // finally, insert the snapshot rows for all accounts
-  await pool.query(
-    `INSERT INTO leaderboard_snapshots_tbl (Account_id, Total_kg, snapshot_at)
-     SELECT Account_id, Total_kg, ? FROM account_waste_totals_tbl`,
-    [snapshotAt]
+  // 2) compute current leaderboard (highest Total_kg first)
+  const [curRows]: any = await pool.query(
+    `SELECT Account_id, Total_kg
+     FROM account_waste_totals_tbl
+     WHERE Total_kg > 0
+     ORDER BY Total_kg DESC, Account_id ASC
+     LIMIT ?`,
+    [LIMIT]
   );
+
+  const snapshotTime = new Date();
+  // 3) insert snapshot rows (one batch)
+  if (Array.isArray(curRows) && curRows.length) {
+    const values: any[] = [];
+    const placeholders: string[] = [];
+    let rank = 0;
+    for (const r of curRows) {
+      rank++;
+      placeholders.push('(?, ?, ?, ?)');
+      values.push(snapshotTime, Number(r.Account_id), rank, Number(r.Total_kg ?? 0));
+    }
+    // ensure table exists; if not this will throw (preserve prior behavior)
+    await pool.query(
+      `INSERT INTO leaderboard_snapshots_tbl (Snapshot_at, Account_id, Rank, Total_kg) VALUES ${placeholders.join(',')}`,
+      values
+    );
+  } else {
+    // still create an empty snapshot row time marker so lastSnapshotAt updates
+    await pool.query(`INSERT INTO leaderboard_snapshot_markers_tbl (Snapshot_at) VALUES (?)`, [snapshotTime]).catch(() => {});
+  }
+
+  // 4) compare prevRanks <> current ranks and generate notifications only for real changes
+  // build current rank map
+  const curRanks: Record<number, number> = {};
+  let r = 0;
+  for (const row of (curRows || [])) {
+    r++;
+    curRanks[Number(row.Account_id)] = r;
+  }
+
+  // convenience: function to skip duplicate events inserted very recently
+  async function existsRecentNotification(eventType: string, rankInfo: string | null) {
+    const [rows]: any = await pool.query(
+      `SELECT Notification_id FROM system_notifications_tbl
+       WHERE Event_type = ? AND Role_id = ? AND Container_name = ? AND Created_at > DATE_SUB(NOW(), INTERVAL 1 MINUTE) LIMIT 1`,
+      [eventType, 4, rankInfo]
+    );
+    return Array.isArray(rows) && rows.length > 0;
+  }
+
+  // for accounts in current leaderboard
+  for (const accIdStr of Object.keys(curRanks)) {
+    const accId = Number(accIdStr);
+    const newRank = curRanks[accId];
+    const oldRank = prevRanks[accId] ?? null;
+
+    let eventType: string | null = null;
+    let rankInfo: string | null = null;
+
+    if (oldRank == null) {
+      // entered the leaderboard
+      eventType = 'LEADERBOARD_ENTERED';
+      rankInfo = String(newRank);
+    } else if (oldRank !== newRank) {
+      // moved (up or down)
+      eventType = 'LEADERBOARD_MOVED';
+      rankInfo = `${oldRank}->${newRank}`;
+      // Only notify when rank number actually changed (this ensures no false positive)
+    }
+
+    if (!eventType) continue;
+
+    // avoid duplicate notifications in quick succession
+    const dup = await existsRecentNotification(eventType, rankInfo);
+    if (dup) continue;
+
+    try {
+      // role-targeted notification (household)
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Container_name, Created_at)
+         VALUES (?, NULL, ?, ?, NOW())`,
+        [eventType, 4, rankInfo]
+      );
+    } catch (err) {
+      console.warn('[leaderboardService] insert notification failed', err);
+    }
+  }
+
+  // detect exits: accounts that were in prevRanks but not in curRanks => LEADERBOARD_EXITED
+  for (const accIdStr of Object.keys(prevRanks)) {
+    const accId = Number(accIdStr);
+    if (curRanks[accId] !== undefined) continue; // still present
+    const oldRank = prevRanks[accId];
+    const eventType = 'LEADERBOARD_EXITED';
+    const rankInfo = String(oldRank);
+
+    const dup = await existsRecentNotification(eventType, rankInfo);
+    if (dup) continue;
+
+    try {
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Container_name, Created_at)
+         VALUES (?, NULL, ?, ?, NOW())`,
+        [eventType, 4, rankInfo]
+      );
+    } catch (err) {
+      console.warn('[leaderboardService] insert EXITED notification failed', err);
+    }
+  }
 }

@@ -16,15 +16,14 @@ export const createReward = async (reward: Reward): Promise<number> => {
   // NEW: create a system notification targeting household users
   try {
     const eventType = "REWARD_NEW";
-    // Insert into explicit reward columns; leave unrelated columns NULL
+    // insert only the columns we need and match params exactly
     await pool.query(
       `INSERT INTO system_notifications_tbl
-         (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-       VALUES (?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
-      [eventType, 4, reward.Item, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
+         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [eventType, 4, reward.Item ?? null, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
     );
   } catch (e) {
-    // non-fatal: don't break reward creation if notif insert fails
     console.warn("createReward: failed to insert system notification", e);
   }
 
@@ -74,9 +73,9 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
     // Insert into explicit reward columns; leave unrelated fields NULL
     await pool.query(
       `INSERT INTO system_notifications_tbl
-         (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-       VALUES (?, NULL, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
-      [eventType, 4, itemName, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
+         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [eventType, 4, itemName ?? null, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
     );
   } catch (e) {
     console.warn("updateReward: failed to insert system notification", e);
@@ -159,9 +158,9 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
     try {
       await pool.query(
         `INSERT INTO system_notifications_tbl
-           (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-         VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
-        ['REWARD_UNCLAIMED', accountUsername, Number(accountRole ?? 4), reward.Item, Number(quantity), Number(totalCost)]
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_UNCLAIMED', accountUsername, null, reward.Item ?? null, Number(quantity), Number(totalCost)]
       );
     } catch (e) {
       console.warn('redeemReward: failed to insert REWARD_UNCLAIMED notification', e);
@@ -200,13 +199,12 @@ export const markTransactionRedeemed = async (transactionId: number) => {
   try {
     if (tx) {
       const acctUser = tx.account_username ?? null;
-      const acctRole = Number(tx.account_roles ?? 4);
       const item = tx.Item ?? null;
       await pool.query(
         `INSERT INTO system_notifications_tbl
-           (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-         VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, ?, ?, NOW())`,
-        ['REWARD_CLAIMED', acctUser, acctRole, item, Number(tx.Quantity ?? 1), Number(tx.Total_points ?? 0)]
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_CLAIMED', acctUser, null, item, Number(tx.Quantity ?? 1), Number(tx.Total_points ?? 0)]
       );
     }
   } catch (e) {
@@ -349,9 +347,9 @@ export const notifyPointsEnough = async (accountId: number, rewardId: number) =>
     try {
       await pool.query(
         `INSERT INTO system_notifications_tbl
-           (Event_type, Username, FirstName, LastName, Email, Role_id, Container_name, Area_name, Reward_item, Reward_quantity, Reward_points, Created_at)
-         VALUES (?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, NULL, ?, NOW())`,
-        ['REWARD_ELIGIBLE', acc.Username ?? null, Number(acc.Roles ?? 4), reward.Item, cost]
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_ELIGIBLE', acc.Username ?? null, null, reward.Item ?? null, null, cost]
       );
       return true;
     } catch (e) {
@@ -393,9 +391,9 @@ export const notifyEligibleRewardsOnPointsIncrease = async (accountId: number, o
     try {
       await pool.query(
         `INSERT INTO system_notifications_tbl
-           (Event_type, Username, FirstName, LastName, Email, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
-         VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?, NOW())`,
-        ['REWARD_ELIGIBLE', username, roleId, r.Item, Number(r.Quantity ?? null), Number(r.Points_cost ?? 0)]
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_ELIGIBLE', username, null, r.Item ?? null, Number(r.Quantity ?? null), Number(r.Points_cost ?? 0)]
       );
       inserted++;
     } catch (e) {
