@@ -1,6 +1,7 @@
 import db from '../config/db';
 import * as conversionService from './conversionService';
-import { createSnapshot } from './leaderboardService'; // <-- new import
+import * as rewardService from './rewardService'; // NEW: notify helpers
+import { createSnapshot } from './leaderboardService'; // <-- already imported previously
 
 export async function getAccountIdByQr(qr: string): Promise<number | null> {
     const [rows]: any = await db.execute(
@@ -71,12 +72,15 @@ export async function awardPointsForAccount(accountId: number, weight: number, q
         return { awarded: 0, totalPoints: await getCurrentPoints(accountId) };
     }
 
+    // capture previous points BEFORE applying update
+    const oldPoints = await getCurrentPoints(accountId);
+
     // create a snapshot BEFORE applying the new scan so it becomes the "previous" snapshot
     try {
-        console.log('[qrService] Creating snapshot...');
+        console.log('[qrService] Creating snapshot (pre-update)...');
         await createSnapshot();
     } catch (err) {
-        console.error('[qrService] createSnapshot failed', err);
+        console.error('[qrService] createSnapshot (pre) failed', err);
         // do not fail the scan flow if snapshot fails
     }
 
@@ -85,6 +89,21 @@ export async function awardPointsForAccount(accountId: number, weight: number, q
 
     console.log('[qrService] updating account points...');
     const totalPoints = await addPointsToAccount(accountId, awarded);
+
+    // Notify reward/points helpers (new): detect newly-eligible rewards
+    try {
+        await rewardService.notifyEligibleRewardsOnPointsIncrease(accountId, Number(oldPoints ?? 0), Number(totalPoints ?? 0));
+    } catch (err) {
+        console.warn('[qrService] notifyEligibleRewardsOnPointsIncrease failed', err);
+    }
+
+    // create snapshot AFTER update to compute leaderboard diffs/notifications
+    try {
+        console.log('[qrService] Creating snapshot (post-update)...');
+        await createSnapshot();
+    } catch (err) {
+        console.error('[qrService] createSnapshot (post) failed', err);
+    }
 
     return { awarded, totalPoints };
 }

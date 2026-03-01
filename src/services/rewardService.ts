@@ -361,3 +361,48 @@ export const notifyPointsEnough = async (accountId: number, rewardId: number) =>
   }
   return false;
 };
+
+export const notifyEligibleRewardsOnPointsIncrease = async (accountId: number, oldPoints: number, newPoints: number) => {
+  console.log('[rewardService] notifyEligibleRewardsOnPointsIncrease called', { accountId, oldPoints, newPoints });
+  if (Number(newPoints) <= Number(oldPoints)) {
+    console.log('[rewardService] no points increase, skipping');
+    return 0;
+  }
+
+  const [accRows]: any = await pool.query(`SELECT Username, Roles, Points FROM accounts_tbl WHERE Account_id = ? LIMIT 1`, [accountId]);
+  const acct = accRows?.[0] ?? null;
+  const username = acct?.Username ?? null;
+  const roleId = Number(acct?.Roles ?? 4);
+  console.log('[rewardService] account row', acct);
+
+  // DEBUG: list rewards with cost <= newPoints (temporarily remove > oldPoints to inspect candidates)
+  const [rows]: any = await pool.query(
+    `SELECT Reward_id, Item, Points_cost, Quantity
+     FROM rewards_tbl
+     WHERE IsArchived = 0 AND Quantity > 0 AND CAST(Points_cost AS DECIMAL(10,2)) <= ?
+     ORDER BY CAST(Points_cost AS DECIMAL(10,2)) ASC`,
+    [Number(newPoints)]
+  );
+
+  console.log('[rewardService] debug eligible rewards found count=', Array.isArray(rows) ? rows.length : 0, rows);
+
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+  let inserted = 0;
+  for (const r of rows) {
+    try {
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, FirstName, LastName, Email, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, NULL, NULL, NULL, ?, ?, ?, ?, NOW())`,
+        ['REWARD_ELIGIBLE', username, roleId, r.Item, Number(r.Quantity ?? null), Number(r.Points_cost ?? 0)]
+      );
+      inserted++;
+    } catch (e) {
+      console.warn('notifyEligibleRewardsOnPointsIncrease: failed to insert notification for reward', r.Reward_id, e);
+    }
+  }
+
+  console.log('[rewardService] inserted REWARD_ELIGIBLE notifications count=', inserted);
+  return inserted;
+};

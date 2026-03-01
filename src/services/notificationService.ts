@@ -316,6 +316,29 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
       }
 
+      // Leaderboard-specific system notifications
+      else if (eventType.startsWith("LEADERBOARD_")) {
+        const uname = nameLabel || row.actor_username || 'User';
+        const rankInfo = String(row.container_names ?? row.Container_name ?? '').trim();
+        if (eventType === 'LEADERBOARD_ENTERED') {
+          title = `Leaderboard: ${uname} entered (#${rankInfo})`;
+          message = `${uname} has entered the leaderboard at #${rankInfo}.`;
+        } else if (eventType === 'LEADERBOARD_EXITED') {
+          title = `Leaderboard: ${uname} left (#${rankInfo})`;
+          message = `${uname} has dropped out of the leaderboard (was #${rankInfo}).`;
+        } else { // LEADERBOARD_MOVED or others
+          // expect rankInfo like '5->3'
+          const parts = rankInfo.split('->').map((s) => s.trim());
+          if (parts.length === 2) {
+            title = `Leaderboard: ${uname} moved to #${parts[1]}`;
+            message = `${uname} moved from #${parts[0]} to #${parts[1]}.`;
+          } else {
+            title = `Leaderboard update: ${uname}`;
+            message = `${uname} has a leaderboard update.`;
+          }
+        }
+      }
+
       // Reward-specific system notifications
       else if (eventType.startsWith("REWARD_")) {
         const itemLabel = row.Reward_item || row.first_name || row.actor_username || "Reward";
