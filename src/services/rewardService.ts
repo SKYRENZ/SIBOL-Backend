@@ -70,6 +70,21 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
       eventType = "REWARD_UPDATED";
     }
 
+    // Skip creating UPDATED/RESTOCKED notification if the reward was just created
+    // (prevents the New Reward notification from being immediately followed by an Update)
+    try {
+      const createdRaw = existing.Created_at ?? existing.CreatedAt ?? existing.created_at ?? null;
+      if (createdRaw && (eventType === "REWARD_UPDATED" || eventType === "REWARD_RESTOCKED")) {
+        const createdAt = new Date(createdRaw);
+        if (!isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) < 10000) {
+          console.log('[rewardService] skipping REWARD_UPDATED/RESTOCKED notification because reward was just created');
+          return;
+        }
+      }
+    } catch (e) {
+      // fall through and continue if detection fails
+    }
+
     // Insert into explicit reward columns; leave unrelated fields NULL
     await pool.query(
       `INSERT INTO system_notifications_tbl

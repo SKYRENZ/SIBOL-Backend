@@ -340,7 +340,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
           // expect rankInfo like '5->3'
           const parts = rankInfo.split('->').map((s) => s.trim());
           if (parts.length === 2) {
-            title = `Leaderboard: ${uname} moved to #${parts[1]}`;
+            title = `Leaderboard: ${uname} moved up to #${parts[1]}`;
             message = `${uname} moved from #${parts[0]} to #${parts[1]}.`;
           } else {
             title = `Leaderboard update: ${uname}`;
@@ -356,17 +356,26 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         const costLabel = (row.Reward_points != null && row.Reward_points !== '') ? `${row.Reward_points}` : (row.area_name ? `${row.area_name}` : null);
 
         if (eventType === "REWARD_NEW") {
-          title = `New reward: ${itemLabel}`;
-          message = `A new reward (${itemLabel}) is available${costLabel ? ` for ${costLabel} points` : ""}${qtyLabel ? ` — ${qtyLabel} units` : ""}.`;
+          title = `New Reward: ${itemLabel}`;
+          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
+          message = [
+            `${itemLabel} reward has been added.`,
+            priceLine,
+            stockLine
+          ].filter(Boolean).join('\n');
         } else if (eventType === "REWARD_RESTOCKED") {
-          title = `Reward restocked: ${itemLabel}`;
-          message = `${itemLabel} has been restocked${qtyLabel ? ` to ${qtyLabel} units` : ""}${costLabel ? ` (cost: ${costLabel} pts)` : ""}.`;
+          title = `Reward Restocked: ${itemLabel}`;
+          message = `${itemLabel} has been restocked.`;
         } else if (eventType === "REWARD_UPDATED") {
-          title = `Reward updated: ${itemLabel}`;
-          message = `${itemLabel} details were updated${costLabel ? ` (cost: ${costLabel} pts)` : ""}${qtyLabel ? ` — now ${qtyLabel} units` : ""}.`;
+          title = `Reward Updated: ${itemLabel}`;
+          // format as multiple lines per spec
+          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
+          message = [ `${itemLabel} reward were updated`, priceLine, stockLine ].filter(Boolean).join('\n');
         } else if (eventType === "REWARD_UNCLAIMED") {
           title = `Reward Redeemed: ${itemLabel}`;
-          message = `${itemLabel} was redeemed. Please claim it at your Barangay.` + (qtyLabel ? ` (${qtyLabel} units)` : "");
+          message = `${itemLabel} was redeemed. Please claim it at your Barangay.`;
         } else if (eventType === "REWARD_CLAIMED") {
           title = `Reward Claimed: ${itemLabel}`;
           message = `Congratulations! ${itemLabel} has been claimed successfully.`;
