@@ -11,11 +11,32 @@ export const createReward = async (reward: Reward): Promise<number> => {
     reward.Points_cost,
     reward.Quantity,
   ]);
-  return (result as any).insertId;
+  const insertId = (result as any).insertId;
+
+  // NEW: create a system notification targeting household users
+  try {
+    const eventType = "REWARD_NEW";
+    // insert only the columns we need and match params exactly
+    await pool.query(
+      `INSERT INTO system_notifications_tbl
+         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [eventType, 4, reward.Item ?? null, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
+    );
+  } catch (e) {
+    console.warn("createReward: failed to insert system notification", e);
+  }
+
+  return insertId;
 };
 
 /* UPDATE (partial) */
 export const updateReward = async (rewardId: number, fields: Partial<Reward>): Promise<void> => {
+  // fetch existing to detect changes (quantity/restock/price/item changes)
+  const [existingRows]: any = await pool.query(`SELECT * FROM rewards_tbl WHERE Reward_id = ? LIMIT 1`, [rewardId]);
+  const existing = (existingRows as any[])[0] || null;
+  if (!existing) throw new Error("Reward not found");
+
   const sets: string[] = [];
   const params: any[] = [];
   if (fields.Item !== undefined) { sets.push("Item = ?"); params.push(fields.Item); }
@@ -33,6 +54,47 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
   const sql = `UPDATE rewards_tbl SET ${sets.join(", ")} WHERE Reward_id = ?`;
   params.push(rewardId);
   await pool.query(sql, params);
+
+  // NEW: determine event and create system notification for households
+  try {
+    const oldQty = Number(existing.Quantity ?? 0);
+    const newQty = Number(fields.Quantity !== undefined ? fields.Quantity : existing.Quantity ?? 0);
+    const itemName = (fields.Item ?? existing.Item) as string;
+    const pointsCost = (fields.Points_cost !== undefined ? fields.Points_cost : existing.Points_cost) as any;
+
+    let eventType = "";
+    if (fields.Quantity !== undefined && newQty > oldQty) {
+      eventType = "REWARD_RESTOCKED";
+    } else {
+      // any other change considered update
+      eventType = "REWARD_UPDATED";
+    }
+
+    // Skip creating UPDATED/RESTOCKED notification if the reward was just created
+    // (prevents the New Reward notification from being immediately followed by an Update)
+    try {
+      const createdRaw = existing.Created_at ?? existing.CreatedAt ?? existing.created_at ?? null;
+      if (createdRaw && (eventType === "REWARD_UPDATED" || eventType === "REWARD_RESTOCKED")) {
+        const createdAt = new Date(createdRaw);
+        if (!isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) < 10000) {
+          console.log('[rewardService] skipping REWARD_UPDATED/RESTOCKED notification because reward was just created');
+          return;
+        }
+      }
+    } catch (e) {
+      // fall through and continue if detection fails
+    }
+
+    // Insert into explicit reward columns; leave unrelated fields NULL
+    await pool.query(
+      `INSERT INTO system_notifications_tbl
+         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [eventType, 4, itemName ?? null, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
+    );
+  } catch (e) {
+    console.warn("updateReward: failed to insert system notification", e);
+  }
 };
 
 /* Archive / Restore */
@@ -76,11 +138,17 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
   try {
     await conn.beginTransaction();
 
-    const [accRows]: any = await conn.query(`SELECT Points FROM accounts_tbl WHERE Account_id = ? FOR UPDATE`, [accountId]);
+    // Grab points + metadata for notification target
+    const [accRows]: any = await conn.query(
+      `SELECT Points, Username, Roles FROM accounts_tbl WHERE Account_id = ? FOR UPDATE`,
+      [accountId]
+    );
     if (!accRows || accRows.length === 0) throw new Error("Account not found");
     const accountPoints = accRows[0].Points as number;
+    const accountUsername = accRows[0].Username ?? null;
+    const accountRole = accRows[0].Roles ?? null;
 
-    const [rewardRows]: any = await conn.query(`SELECT Points_cost, Quantity, IsArchived FROM rewards_tbl WHERE Reward_id = ? FOR UPDATE`, [rewardId]);
+    const [rewardRows]: any = await conn.query(`SELECT Points_cost, Quantity, IsArchived, Item FROM rewards_tbl WHERE Reward_id = ? FOR UPDATE`, [rewardId]);
     if (!rewardRows || rewardRows.length === 0) throw new Error("Reward not found");
     const reward = rewardRows[0];
     if (reward.IsArchived === 1) throw new Error("Reward is archived");
@@ -100,6 +168,18 @@ export const redeemReward = async (accountId: number, rewardId: number, quantity
     await conn.query(`UPDATE rewards_tbl SET Quantity = Quantity - ? WHERE Reward_id = ?`, [quantity, rewardId]);
 
     await conn.commit();
+
+    // create a user-targeted system notification: "unclaimed" (household sees it)
+    try {
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_UNCLAIMED', accountUsername, null, reward.Item ?? null, Number(quantity), Number(totalCost)]
+      );
+    } catch (e) {
+      console.warn('redeemReward: failed to insert REWARD_UNCLAIMED notification', e);
+    }
 
     return {
       transactionId: (insertResult as any).insertId,
@@ -125,9 +205,27 @@ export const markTransactionRedeemed = async (transactionId: number) => {
   `;
   await pool.query(sql, [transactionId]);
   const [rows]: any = await pool.query(
-    "SELECT * FROM reward_transactions_tbl WHERE Reward_transaction_id = ?",
+    "SELECT rt.*, r.Item, r.Points_cost, a.Username AS account_username, a.Roles AS account_roles FROM reward_transactions_tbl rt JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id LEFT JOIN accounts_tbl a ON rt.Account_id = a.Account_id WHERE Reward_transaction_id = ?",
     [transactionId]
   );
+  const tx = Array.isArray(rows) && rows.length ? rows[0] : null;
+
+  // notify the user (and their role) that their redemption is claimed
+  try {
+    if (tx) {
+      const acctUser = tx.account_username ?? null;
+      const item = tx.Item ?? null;
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_CLAIMED', acctUser, null, item, Number(tx.Quantity ?? 1), Number(tx.Total_points ?? 0)]
+      );
+    }
+  } catch (e) {
+    console.warn('markTransactionRedeemed: failed to insert REWARD_CLAIMED notification', e);
+  }
+
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 };
 
@@ -244,4 +342,80 @@ export const hasAttachments = async (transactionId: number): Promise<boolean> =>
     [transactionId]
   );
   return Array.isArray(rows) && rows.length > 0;
+};
+
+/* NEW: helper to notify a single user when their points reach enough for a reward.
+   Call this from your "add points" / QR-scan handler after you credit points to the account. */
+export const notifyPointsEnough = async (accountId: number, rewardId: number) => {
+  // fetch current points and reward cost
+  const [[accRows]]: any = await pool.query(`SELECT Points, Username, Roles FROM accounts_tbl WHERE Account_id = ? LIMIT 1`, [accountId]);
+  const acc = accRows ?? null;
+  if (!acc) return false;
+
+  const [rewardRows]: any = await pool.query(`SELECT Reward_id, Item, Points_cost FROM rewards_tbl WHERE Reward_id = ? LIMIT 1`, [rewardId]);
+  const reward = (rewardRows as any[])[0] ?? null;
+  if (!reward) return false;
+
+  const points = Number(acc.Points ?? 0);
+  const cost = Number(reward.Points_cost ?? 0);
+  if (points >= cost) {
+    try {
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_ELIGIBLE', acc.Username ?? null, null, reward.Item ?? null, null, cost]
+      );
+      return true;
+    } catch (e) {
+      console.warn('notifyPointsEnough: failed to insert REWARD_ELIGIBLE notification', e);
+      return false;
+    }
+  }
+  return false;
+};
+
+export const notifyEligibleRewardsOnPointsIncrease = async (accountId: number, oldPoints: number, newPoints: number) => {
+  console.log('[rewardService] notifyEligibleRewardsOnPointsIncrease called', { accountId, oldPoints, newPoints });
+  if (Number(newPoints) <= Number(oldPoints)) {
+    console.log('[rewardService] no points increase, skipping');
+    return 0;
+  }
+
+  const [accRows]: any = await pool.query(`SELECT Username, Roles, Points FROM accounts_tbl WHERE Account_id = ? LIMIT 1`, [accountId]);
+  const acct = accRows?.[0] ?? null;
+  const username = acct?.Username ?? null;
+  const roleId = Number(acct?.Roles ?? 4);
+  console.log('[rewardService] account row', acct);
+
+  // DEBUG: list rewards with cost <= newPoints (temporarily remove > oldPoints to inspect candidates)
+  const [rows]: any = await pool.query(
+    `SELECT Reward_id, Item, Points_cost, Quantity
+     FROM rewards_tbl
+     WHERE IsArchived = 0 AND Quantity > 0 AND CAST(Points_cost AS DECIMAL(10,2)) <= ?
+     ORDER BY CAST(Points_cost AS DECIMAL(10,2)) ASC`,
+    [Number(newPoints)]
+  );
+
+  console.log('[rewardService] debug eligible rewards found count=', Array.isArray(rows) ? rows.length : 0, rows);
+
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+
+  let inserted = 0;
+  for (const r of rows) {
+    try {
+      await pool.query(
+        `INSERT INTO system_notifications_tbl
+           (Event_type, Username, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        ['REWARD_ELIGIBLE', username, null, r.Item ?? null, Number(r.Quantity ?? null), Number(r.Points_cost ?? 0)]
+      );
+      inserted++;
+    } catch (e) {
+      console.warn('notifyEligibleRewardsOnPointsIncrease: failed to insert notification for reward', r.Reward_id, e);
+    }
+  }
+
+  console.log('[rewardService] inserted REWARD_ELIGIBLE notifications count=', inserted);
+  return inserted;
 };

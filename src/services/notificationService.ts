@@ -61,6 +61,11 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     return [] as NotificationRow[];
   }
 
+  // Fetch account role + username so we only surface system notifications intended for this role OR specifically targeted to this username
+  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+  const accountUsername: string | null = accRows?.[0]?.Username ?? null;
+
   const maintenanceSelect = `
     SELECT
       e.Event_Id AS id,
@@ -81,6 +86,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM maintenance_events_tbl e
     JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
@@ -114,6 +122,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM machine_waste_input_tbl wi
     JOIN machine_tbl m ON wi.Machine_id = m.Machine_id
@@ -138,13 +149,16 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       CONCAT(p.FirstName, ' ', p.LastName) AS actor_name,
       acc.Username AS actor_username,
       NULL AS machine_name,
-      a.Area_Name AS area_name,
+      a.Area_name AS area_name,
       c.container_names AS container_names,
       wc.weight AS weight,
       NULL AS first_name,
       NULL AS last_name,
       NULL AS email,
       NULL AS role_name,
+      NULL AS Reward_item,
+      NULL AS Reward_quantity,
+      NULL AS Reward_points,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM waste_collection_tbl wc
     LEFT JOIN area_tbl a ON wc.area_id = a.Area_id
@@ -182,6 +196,9 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       sn.FirstName AS first_name,
       sn.LastName AS last_name,
       sn.Email AS email,
+      sn.Reward_item AS Reward_item,
+      sn.Reward_quantity AS Reward_quantity,
+      sn.Reward_points AS Reward_points,
       r.Roles AS role_name,
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM system_notifications_tbl sn
@@ -190,7 +207,15 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = sn.Notification_id
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
-    WHERE sn.Event_type <> 'REGISTERED'
+    WHERE (
+      -- targeted to this specific username
+      (sn.Username IS NOT NULL AND sn.Username = ?)
+      -- OR global/role-targeted: username is NULL and role is either null (all) or matches the account role
+      OR (
+        sn.Username IS NULL
+        AND (${accountRoleId !== null ? `(sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `sn.Role_id IS NULL`})
+      )
+    )
   `;
 
   let sql = "";
@@ -207,7 +232,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     params.push(accountId);
   } else if (type === "system") {
     sql = systemSelect;
-    params.push(accountId);
+    // systemSelect expects two params: accountId (for notification_reads_tbl) and accountUsername
+    params.push(accountId, accountUsername);
   } else {
     sql = `
       SELECT * FROM (
@@ -220,7 +246,10 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         ${systemSelect}
       ) AS notif
     `;
-    params.push(accountId, accountId, accountId, accountId);
+    // push params for each subselect in order:
+    // maintenanceSelect(accountId), wasteInputSelect(accountId), collectionSelect(accountId),
+    // systemSelect(accountId, accountUsername)
+    params.push(accountId, accountId, accountId, accountId, accountUsername);
   }
 
   if (unreadOnly) {
@@ -297,6 +326,68 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
       }
 
+      // Leaderboard-specific system notifications
+      else if (eventType.startsWith("LEADERBOARD_")) {
+        const uname = nameLabel || row.actor_username || 'User';
+        const rankInfo = String(row.container_names ?? row.Container_name ?? '').trim();
+        if (eventType === 'LEADERBOARD_ENTERED') {
+          title = `Leaderboard: ${uname} entered (#${rankInfo})`;
+          message = `${uname} has entered the leaderboard at #${rankInfo}.`;
+        } else if (eventType === 'LEADERBOARD_EXITED') {
+          title = `Leaderboard: ${uname} left (#${rankInfo})`;
+          message = `${uname} has dropped out of the leaderboard (was #${rankInfo}).`;
+        } else { // LEADERBOARD_MOVED or others
+          // expect rankInfo like '5->3'
+          const parts = rankInfo.split('->').map((s) => s.trim());
+          if (parts.length === 2) {
+            title = `Leaderboard: ${uname} moved up to #${parts[1]}`;
+            message = `${uname} moved from #${parts[0]} to #${parts[1]}.`;
+          } else {
+            title = `Leaderboard update: ${uname}`;
+            message = `${uname} has a leaderboard update.`;
+          }
+        }
+      }
+
+      // Reward-specific system notifications
+      else if (eventType.startsWith("REWARD_")) {
+        const itemLabel = row.Reward_item || row.first_name || row.actor_username || "Reward";
+        const qtyLabel = (row.Reward_quantity != null && row.Reward_quantity !== '') ? `${row.Reward_quantity}` : (row.container_names ? `${row.container_names}` : null);
+        const costLabel = (row.Reward_points != null && row.Reward_points !== '') ? `${row.Reward_points}` : (row.area_name ? `${row.area_name}` : null);
+
+        if (eventType === "REWARD_NEW") {
+          title = `New Reward: ${itemLabel}`;
+          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
+          message = [
+            `${itemLabel} reward has been added.`,
+            priceLine,
+            stockLine
+          ].filter(Boolean).join('\n');
+        } else if (eventType === "REWARD_RESTOCKED") {
+          title = `Reward Restocked: ${itemLabel}`;
+          message = `${itemLabel} has been restocked.`;
+        } else if (eventType === "REWARD_UPDATED") {
+          title = `Reward Updated: ${itemLabel}`;
+          // format as multiple lines per spec
+          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
+          message = [ `${itemLabel} reward were updated`, priceLine, stockLine ].filter(Boolean).join('\n');
+        } else if (eventType === "REWARD_UNCLAIMED") {
+          title = `Reward Redeemed: ${itemLabel}`;
+          message = `${itemLabel} was redeemed. Please claim it at your Barangay.`;
+        } else if (eventType === "REWARD_CLAIMED") {
+          title = `Reward Claimed: ${itemLabel}`;
+          message = `Congratulations! ${itemLabel} has been claimed successfully.`;
+        } else if (eventType === "REWARD_ELIGIBLE") {
+          title = `You can claim: ${itemLabel}`;
+          message = `You have enough points to claim ${itemLabel}${costLabel ? ` for ${costLabel} points` : ""}.`;
+        } else {
+          title = `Reward notice: ${itemLabel}`;
+          message = `${itemLabel} has an update.`;
+        }
+      }
+
       return {
         id: Number(row.id),
         type: "system" as const,
@@ -339,6 +430,11 @@ export async function markNotificationRead(accountId: number, type: Notification
 }
 
 export async function markAllNotificationsRead(accountId: number, type: NotificationType) {
+  // Fetch account role + username so we only mark system notifications intended for this role OR specifically targeted to this username
+  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
+  const accountUsername: string | null = accRows?.[0]?.Username ?? null;
+
   if (type === "maintenance") {
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
@@ -370,6 +466,13 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
   }
 
   if (type === "system") {
+    // Only mark system notifications that are either:
+    // - targeted specifically to this username, OR
+    // - global/role-targeted (sn.Username IS NULL and Role_id matches or is NULL)
+    const roleCondition = accountRoleId !== null
+      ? `(sn.Username = ? OR (sn.Username IS NULL AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})))`
+      : `(sn.Username = ? OR (sn.Username IS NULL AND sn.Role_id IS NULL))`;
+
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'system', sn.Notification_id, NOW()
@@ -379,11 +482,13 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Notification_type = 'system'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
+      AND ${roleCondition}
     `;
-    await pool.query(sql, [accountId, accountId]);
+    await pool.query(sql, [accountId, accountId, accountUsername]);
     return { success: true };
   }
 
+  // fallback for collection
   const sql = `
     INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
     SELECT ?, 'collection', wc.collection_id, NOW()
