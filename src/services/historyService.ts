@@ -8,6 +8,8 @@ export type HistoryItem = {
   kgDelta: number; // + added for QR, 0 for rewards
   title: string; // reward item name or "QR Scan"
   code: string | null; // redemption code for rewards
+  status?: string | null; // NEW: Claimed / Unclaimed
+  redeemedAt?: string | null; // NEW: Redeemed timestamp if claimed
 };
 
 export async function listHistoryForAccount(opts: {
@@ -28,7 +30,9 @@ export async function listHistoryForAccount(opts: {
         CAST(qs.Points_Awarded AS SIGNED) AS pointsDelta,
         CAST(qs.Weight AS DECIMAL(12,3)) AS kgDelta,
         'QR Scan' AS title,
-        NULL AS code
+        NULL AS code,
+        NULL AS status,
+        NULL AS redeemedAt
       FROM household_wasteinput_tbl qs
       WHERE qs.Account_id = ?
 
@@ -41,7 +45,9 @@ export async function listHistoryForAccount(opts: {
         -CAST(rt.Total_points AS SIGNED) AS pointsDelta,
         CAST(0 AS DECIMAL(12,3)) AS kgDelta,
         COALESCE(r.Item, 'Reward') AS title,
-        rt.Redemption_code AS code
+        rt.Redemption_code AS code,
+        rt.Status AS status,
+        rt.Redeemed_at AS redeemedAt
       FROM reward_transactions_tbl rt
       LEFT JOIN rewards_tbl r ON r.Reward_id = rt.Reward_id
       WHERE rt.Account_id = ?
@@ -62,5 +68,7 @@ export async function listHistoryForAccount(opts: {
     kgDelta: Number(r.kgDelta ?? 0),
     title: String(r.title ?? ''),
     code: r.code == null ? null : String(r.code),
+    status: r.status == null ? null : String(r.status),
+    redeemedAt: r.redeemedAt == null ? null : String(r.redeemedAt),
   }));
 }
