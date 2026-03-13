@@ -677,11 +677,23 @@ export async function loginUser(identifier: string, password: string, clientType
       throw err;
     }
 
+    // Fetch profile + barangay name for the login response
+    const [profileRows]: any = await pool.execute(
+      `SELECT p.Barangay_id, b.Barangay_Name
+       FROM profile_tbl p
+       LEFT JOIN barangay_tbl b ON b.Barangay_id = p.Barangay_id
+       WHERE p.Account_id = ? LIMIT 1`,
+      [user.Account_id]
+    );
+    const profile = profileRows?.[0] ?? {};
+
     return {
       Account_id: user.Account_id,
       Username: user.Username,
       Roles: user.Roles,
       IsFirstLogin: user.IsFirstLogin,
+      Barangay_id: profile.Barangay_id ?? null,
+      Barangay_Name: profile.Barangay_Name ?? null,
     };
   } catch (error) {
     throw error;

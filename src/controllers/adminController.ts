@@ -7,7 +7,13 @@ import bcrypt from 'bcrypt';  // Add this import for password hashing
 // ✅ NEW: Get all pending accounts (email verified only)
 export async function getPendingAccounts(req: Request, res: Response) {
   try {
-    const result = await adminService.getPendingAccounts();
+    const user = (req as any).user;
+    const isSuperAdmin = Number(user?.Roles) === 5;
+    const barangayId = isSuperAdmin 
+      ? (req.query.barangayId ? Number(req.query.barangayId) : undefined) 
+      : user?.Barangay_id;
+
+    const result = await adminService.getPendingAccounts(barangayId);
     return res.status(200).json(result);
   } catch (error: any) {
     return res.status(400).json({ 
@@ -209,12 +215,19 @@ export async function toggleActive(req: Request, res: Response) {
 
 export async function listUsers(req: Request, res: Response) {
   try {
+    const user = (req as any).user;
+    const isSuperAdmin = Number(user?.Roles) === 5;
+
     // optional filters from querystring
     const roleFilter = req.query.role ? Number(req.query.role) : undefined;
     const isActiveFilter = typeof req.query.isActive !== 'undefined' ? (String(req.query.isActive) === '1' || String(req.query.isActive) === 'true') : undefined;
+    // Non-superadmin (admin role) must always be scoped to their barangay
+    const barangayFilter = isSuperAdmin 
+      ? (req.query.barangayId ? Number(req.query.barangayId) : undefined) 
+      : (user?.Barangay_id ? Number(user.Barangay_id) : undefined);
 
     // service returns { success, users, count } — forward filters to keep results up-to-date
-    const rawAccounts: any = await adminService.getAllUsers(roleFilter, isActiveFilter);
+    const rawAccounts: any = await adminService.getAllUsers(roleFilter, isActiveFilter, barangayFilter);
     const accounts: any[] = rawAccounts?.users ?? rawAccounts?.rows ?? rawAccounts ?? [];
 
     // always fetch latest modules for name resolution

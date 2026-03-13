@@ -12,7 +12,7 @@ function isAuditSchemaError(err: unknown): boolean {
 async function ensureConversionTables(executor: DbExecutor) {
   await executor.execute(
     `CREATE TABLE IF NOT EXISTS conversion_rate_tbl (
-      id INT PRIMARY KEY,
+      Barangay_id INT PRIMARY KEY,
       points_per_kg DECIMAL(10,2) NOT NULL
     )`
   );
@@ -20,6 +20,7 @@ async function ensureConversionTables(executor: DbExecutor) {
   await executor.execute(
     `CREATE TABLE IF NOT EXISTS conversion_audit_tbl (
       id INT AUTO_INCREMENT PRIMARY KEY,
+      Barangay_id INT NULL,
       old_points_per_kg DECIMAL(10,2) NULL,
       new_points_per_kg DECIMAL(10,2) NOT NULL,
       remark VARCHAR(255) NOT NULL,
@@ -29,18 +30,23 @@ async function ensureConversionTables(executor: DbExecutor) {
   );
 }
 
-export async function getPointsPerKg(): Promise<number> {
+export async function getPointsPerKg(barangayId?: number): Promise<number> {
   await ensureConversionTables(db);
+  if (!barangayId) return 5;
   const [rows]: any = await db.execute(
-    'SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1'
+    'SELECT points_per_kg FROM conversion_rate_tbl WHERE Barangay_id = ? LIMIT 1',
+    [barangayId]
   );
   if (!Array.isArray(rows) || rows.length === 0) return 5;
   return Number(rows[0].points_per_kg) || 5;
 }
 
-export async function setPointsPerKg(pointsPerKg: number, remark: string, changedBy?: number): Promise<number> {
+export async function setPointsPerKg(barangayId: number, pointsPerKg: number, remark: string, changedBy?: number): Promise<number> {
   if (!Number.isFinite(pointsPerKg) || pointsPerKg <= 0) {
     throw new Error('Invalid pointsPerKg');
+  }
+  if (!barangayId) {
+    throw new Error('Barangay_id is required');
   }
   if (typeof remark !== 'string' || remark.trim().length === 0) {
     throw new Error('Remark is required');
@@ -52,18 +58,18 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
   try {
     await conn.beginTransaction();
 
-    const [rows]: any = await conn.execute('SELECT points_per_kg FROM conversion_rate_tbl WHERE id = 1 LIMIT 1');
+    const [rows]: any = await conn.execute('SELECT points_per_kg FROM conversion_rate_tbl WHERE Barangay_id = ? LIMIT 1', [barangayId]);
     const oldValue = (Array.isArray(rows) && rows[0]) ? Number(rows[0].points_per_kg) : null;
 
     await conn.execute(
-      'INSERT INTO conversion_rate_tbl (id, points_per_kg) VALUES (1, ?) ON DUPLICATE KEY UPDATE points_per_kg = ?',
-      [pointsPerKg, pointsPerKg]
+      'INSERT INTO conversion_rate_tbl (Barangay_id, points_per_kg) VALUES (?, ?) ON DUPLICATE KEY UPDATE points_per_kg = ?',
+      [barangayId, pointsPerKg, pointsPerKg]
     );
 
     try {
       await conn.execute(
-        'INSERT INTO conversion_audit_tbl (old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?)',
-        [oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
+        'INSERT INTO conversion_audit_tbl (Barangay_id, old_points_per_kg, new_points_per_kg, remark, changed_by) VALUES (?, ?, ?, ?, ?)',
+        [barangayId, oldValue, pointsPerKg, remark.trim(), changedBy ?? null]
       );
     } catch (err) {
       if (!isAuditSchemaError(err)) {
@@ -80,7 +86,7 @@ export async function setPointsPerKg(pointsPerKg: number, remark: string, change
     conn.release();
   }
 
-  return getPointsPerKg();
+  return getPointsPerKg(barangayId);
 }
 
 // ✅ UPDATED: Return decimal with 2 decimal places (no rounding down)
@@ -93,10 +99,18 @@ export function calculatePointsFromWeight(weight: number, pointsPerKg: number): 
   return Math.round(points * 100) / 100;
 }
 
-export async function getAuditEntries(limit: number) {
+export async function getAuditEntries(limit: number, barangayId?: number) {
   try {
     await ensureConversionTables(db);
     const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 100;
+    
+    let where = 'WHERE 1=1';
+    const params: any[] = [];
+    if (barangayId) {
+      where += ' AND ca.Barangay_id = ?';
+      params.push(barangayId);
+    }
+
     const [rows]: any = await db.execute(
       `SELECT
          ca.id,
@@ -108,8 +122,10 @@ export async function getAuditEntries(limit: number) {
          ca.created_at AS createdAt
        FROM conversion_audit_tbl ca
        LEFT JOIN accounts_tbl ac ON ac.Account_id = ca.changed_by
+       ${where}
        ORDER BY ca.created_at DESC
-       LIMIT ${safeLimit}`
+       LIMIT ${safeLimit}`,
+      params
     );
     return Array.isArray(rows) ? rows : [];
   } catch (error) {
