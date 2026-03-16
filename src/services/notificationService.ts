@@ -61,10 +61,33 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     return [] as NotificationRow[];
   }
 
-  // Fetch account role + username so we only surface system notifications intended for this role OR specifically targeted to this username
-  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const [accRows]: any = await pool.query(
+    "SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1",
+    [accountId]
+  );
   const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
   const accountUsername: string | null = accRows?.[0]?.Username ?? null;
+
+  const isOperator = Number(accountRoleId) === 3;
+  const effectiveType: NotificationType | "all" = isOperator ? "maintenance" : type;
+
+  const operatorMaintenanceWhere = isOperator
+    ? `
+    WHERE
+      e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
+      AND (
+        mt.Created_by = ${Number(accountId)}
+        OR mt.Assigned_to = ${Number(accountId)}
+        OR (
+          e.Event_type = 'REASSIGNED'
+          AND (
+            (JSON_VALID(e.Notes) AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.Notes, '$.to_account_id')) AS UNSIGNED) = ${Number(accountId)})
+            OR (NOT JSON_VALID(e.Notes) AND e.Notes REGEXP 'operator[[:space:]]+${Number(accountId)}([^0-9]|$)')
+          )
+        )
+      )
+  `
+    : "";
 
   const maintenanceSelect = `
     SELECT
@@ -100,6 +123,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       ON nr.Notification_id = e.Event_Id
       AND nr.Notification_type = 'maintenance'
       AND nr.Account_id = ?
+    ${operatorMaintenanceWhere}
   `;
 
   const wasteInputSelect = `
@@ -208,9 +232,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       AND nr.Notification_type = 'system'
       AND nr.Account_id = ?
     WHERE (
-      -- targeted to this specific username
       (sn.Username IS NOT NULL AND sn.Username = ?)
-      -- OR global/role-targeted: username is NULL and role is either null (all) or matches the account role
       OR (
         sn.Username IS NULL
         AND (${accountRoleId !== null ? `(sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `sn.Role_id IS NULL`})
@@ -221,18 +243,17 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   let sql = "";
   const params: any[] = [];
 
-  if (type === "maintenance") {
+  if (effectiveType === "maintenance") {
     sql = maintenanceSelect;
     params.push(accountId);
-  } else if (type === "waste-input") {
+  } else if (effectiveType === "waste-input") {
     sql = wasteInputSelect;
     params.push(accountId);
-  } else if (type === "collection") {
+  } else if (effectiveType === "collection") {
     sql = collectionSelect;
     params.push(accountId);
-  } else if (type === "system") {
+  } else if (effectiveType === "system") {
     sql = systemSelect;
-    // systemSelect expects two params: accountId (for notification_reads_tbl) and accountUsername
     params.push(accountId, accountUsername);
   } else {
     sql = `
@@ -246,14 +267,16 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         ${systemSelect}
       ) AS notif
     `;
-    // push params for each subselect in order:
-    // maintenanceSelect(accountId), wasteInputSelect(accountId), collectionSelect(accountId),
-    // systemSelect(accountId, accountUsername)
     params.push(accountId, accountId, accountId, accountId, accountUsername);
   }
 
   if (unreadOnly) {
-    sql += " WHERE read_flag = 0";
+    sql = `
+      SELECT * FROM (
+        ${sql}
+      ) AS notif_unread
+      WHERE notif_unread.read_flag = 0
+    `;
   }
 
   sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
@@ -436,6 +459,36 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
   const accountUsername: string | null = accRows?.[0]?.Username ?? null;
 
   if (type === "maintenance") {
+    const isOperator = Number(accountRoleId) === 3;
+
+    if (isOperator) {
+      const sql = `
+        INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
+        SELECT ?, 'maintenance', e.Event_Id, NOW()
+        FROM maintenance_events_tbl e
+        JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
+        LEFT JOIN notification_reads_tbl nr
+          ON nr.Notification_id = e.Event_Id
+          AND nr.Notification_type = 'maintenance'
+          AND nr.Account_id = ?
+        WHERE nr.Notification_id IS NULL
+          AND e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
+          AND (
+            mt.Created_by = ${Number(accountId)}
+            OR mt.Assigned_to = ${Number(accountId)}
+            OR (
+              e.Event_type = 'REASSIGNED'
+              AND (
+                (JSON_VALID(e.Notes) AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.Notes, '$.to_account_id')) AS UNSIGNED) = ${Number(accountId)})
+                OR (NOT JSON_VALID(e.Notes) AND e.Notes REGEXP 'operator[[:space:]]+${Number(accountId)}([^0-9]|$)')
+              )
+            )
+          )
+      `;
+      await pool.query(sql, [accountId, accountId]);
+      return { success: true };
+    }
+
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'maintenance', e.Event_Id, NOW()
