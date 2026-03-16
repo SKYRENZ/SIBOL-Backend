@@ -97,7 +97,8 @@ export async function cancelTicket(req: Request, res: Response) {
 export async function getTicket(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
-    const ticket = await service.getTicketById(requestId);
+    // ✅ NEW: Pass user role and barangay for authorization check
+    const ticket = await service.getTicketById(requestId, req.user?.Roles, req.user?.Barangay_id);
     return res.json(ticket);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
@@ -106,7 +107,7 @@ export async function getTicket(req: Request, res: Response) {
 
 export async function listTickets(req: Request, res: Response) {
   try {
-    const filters: { status?: string; assigned_to?: number; created_by?: number } = {};
+    const filters: { status?: string; assigned_to?: number; created_by?: number; created_by_barangay_id?: number } = {};
 
     if (req.query.status) {
       filters.status = req.query.status as string;
@@ -122,6 +123,11 @@ export async function listTickets(req: Request, res: Response) {
       const n = Number(req.query.created_by);
       if (Number.isNaN(n)) return res.status(400).json({ message: "created_by must be a number" });
       filters.created_by = n;
+    }
+
+    // ✅ NEW: Filter by barangay for staff (role=2) and operators (role=3)
+    if ((req.user?.Roles === 2 || req.user?.Roles === 3) && req.user?.Barangay_id) {
+      filters.created_by_barangay_id = req.user.Barangay_id;
     }
 
     const rows = await service.listTickets(filters);

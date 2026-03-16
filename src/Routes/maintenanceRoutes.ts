@@ -66,7 +66,7 @@ router.post("/:id/remarks", ctrl.addRemark);
  * GET /api/maintenance/:id/remarks
  * - Get all remarks for a maintenance ticket
  */
-router.get("/:id/remarks", ctrl.getRemarks);
+router.get("/:id/remarks", authenticate, ctrl.getRemarks);
 
 /**
  * PUT /api/maintenance/:id/cancel
@@ -91,13 +91,13 @@ router.get("/deleted", authenticate, ctrl.listDeletedTickets);
 /**
  * GET /api/maintenance/:id
  */
-router.get("/:id", ctrl.getTicket);
+router.get("/:id", authenticate, ctrl.getTicket);
 
 /**
  * GET /api/maintenance
  * optional query params: status, assigned_to, created_by
  */
-router.get("/", ctrl.listTickets);
+router.get("/", authenticate, ctrl.listTickets);
 
 /**
  * POST /api/maintenance/:id/attachments
@@ -108,7 +108,7 @@ router.post("/:id/attachments", ctrl.uploadAttachment);
 /**
  * GET /api/maintenance/:id/attachments
  */
-router.get("/:id/attachments", ctrl.getAttachments);
+router.get("/:id/attachments", authenticate, ctrl.getAttachments);
 
 /**
  * DELETE /api/maintenance/:id
@@ -121,12 +121,12 @@ router.delete("/:id", authenticate, ctrl.deleteTicket);
  * GET /api/maintenance/:id/events
  * - Get all events/history for a ticket
  */
-router.get("/:id/events", ctrl.getTicketEvents);
+router.get("/:id/events", authenticate, ctrl.getTicketEvents);
 
 /**
  * GET /api/maintenance/:id/events/:eventId
  * - Get detailed information for a specific event (including remarks and attachments)
  */
-router.get("/:id/events/:eventId", ctrl.getEventDetails);
+router.get("/:id/events/:eventId", authenticate, ctrl.getEventDetails);
 
 export default router;

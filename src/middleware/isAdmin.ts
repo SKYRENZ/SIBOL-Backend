@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 
 const ADMIN_ROLE = 1; // set to the role id that represents Admin in your DB
+const SUPERADMIN_ROLE = 5; // SuperAdmin can also access admin endpoints
 
 export function isAdmin(req: Request, res: Response, next: NextFunction) {
   // @ts-ignore -> cast to any to avoid TS errors when req.user shape varies
@@ -27,7 +28,7 @@ export function isAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ message: 'Insufficient privileges' });
   }
 
-  if (roleNum !== ADMIN_ROLE) {
+  if (roleNum !== ADMIN_ROLE && roleNum !== SUPERADMIN_ROLE) {
     return res.status(403).json({ message: 'Admin role required' });
   }
 

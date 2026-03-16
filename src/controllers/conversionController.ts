@@ -3,7 +3,14 @@ import * as conversionService from '../services/conversionService';
 
 export async function getConversion(req: Request, res: Response) {
   try {
-    const pointsPerKg = await conversionService.getPointsPerKg();
+    const user = (req as any).user;
+    const barangayId = Number(req.query.barangayId ?? user?.Barangay_id);
+    
+    if (!barangayId) {
+      return res.status(400).json({ message: 'Barangay_id is required' });
+    }
+
+    const pointsPerKg = await conversionService.getPointsPerKg(barangayId);
     return res.status(200).json({ pointsPerKg });
   } catch (err) {
     console.error('getConversion error', err);
@@ -29,8 +36,13 @@ export async function updateConversion(req: Request, res: Response) {
     }
 
     const changedBy = Number(user.Account_id);
+    const barangayId = Number(user.Barangay_id);
 
-    const updated = await conversionService.setPointsPerKg(Number(pointsPerKg), remark.trim(), changedBy);
+    if (!barangayId) {
+      return res.status(400).json({ message: 'User must belong to a barangay to update its rate' });
+    }
+
+    const updated = await conversionService.setPointsPerKg(barangayId, Number(pointsPerKg), remark.trim(), changedBy);
     return res.status(200).json({ pointsPerKg: updated });
   } catch (err) {
     console.error('updateConversion error', err);
@@ -41,7 +53,9 @@ export async function updateConversion(req: Request, res: Response) {
 export async function getConversionAudit(req: Request, res: Response) {
   try {
     const limit = Number(req.query.limit ?? 100);
-    const entries = await conversionService.getAuditEntries(limit);
+    const user = (req as any).user;
+    const barangayId = Number(req.query.barangayId ?? user?.Barangay_id);
+    const entries = await conversionService.getAuditEntries(limit, barangayId);
     return res.status(200).json({ entries });
   } catch (err) {
     console.error('getConversionAudit error', err);

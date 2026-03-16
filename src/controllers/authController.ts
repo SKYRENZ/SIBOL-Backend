@@ -381,9 +381,10 @@ export async function verifyToken(req: Request, res: Response) {
     // Fetch fresh user data from database
     const [rows]: any = await pool.execute(
       `SELECT a.Account_id, a.Username, a.Roles, a.IsActive, a.IsFirstLogin,
-              p.FirstName, p.LastName, p.Email
+              p.FirstName, p.LastName, p.Email, p.Barangay_id, b.Barangay_Name
        FROM accounts_tbl a
        LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+       LEFT JOIN barangay_tbl b ON b.Barangay_id = p.Barangay_id
        WHERE a.Account_id = ? AND a.IsActive = 1`,
       [tokenUser.Account_id]
     );

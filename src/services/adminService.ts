@@ -85,9 +85,16 @@ export async function createUserAsAdmin(
   }
 }
 
-// ✅ UPDATED: Get all pending accounts for admin review (removed Contact field)
-export async function getPendingAccounts() {
+// ✅ UPDATED: Get all pending accounts for admin review (added barangay filter)
+export async function getPendingAccounts(barangayId?: number) {
   try {
+    const params: any[] = [];
+    let where = 'WHERE p.IsEmailVerified = 1 AND p.IsAdminVerified = 0';
+    if (barangayId) {
+      where += ' AND p.Area_id = ?';
+      params.push(barangayId);
+    }
+
     const [rows]: any = await pool.execute(`
       SELECT 
         p.Pending_id,
@@ -110,9 +117,9 @@ export async function getPendingAccounts() {
       LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
       LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
-      WHERE p.IsEmailVerified = 1 AND p.IsAdminVerified = 0
+      ${where}
       ORDER BY p.Created_at ASC
-    `);
+    `, params);
 
     return {
       success: true,
@@ -306,17 +313,24 @@ export async function getAdminStats() {
 }
 
 // Get all users (with optional filters)
-export async function getAllUsers(roleId?: number, isActive?: boolean) {
+export async function getAllUsers(roleId?: number, isActive?: boolean, barangayId?: number) {
   try {
     const params: any[] = [];
     let where = 'WHERE 1=1';
     if (roleId !== undefined && roleId !== null) {
       where += ' AND a.Roles = ?';
       params.push(roleId);
+    } else if (barangayId !== undefined && barangayId !== null) {
+      // Admin context: only show Barangay_staff (2), Operator (3), Household (4)
+      where += ' AND a.Roles IN (2, 3, 4)';
     }
     if (isActive !== undefined && isActive !== null) {
       where += ' AND a.IsActive = ?';
       params.push(isActive ? 1 : 0);
+    }
+    if (barangayId !== undefined && barangayId !== null) {
+      where += ' AND p.Barangay_id = ?';
+      params.push(barangayId);
     }
 
     const sql = `

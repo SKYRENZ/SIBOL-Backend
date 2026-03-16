@@ -442,11 +442,11 @@ export async function cancelTicket(
   return updated[0];
 }
 
-export async function getTicketById(requestId: number): Promise<any> {
+export async function getTicketById(requestId: number, userRole?: number, userBarangayId?: number): Promise<any> {
   const sql = `
-    SELECT 
-      m.*, 
-      p.Priority, 
+    SELECT
+      m.*,
+      p.Priority,
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
@@ -463,7 +463,10 @@ export async function getTicketById(requestId: number): Promise<any> {
       c_role.Roles AS CancelledByRole,
 
       -- ✅ NEW: Last Assigned Operator from cancel log (for cancelled tickets)
-      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName
+      CONCAT(last_op_profile.FirstName, ' ', last_op_profile.LastName) AS LastAssignedOperatorName,
+
+      -- ✅ NEW: Get creator's barangay for access control
+      creator_profile.Barangay_id AS CreatorBarangayId
 
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
@@ -486,7 +489,7 @@ export async function getTicketById(requestId: number): Promise<any> {
 
     -- ✅ NEW: Get last assigned operator from cancel log (most recent approved cancellation)
     LEFT JOIN (
-      SELECT 
+      SELECT
         Request_Id,
         Operator_Account_Id,
         ROW_NUMBER() OVER (PARTITION BY Request_Id ORDER BY Approved_At DESC) AS rn
@@ -501,6 +504,13 @@ export async function getTicketById(requestId: number): Promise<any> {
   const [ticket] = await pool.query<Row[]>(sql, [requestId]);
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
+  // ✅ NEW: Authorization check - staff (role=2) and operators (role=3) can only view tickets from their barangay
+  if ((userRole === 2 || userRole === 3) && userBarangayId) {
+    if (ticket[0].CreatorBarangayId !== userBarangayId) {
+      throw { status: 403, message: "You do not have permission to view this ticket" };
+    }
+  }
+
   const attachments = await getTicketAttachments(requestId);
 
   return {
@@ -509,7 +519,7 @@ export async function getTicketById(requestId: number): Promise<any> {
   };
 }
 
-export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number } = {}): Promise<any[]> {
+export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number; created_by_barangay_id?: number } = {}): Promise<any[]> {
   let sql = `
     SELECT 
       m.*, 
@@ -581,6 +591,11 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
   if (typeof filters.created_by === "number") {
     sql += " AND m.Created_by = ?";
     params.push(filters.created_by);
+  }
+
+  if (typeof filters.created_by_barangay_id === "number") {
+    sql += " AND creator_profile.Barangay_id = ?";
+    params.push(filters.created_by_barangay_id);
   }
 
   sql += `
