@@ -334,7 +334,7 @@ export async function getAllUsers(roleId?: number, isActive?: boolean, barangayI
     }
 
     const sql = `
-      SELECT a.*, p.FirstName, p.LastName, p.Email, p.Barangay_id, b.Barangay_Name
+      SELECT a.*, p.FirstName, p.LastName, p.Email, p.Barangay_id, b.Barangay_name
       FROM accounts_tbl a
       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
       LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
@@ -461,7 +461,7 @@ export async function deleteUser(userId: number) {
 export async function getUserAreas(userId: number) {
   try {
     const [rows]: any = await pool.execute(`
-      SELECT a.Area_id, a.Area_Name
+      SELECT a.Area_id, a.Area_name
       FROM area_tbl a
       JOIN profile_tbl p ON a.Area_id = p.Area_id
       WHERE p.Account_id = ?
@@ -773,7 +773,7 @@ export const getModules = async () => {
 // NEW: Add getBarangays function
 export async function getBarangays() {
   try {
-    const [rows]: any = await pool.execute(`SELECT Barangay_id, Barangay_Name FROM barangay_tbl ORDER BY Barangay_id`);
+    const [rows]: any = await pool.execute(`SELECT Barangay_id, Barangay_name FROM barangay_tbl ORDER BY Barangay_id`);
     return {
       success: true,
       barangays: rows

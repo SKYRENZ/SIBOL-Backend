@@ -116,9 +116,9 @@ export async function registerUser(
         const registrationEventType = "REGISTERED_VERIFIED";
         await pool.execute(
           `INSERT INTO system_notifications_tbl
-           (Event_type, Username, FirstName, LastName, Email, Role_id, Created_at)
-           VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-          [registrationEventType, username, firstName, lastName, email, roleId]
+           (Event_type, Username, FirstName, LastName, Email, Role_id, Barangay_id, Created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [registrationEventType, username, firstName, lastName, email, roleId, barangayId]
         );
       } catch (notifErr) {
         if (process.env.NODE_ENV !== 'test') {

@@ -19,9 +19,10 @@ export const createReward = async (reward: Reward): Promise<number> => {
     // insert only the columns we need and match params exactly
     await pool.query(
       `INSERT INTO system_notifications_tbl
-         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [eventType, 4, reward.Item ?? null, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
+         (Event_type, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       SELECT ?, 4, b.Barangay_id, ?, ?, ?, NOW()
+       FROM barangay_tbl b`,
+      [eventType, reward.Item ?? null, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
     );
   } catch (e) {
     console.warn("createReward: failed to insert system notification", e);
@@ -88,9 +89,10 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
     // Insert into explicit reward columns; leave unrelated fields NULL
     await pool.query(
       `INSERT INTO system_notifications_tbl
-         (Event_type, Role_id, Reward_item, Reward_quantity, Reward_points, Created_at)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [eventType, 4, itemName ?? null, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
+         (Event_type, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at)
+       SELECT ?, 4, b.Barangay_id, ?, ?, ?, NOW()
+       FROM barangay_tbl b`,
+      [eventType, itemName ?? null, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
     );
   } catch (e) {
     console.warn("updateReward: failed to insert system notification", e);

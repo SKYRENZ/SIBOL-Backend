@@ -59,6 +59,17 @@ export async function createContainer(input: CreateContainerInput) {
     areaLon = coords.lon;
   }
 
+  let areaBarangayId: number | null = null;
+  try {
+    const [bRows]: any = await pool.query(
+      "SELECT Barangay_id FROM area_tbl WHERE Area_id = ? LIMIT 1",
+      [areaId]
+    );
+    areaBarangayId = bRows?.[0]?.Barangay_id ?? null;
+  } catch {
+    areaBarangayId = null;
+  }
+
   const deploymentDate = new Date().toISOString().split("T")[0];
   const [containerResult]: any = await pool.query(
     "INSERT INTO waste_containers_tbl (container_name, area_id, deployment_date, status, device_id) VALUES (?, ?, ?, ?, ?)",
@@ -69,9 +80,9 @@ export async function createContainer(input: CreateContainerInput) {
   try {
     await pool.query(
       `INSERT INTO system_notifications_tbl
-       (Event_type, Container_name, Area_name, Created_at)
-       VALUES ('CONTAINER_ADDED', ?, ?, NOW())`,
-      [container_name, area_name]
+       (Event_type, Container_name, Area_name, Barangay_id, Created_at)
+       VALUES ('CONTAINER_ADDED', ?, ?, ?, NOW())`,
+      [container_name, area_name, areaBarangayId]
     );
   } catch (notifErr) {
     console.warn('⚠️ Failed to log container notification:', notifErr);
@@ -87,6 +98,7 @@ export async function createContainer(input: CreateContainerInput) {
     device_id: device_id ?? null,
     latitude: areaLat,
     longitude: areaLon,
+    barangay_id: areaBarangayId,
   };
 }
 
