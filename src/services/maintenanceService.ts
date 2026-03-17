@@ -681,10 +681,24 @@ export async function addRemark(
   );
   if (!ticket.length) throw { status: 404, message: "Ticket not found" };
 
+  const [acctRows] = await pool.query<Row[]>(
+    "SELECT Roles FROM accounts_tbl WHERE Account_id = ?",
+    [createdBy]
+  );
+  if (!acctRows.length) throw { status: 404, message: "Account not found" };
+
+  const roleId = Number(acctRows[0].Roles);
+
+  // Only Admin/Barangay Staff remark should generate operator notification event
+  let effectiveEventId: number | null = eventId ?? null;
+  if (!effectiveEventId && (roleId === ROLE_ADMIN || roleId === ROLE_STAFF)) {
+    effectiveEventId = await logEvent(requestId, "MESSAGE", createdBy, trimmed);
+  }
+
   const [result] = await pool.query<any>(
     `INSERT INTO maintenance_remarks_tbl (Request_Id, Remark_text, Created_by, User_role, Event_Id, Created_at)
      VALUES (?, ?, ?, ?, ?, NOW())`,
-    [requestId, trimmed, createdBy, userRole ?? null, eventId ?? null]
+    [requestId, trimmed, createdBy, userRole ?? null, effectiveEventId]
   );
 
   const insertId = result?.insertId;
@@ -810,7 +824,7 @@ async function findLatestOpenCancelLogId(requestId: number, operatorId: number):
      LIMIT 1`,
     [requestId, operatorId]
   );
-  return rows.length ? rows[0].Cancel_Log_Id : null;
+  return rows.length ? rows[0].Cancel_Log_id : null;
 }
 
 async function insertCancelLog(requestId: number, operatorId: number, reason: string | null) {
@@ -825,7 +839,7 @@ async function approveCancelLog(cancelLogId: number, approvedBy: number) {
   await pool.query(
     `UPDATE maintenance_cancel_log_tbl
      SET Approved_By = ?, Approved_At = NOW()
-     WHERE Cancel_Log_Id = ?`,
+     WHERE Cancel_Log_id = ?`,
     [approvedBy, cancelLogId]
   );
 }
@@ -847,28 +861,28 @@ export async function listOperatorCancelledHistory(operatorAccountId: number): P
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
 
-      l.Cancel_Log_Id AS CancelLogId,
+      l.Cancel_Log_id AS CancelLogId,
       l.Reason AS CancelLogReason,
-      l.Requested_At AS CancelRequestedAt,   -- ✅ NEW: cutoff we want
-      l.Approved_At AS CancelApprovedAt
+      l.Requested_at AS CancelRequestedAt,   -- ✅ NEW: cutoff we want
+      l.Approved_at AS CancelApprovedAt
 
     FROM maintenance_cancel_log_tbl l
     JOIN (
-      SELECT Request_Id, MAX(Cancel_Log_Id) AS LatestCancelLogId
+      SELECT Request_Id, MAX(Cancel_Log_id) AS LatestCancelLogId
       FROM maintenance_cancel_log_tbl
-      WHERE Operator_Account_Id = ?
-        AND Approved_At IS NOT NULL
-      GROUP BY Request_Id
-    ) latest ON latest.LatestCancelLogId = l.Cancel_Log_Id
-    JOIN maintenance_tbl m ON l.Request_Id = m.Request_Id
-    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+      WHERE Operator_Account_id = ?
+        AND Approved_at IS NOT NULL
+      GROUP BY Request_id
+    ) latest ON latest.LatestCancelLogId = l.Cancel_Log_id
+    JOIN maintenance_tbl m ON l.Request_id = m.Request_id
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
     LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
-    WHERE l.Operator_Account_Id = ?
+    WHERE l.Operator_Account_id = ?
       AND (m.Assigned_to IS NULL OR m.Assigned_to <> ?)
-    ORDER BY l.Approved_At DESC
+    ORDER BY l.Approved_at DESC
   `;
 
   const [rows] = await pool.query<Row[]>(sql, [
@@ -888,16 +902,16 @@ export async function listDeletedTickets(): Promise<any[]> {
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
-      COUNT(ma.Attachment_Id) AS AttachmentCount
+      COUNT(ma.Attachment_id) AS AttachmentCount
     FROM maintenance_tbl m
-    LEFT JOIN maintenance_priority_tbl p ON m.Priority_Id = p.Priority_id
+    LEFT JOIN maintenance_priority_tbl p ON m.Priority_id = p.Priority_id
     LEFT JOIN maintenance_status_tbl s ON m.Main_stat_id = s.Main_stat_id
     LEFT JOIN profile_tbl op_profile ON m.Assigned_to = op_profile.Account_id
     LEFT JOIN profile_tbl creator_profile ON m.Created_by = creator_profile.Account_id
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
-    LEFT JOIN maintenance_attachments_tbl ma ON m.Request_Id = ma.Request_Id
+    LEFT JOIN maintenance_attachments_tbl ma ON m.Request_id = ma.Request_id
     WHERE m.IsDeleted = 1
-    GROUP BY m.Request_Id
+    GROUP BY m.Request_id
     ORDER BY m.Request_date DESC
   `;
   const [rows] = await pool.query<Row[]>(sql);
@@ -912,7 +926,7 @@ async function logEvent(
   notes: string | null = null
 ): Promise<number> {
   const [result] = await pool.query<any>(
-    `INSERT INTO maintenance_events_tbl (Request_Id, Event_type, Actor_Account_Id, Notes, Created_At)
+    `INSERT INTO maintenance_events_tbl (Request_id, Event_type, Actor_Account_id, Notes, Created_at)
      VALUES (?, ?, ?, ?, NOW())`,
     [requestId, eventType, actorAccountId, notes]
   );
@@ -927,20 +941,20 @@ export async function getTicketEvents(requestId: number, before?: Date | null): 
       a.Roles AS ActorRoleId,
       ur.Roles AS ActorRoleName
     FROM maintenance_events_tbl e
-    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
-    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN profile_tbl p ON e.Actor_Account_id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_id = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
-    WHERE e.Request_Id = ?
+    WHERE e.Request_id = ?
   `;
   const params: any[] = [requestId];
 
   // ✅ apply cutoff (Operator Cancelled-history view)
   if (before) {
-    sql += ` AND e.Created_At <= ?`;
+    sql += ` AND e.Created_at <= ?`;
     params.push(before);
   }
 
-  sql += ` ORDER BY e.Created_At ASC`;
+  sql += ` ORDER BY e.Created_at ASC`;
 
   const [rows] = await pool.query<Row[]>(sql, params);
 
@@ -951,7 +965,7 @@ export async function getTicketEvents(requestId: number, before?: Date | null): 
   for (const ev of rows) {
     if (ev.Event_type !== "REASSIGNED") continue;
     const parsed = extractToAccountIdFromNotes(ev.Notes ?? null);
-    parsedByEventId.set(ev.Event_Id, parsed);
+    parsedByEventId.set(ev.Event_id, parsed);
     if (parsed.toAccountId) toIds.add(parsed.toAccountId);
   }
 
@@ -981,7 +995,7 @@ export async function getTicketEvents(requestId: number, before?: Date | null): 
   return rows.map((ev) => {
     if (ev.Event_type !== "REASSIGNED") return ev;
 
-    const parsed = parsedByEventId.get(ev.Event_Id) ?? { toAccountId: null, message: ev.Notes ?? null };
+    const parsed = parsedByEventId.get(ev.Event_id) ?? { toAccountId: null, message: ev.Notes ?? null };
     const to = parsed.toAccountId ? toMap.get(parsed.toAccountId) : null;
 
     return {
@@ -1003,10 +1017,10 @@ export async function getEventDetails(eventId: number): Promise<any> {
       a.Roles AS ActorRoleId,
       ur.Roles AS ActorRoleName
     FROM maintenance_events_tbl e
-    LEFT JOIN profile_tbl p ON e.Actor_Account_Id = p.Account_id
-    LEFT JOIN accounts_tbl a ON e.Actor_Account_Id = a.Account_id
+    LEFT JOIN profile_tbl p ON e.Actor_Account_id = p.Account_id
+    LEFT JOIN accounts_tbl a ON e.Actor_Account_id = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
-    WHERE e.Event_Id = ?`,
+    WHERE e.Event_id = ?`,
     [eventId]
   );
   
@@ -1025,7 +1039,7 @@ export async function getEventDetails(eventId: number): Promise<any> {
     LEFT JOIN profile_tbl p ON mr.Created_by = p.Account_id
     LEFT JOIN accounts_tbl a ON mr.Created_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
-    WHERE mr.Event_Id = ?
+    WHERE mr.Event_id = ?
     ORDER BY mr.Created_at ASC`,
     [eventId]
   );
@@ -1041,7 +1055,7 @@ export async function getEventDetails(eventId: number): Promise<any> {
     LEFT JOIN profile_tbl p ON ma.Uploaded_by = p.Account_id
     LEFT JOIN accounts_tbl a ON ma.Uploaded_by = a.Account_id
     LEFT JOIN user_roles_tbl ur ON a.Roles = ur.Roles_id
-    WHERE ma.Event_Id = ?
+    WHERE ma.Event_id = ?
     ORDER BY ma.Uploaded_at ASC`,
     [eventId]
   );

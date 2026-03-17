@@ -24,19 +24,21 @@ type ListOptions = {
 };
 
 const EVENT_TITLES: Record<string, string> = {
-  REQUESTED: "Maintenance requested",
-  ACCEPTED: "Maintenance accepted",
-  REASSIGNED: "Maintenance reassigned",
-  ONGOING: "Maintenance started",
-  FOR_VERIFICATION: "Maintenance for verification",
-  COMPLETED: "Maintenance completed",
-  CANCEL_REQUESTED: "Maintenance cancel requested",
-  CANCELLED: "Maintenance cancelled",
-  DELETED: "Maintenance deleted",
+  REQUESTED: "Maintenance Requested",
+  ACCEPTED: "Maintenance Accepted",
+  REASSIGNED: "Maintenance Assigned",
+  ONGOING: "Maintenance Started",
+  FOR_VERIFICATION: "Maintenance For Verification",
+  COMPLETED: "Maintenance Completed",
+  CANCEL_REQUESTED: "Maintenance Cancel Requested",
+  CANCELLED: "Maintenance Cancelled",
+  DELETED: "Maintenance Deleted",
+  MESSAGE: "Maintenance Message",
 };
 
 function buildMaintenanceTitle(eventType?: string, requestId?: number | null) {
-  const base = EVENT_TITLES[eventType ?? ""] ?? "Maintenance update";
+  const evt = String(eventType ?? "").toUpperCase();
+  const base = EVENT_TITLES[evt] ?? "Maintenance Update";
   return requestId ? `${base}: Request #${requestId}` : base;
 }
 
@@ -45,10 +47,24 @@ function buildMaintenanceMessage(args: {
   actorName?: string | null;
   title?: string | null;
 }) {
-  const actor = args.actorName ? `${args.actorName}` : "Someone";
-  const title = args.title ? ` in ${args.title}` : "";
-  const type = args.eventType ?? "update";
-  return `${actor} sent a ${type.toLowerCase()}${title}.`;
+  const evt = String(args.eventType ?? "").toUpperCase();
+  const actor = args.actorName?.trim() || "Someone";
+  const ticketTitle = args.title?.trim() || "this ticket";
+
+  switch (evt) {
+    case "ACCEPTED":
+      return `${actor} has accepted your request of ${ticketTitle}.`;
+    case "CANCELLED":
+      return `${actor} has cancelled your request of ${ticketTitle}.`;
+    case "REASSIGNED":
+      return `${actor} has assigned you to ${ticketTitle}.`;
+    case "COMPLETED":
+      return `${actor} has marked your ticket as completed.`;
+    case "MESSAGE":
+      return `${actor} has a message to ${ticketTitle}.`;
+    default:
+      return `${actor} has updated your maintenance ticket of ${ticketTitle}.`;
+  }
 }
 
 export async function listNotifications(accountId: number, opts: ListOptions = {}) {
@@ -74,7 +90,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   const operatorMaintenanceWhere = isOperator
     ? `
     WHERE
-      e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
+      e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED', 'MESSAGE')
       AND (
         mt.Created_by = ${Number(accountId)}
         OR mt.Assigned_to = ${Number(accountId)}
@@ -472,7 +488,7 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
           AND nr.Notification_type = 'maintenance'
           AND nr.Account_id = ?
         WHERE nr.Notification_id IS NULL
-          AND e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
+          AND e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED', 'MESSAGE')
           AND (
             mt.Created_by = ${Number(accountId)}
             OR mt.Assigned_to = ${Number(accountId)}
