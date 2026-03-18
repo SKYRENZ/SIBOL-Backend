@@ -74,8 +74,10 @@ export async function getLeaderboard(limit = 100, barangayId?: number): Promise<
   const params: any[] = [];
 
   if (hasBarangay) {
-    sql += "WHERE p.Barangay_id = ? ";
+    sql += "WHERE p.Barangay_id = ? AND a.Roles = 4 ";
     params.push(barangayId);
+  } else {
+    sql += "WHERE a.Roles = 4 ";
   }
 
   sql += "ORDER BY COALESCE(t.Total_kg, 0) DESC LIMIT ?";
