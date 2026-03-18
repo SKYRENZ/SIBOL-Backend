@@ -35,7 +35,11 @@ export async function getPendingAccountById(req: Request, res: Response) {
       });
     }
 
-    const result = await adminService.getPendingAccountById(parseInt(pendingId));
+    const user = (req as any).user;
+    const isSuperAdmin = Number(user?.Roles) === 5;
+    const barangayId = isSuperAdmin ? undefined : (user?.Barangay_id ? Number(user.Barangay_id) : undefined);
+
+    const result = await adminService.getPendingAccountById(parseInt(pendingId), barangayId);
     return res.status(200).json(result);
   } catch (error: any) {
     return res.status(400).json({ 
@@ -57,7 +61,11 @@ export async function approveAccount(req: Request, res: Response) {
       });
     }
 
-    const result = await adminService.approveAccount(parseInt(pendingId));
+    const user = (req as any).user;
+    const isSuperAdmin = Number(user?.Roles) === 5;
+    const barangayId = isSuperAdmin ? undefined : (user?.Barangay_id ? Number(user.Barangay_id) : undefined);
+
+    const result = await adminService.approveAccount(parseInt(pendingId), barangayId);
     return res.status(200).json(result);
   } catch (error: any) {
     return res.status(400).json({ 
@@ -80,7 +88,11 @@ export async function rejectAccount(req: Request, res: Response) {
       });
     }
 
-    const result = await adminService.rejectAccount(parseInt(pendingId), reason);
+    const user = (req as any).user;
+    const isSuperAdmin = Number(user?.Roles) === 5;
+    const barangayId = isSuperAdmin ? undefined : (user?.Barangay_id ? Number(user.Barangay_id) : undefined);
+
+    const result = await adminService.rejectAccount(parseInt(pendingId), reason, barangayId);
     return res.status(200).json(result);
   } catch (error: any) {
     return res.status(400).json({ 
