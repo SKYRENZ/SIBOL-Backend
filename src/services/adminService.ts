@@ -133,8 +133,15 @@ export async function getPendingAccounts(barangayId?: number) {
 }
 
 // ✅ UPDATED: Get pending account details by ID (removed Contact field)
-export async function getPendingAccountById(pendingId: number) {
+export async function getPendingAccountById(pendingId: number, barangayId?: number) {
   try {
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND p.Area_id = ?';
+      params.push(barangayId);
+    }
+
     const [rows]: any = await pool.execute(`
       SELECT 
         p.*,
@@ -150,9 +157,9 @@ export async function getPendingAccountById(pendingId: number) {
       LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
       LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
-      WHERE p.Pending_id = ? AND p.IsEmailVerified = 1
+      WHERE p.Pending_id = ? AND p.IsEmailVerified = 1${barangayFilter}
       LIMIT 1
-    `, [pendingId]);
+    `, params);
 
     if (rows.length === 0) {
       throw new Error("Pending account not found or email not verified");
@@ -170,15 +177,22 @@ export async function getPendingAccountById(pendingId: number) {
 }
 
 // ✅ UPDATED: Admin approve account (removed contact field from transfer)
-export async function approveAccount(pendingId: number) {
+export async function approveAccount(pendingId: number, barangayId?: number) {
   const conn = await (pool as any).getConnection();
 
   try {
     await conn.beginTransaction();
 
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND p.Area_id = ?';
+      params.push(barangayId);
+    }
+
     const [pendingRows]: any = await conn.execute(
-      "SELECT * FROM pending_accounts_tbl WHERE Pending_id = ? AND IsEmailVerified = 1 AND IsAdminVerified = 0",
-      [pendingId]
+      `SELECT * FROM pending_accounts_tbl p WHERE p.Pending_id = ? AND p.IsEmailVerified = 1 AND p.IsAdminVerified = 0${barangayFilter}`,
+      params
     );
 
     if (pendingRows.length === 0) {
@@ -697,9 +711,16 @@ export async function setAccountActive(accountId: number, isActive: number) {
 }
 
 // Reject pending account
-export async function rejectAccount(pendingId: number, reason?: string) {
+export async function rejectAccount(pendingId: number, reason?: string, barangayId?: number) {
   try {
-    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND Area_id = ?';
+      params.push(barangayId);
+    }
+
+    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?${barangayFilter}`, params);
     if (!rows || rows.length === 0) throw new Error('Pending account not found');
     const pending = rows[0];
 
