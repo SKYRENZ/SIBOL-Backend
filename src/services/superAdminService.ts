@@ -32,13 +32,14 @@ export async function createAdmin(
             throw new Error('Username or email already exists');
         }
 
-        // Determine password and hash it
-        const usePassword = password && password.length > 0 ? password : config.DEFAULT_PASSWORD;
+        // Determine password and hash it (treat whitespace-only as empty)
+        const normalizedPassword = typeof password === 'string' ? password.trim() : '';
+        const usePassword = normalizedPassword.length > 0 ? normalizedPassword : config.DEFAULT_PASSWORD;
         const hashedPassword = await bcrypt.hash(usePassword, 10);
 
         // Insert account with Admin role
         const [accountResult]: any = await conn.execute(
-            'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)',
+            'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive, IsFirstLogin) VALUES (?, ?, ?, 1, 0)',
             [username, hashedPassword, ADMIN_ROLE_ID]
         );
         const newAccountId = accountResult.insertId;
