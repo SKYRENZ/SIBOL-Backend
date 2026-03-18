@@ -98,7 +98,11 @@ export async function getTicket(req: Request, res: Response) {
   try {
     const requestId = Number(req.params.id);
     // ✅ NEW: Pass user role and barangay for authorization check
-    const ticket = await service.getTicketById(requestId, req.user?.Roles, req.user?.Barangay_id);
+    const ticket = await service.getTicketById(
+      requestId,
+      req.user?.Roles ?? undefined,
+      req.user?.Barangay_id ?? undefined
+    );
     return res.json(ticket);
   } catch (err: any) {
     return res.status(err.status || 500).json({ message: err.message || "Server error" });
