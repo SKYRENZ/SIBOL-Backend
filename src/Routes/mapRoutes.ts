@@ -2,6 +2,8 @@ import { Router } from 'express';
 import {
   containersGeoJSON,
   containerGeoJSONById,
+  geocodeReverse,
+  geocodeSearch,
   tileProxy,
 } from '../controllers/mapController';
 
@@ -23,5 +25,13 @@ router.get('/container/:id.geojson', containerGeoJSONById);
  * GET /api/map/tiles/:z/:x/:y.png
  */
 router.get('/tiles/:z/:x/:y.png', tileProxy);
+
+/**
+ * Geocode proxy endpoints to avoid browser CORS/rate-limit issues.
+ * GET /api/map/geocode/search?query=...
+ * GET /api/map/geocode/reverse?lat=...&lon=...
+ */
+router.get('/geocode/search', geocodeSearch);
+router.get('/geocode/reverse', geocodeReverse);
 
 export default router;
