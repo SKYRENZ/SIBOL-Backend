@@ -284,7 +284,7 @@ export async function sendPushToRoleAndBarangay(
       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
       WHERE pdt.Is_active = 1
         AND a.Roles = ?
-        AND p.Barangay_id = ?
+        COALESCE(p.Barangay_id, p.Area_id) = ?
     `,
     [role, brgy]
   );
