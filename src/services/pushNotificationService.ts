@@ -13,6 +13,8 @@ export type PushPayload = {
 type ExpoResult = {
   sent: number;
   invalidated: number;
+  failed: number;
+  errors: string[];
   disabled?: boolean;
 };
 
@@ -65,11 +67,13 @@ async function deactivateTokens(tokens: string[]): Promise<void> {
 
 async function sendExpo(messages: any[]): Promise<ExpoResult> {
   if (!config.PUSH_NOTIFICATIONS_ENABLED) {
-    return { sent: 0, invalidated: 0, disabled: true };
+    return { sent: 0, invalidated: 0, failed: 0, errors: [], disabled: true };
   }
 
   let sent = 0;
   let invalidated = 0;
+  let failed = 0;
+  const errors: string[] = [];
 
   const chunks = chunkArray(messages, EXPO_BATCH_SIZE);
 
@@ -95,6 +99,7 @@ async function sendExpo(messages: any[]): Promise<ExpoResult> {
     }
 
     const json: any = await resp.json().catch(() => ({}));
+    console.log('[push] Expo API raw response:', JSON.stringify(json, null, 2)); // ✅ add this
     const data = Array.isArray(json?.data) ? json.data : [];
 
     const toDeactivate: string[] = [];
@@ -108,7 +113,12 @@ async function sendExpo(messages: any[]): Promise<ExpoResult> {
         return;
       }
 
-      const errorCode = item?.details?.error;
+      failed += 1;
+
+      const message = String(item?.message || "Expo send failed");
+      const errorCode = String(item?.details?.error || "UNKNOWN");
+      errors.push(`${errorCode}: ${message}`);
+
       if (errorCode === "DeviceNotRegistered" && token) {
         toDeactivate.push(token);
       }
@@ -120,7 +130,7 @@ async function sendExpo(messages: any[]): Promise<ExpoResult> {
     }
   }
 
-  return { sent, invalidated };
+  return { sent, invalidated, failed, errors };
 }
 
 export async function registerDeviceToken(params: {
@@ -205,14 +215,21 @@ export async function unregisterDeviceToken(params: {
 export async function sendPushToAccount(
   accountId: number,
   payload: PushPayload
-): Promise<{ tokenCount: number; sent: number; invalidated: number; disabled?: boolean }> {
+): Promise<{
+  tokenCount: number;
+  sent: number;
+  invalidated: number;
+  failed: number;
+  errors: string[];
+  disabled?: boolean;
+}> {
   const accId = Number(accountId);
   if (!accId || Number.isNaN(accId)) throw new Error("Valid accountId is required");
   if (!payload?.title || !payload?.body) throw new Error("Push title and body are required");
 
   const tokens = await getActiveTokensByAccount(accId);
   if (!tokens.length) {
-    return { tokenCount: 0, sent: 0, invalidated: 0 };
+    return { tokenCount: 0, sent: 0, invalidated: 0, failed: 0, errors: [] };
   }
 
   const messages = tokens.map((to) => ({
@@ -220,6 +237,8 @@ export async function sendPushToAccount(
     title: payload.title,
     body: payload.body,
     sound: payload.sound === undefined ? "default" : payload.sound,
+    channelId: "default",
+    priority: "high",
     data: payload.data ?? {},
   }));
 
@@ -229,6 +248,8 @@ export async function sendPushToAccount(
     tokenCount: tokens.length,
     sent: result.sent,
     invalidated: result.invalidated,
+    failed: result.failed,
+    errors: result.errors,
     };
 
     return result.disabled === undefined
@@ -240,7 +261,14 @@ export async function sendPushToRoleAndBarangay(
   roleId: number,
   barangayId: number,
   payload: PushPayload
-): Promise<{ tokenCount: number; sent: number; invalidated: number; disabled?: boolean }> {
+): Promise<{
+  tokenCount: number;
+  sent: number;
+  invalidated: number;
+  failed: number;
+  errors: string[];
+  disabled?: boolean;
+}> {
   const role = Number(roleId);
   const brgy = Number(barangayId);
 
@@ -268,7 +296,7 @@ export async function sendPushToRoleAndBarangay(
     : [];
 
   if (!tokens.length) {
-    return { tokenCount: 0, sent: 0, invalidated: 0 };
+    return { tokenCount: 0, sent: 0, invalidated: 0, failed: 0, errors: [] };
   }
 
   const messages = tokens.map((to) => ({
@@ -276,6 +304,8 @@ export async function sendPushToRoleAndBarangay(
     title: payload.title,
     body: payload.body,
     sound: payload.sound === undefined ? "default" : payload.sound,
+    channelId: "default",
+    priority: "high",
     data: payload.data ?? {},
   }));
 
@@ -285,6 +315,8 @@ export async function sendPushToRoleAndBarangay(
     tokenCount: tokens.length,
     sent: result.sent,
     invalidated: result.invalidated,
+    failed: result.failed,
+    errors: result.errors,
     };
 
     return result.disabled === undefined
