@@ -47,3 +47,30 @@ export async function listContainers(_req: Request, res: Response) {
     return res.status(500).json({ error: "Failed to fetch containers." });
   }
 }
+
+/**
+ * Update a container's location (latitude/longitude) and address.
+ * Expects params: container_id
+ * Expects body: { latitude, longitude, address? }
+ */
+export async function updateContainerLocation(req: Request, res: Response) {
+  const { container_id } = req.params;
+  const { latitude, longitude, address } = req.body;
+
+  if (!container_id || latitude === undefined || longitude === undefined) {
+    return res.status(400).json({ error: "container_id, latitude, and longitude are required." });
+  }
+
+  try {
+    const updated = await wasteContainerService.updateContainerLocation(
+      parseInt(container_id, 10),
+      parseFloat(latitude as string),
+      parseFloat(longitude as string),
+      address as string | undefined
+    );
+    return res.json({ data: updated });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update container location.";
+    return res.status(500).json({ error: message });
+  }
+}

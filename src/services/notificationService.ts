@@ -241,7 +241,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     : `sn.Role_id IS NULL`;
 
   const systemBarangayFilter = viewerBarangayId != null
-    ? `AND (sn.Username IS NOT NULL OR sn.Barangay_id = ?)`
+    ? `AND sn.Username IS NOT NULL`
     : "";
 
   const systemSelect = `
@@ -600,10 +600,10 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
         AND ${roleCondition}
-        ${viewerBarangayId != null ? "AND (sn.Username IS NOT NULL OR sn.Barangay_id = ?)" : ""}
+        ${viewerBarangayId != null ? `AND sn.Username IS NOT NULL` : ""}
     `;
     const params = viewerBarangayId != null
-      ? [accountId, accountId, accountUsername, viewerBarangayId]
+      ? [accountId, accountId, accountUsername]
       : [accountId, accountId, accountUsername];
     await pool.query(sql, params);
     return { success: true };
