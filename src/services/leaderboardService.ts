@@ -66,7 +66,7 @@ export async function getLeaderboard(limit = 100, barangayId?: number): Promise<
   }
 
   let sql =
-    "SELECT p.Account_id, COALESCE(a.Username, '') AS Username, COALESCE(t.Total_kg, 0) AS Total_kg, COALESCE(a.Points, 0) AS Points " +
+    "SELECT p.Account_id, COALESCE(a.Username, '') AS Username, COALESCE(t.Total_kg, 0) AS Total_kg, COALESCE(a.Points, 0) AS Points, COALESCE(p.Profile_image_path, '') AS Image_path " +
     "FROM profile_tbl p " +
     "LEFT JOIN accounts_tbl a ON a.Account_id = p.Account_id " +
     "LEFT JOIN account_waste_totals_tbl t ON t.Account_id = p.Account_id ";
