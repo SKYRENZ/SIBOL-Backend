@@ -2,26 +2,22 @@ import type { Request, Response } from "express";
 import * as machineService from "../services/machineService";
 
 export async function createMachine(req: Request, res: Response) {
-  const {
-    deviceId,
-    areaId,
-    macAddress,
-    certFingerprint,
-    certificatePEM,
-    status
-  } = req.body;
-  if (!deviceId || !areaId || !macAddress) {
-    return res.status(400).json({ message: "Device ID, Area ID, and MAC address are required" });
+  const { areaId, status } = req.body;
+  const user = (req as any).user;
+  const barangayId = Number(user?.Barangay_id);
+
+  if (!areaId) {
+    return res.status(400).json({ message: "Area ID is required" });
+  }
+  if (!barangayId) {
+    return res.status(400).json({ message: "User barangay is required to create a machine" });
   }
 
   try {
     const result = await machineService.createMachine(
-      deviceId,
       areaId,
-      macAddress,
-      certFingerprint,
-      certificatePEM,
-      status
+      status,
+      barangayId
     );
     return res.status(201).json(result);
   } catch (error) {
@@ -86,9 +82,14 @@ export async function getMachineStatuses(_req: Request, res: Response) {
   }
 }
 
-export async function getAreas(_req: Request, res: Response) {
+export async function getAreas(req: Request, res: Response) {
   try {
-    const result = await machineService.getAreas();
+    const user = (req as any).user;
+    const barangayId = Number(user?.Barangay_id);
+    if (!Number.isFinite(barangayId) || barangayId <= 0) {
+      return res.status(400).json({ message: "User barangay is required to fetch areas" });
+    }
+    const result = await machineService.getAreas(barangayId);
     return res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch areas";
