@@ -2,7 +2,6 @@ import type { Request, Response } from 'express';
 import * as adminService from '../services/adminService';
 import { fetchAllModules } from '../services/moduleService.js'; // add this import if not present
 import { pool } from '../config/db.js';
-import bcrypt from 'bcrypt';  // Add this import for password hashing
 
 // ✅ NEW: Get all pending accounts (email verified only)
 export async function getPendingAccounts(req: Request, res: Response) {
@@ -107,14 +106,19 @@ export async function createUser(req: Request, res: Response) {
   try {
     const { FirstName: firstName, LastName: lastName, Barangay_id: barangayId, Email: email, Roles: roleId, Username, Password, Access } = req.body;  // Changed Area_id to Barangay_id
 
-    if (!firstName || !lastName || !barangayId || !email || !roleId || !Password) {  // Changed areaId to barangayId
+    if (!firstName || !lastName || !barangayId || !email || !roleId) {  // Changed areaId to barangayId
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Hash the password before passing to service
-    const hashedPassword = await bcrypt.hash(Password, 10);
-
-    const result = await adminService.createUserAsAdmin(firstName, lastName, Number(barangayId), email, Number(roleId), hashedPassword);  // Changed areaId to barangayId
+    const normalizedPassword = typeof Password === 'string' ? Password.trim() : undefined;
+    const result = await adminService.createUserAsAdmin(
+      firstName,
+      lastName,
+      Number(barangayId),
+      email,
+      Number(roleId),
+      normalizedPassword && normalizedPassword.length > 0 ? normalizedPassword : undefined
+    );  // Changed areaId to barangayId
     if (!result.success) {
       throw new Error(result.message || 'Failed to create user');
     }
