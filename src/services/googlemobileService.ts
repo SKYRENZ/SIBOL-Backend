@@ -3,10 +3,10 @@ import { OAuth2Client } from 'google-auth-library';
 import pool from '../config/db';
 import jwt from 'jsonwebtoken';
 
-const GOOGLE_ANDROID_CLIENT_ID = process.env.GOOGLE_ANDROID_CLIENT_ID || '';
-const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const GOOGLE_ANDROID_CLIENT_ID = config.GOOGLE_ANDROID_CLIENT_ID || '';
+const GOOGLE_WEB_CLIENT_ID = config.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = config.GOOGLE_CLIENT_SECRET || '';
+const JWT_SECRET = config.JWT_SECRET;
 
 const androidClient = new OAuth2Client(GOOGLE_ANDROID_CLIENT_ID);
 const webClient = new OAuth2Client(GOOGLE_WEB_CLIENT_ID);
@@ -89,6 +89,10 @@ export function isAccountActive(user: any): boolean {
  * Generate JWT token for user
  */
 export function generateUserToken(user: any): string {
+  if (!JWT_SECRET) {
+    throw new Error('Missing JWT_SECRET in server config');
+  }
+  
   const token = jwt.sign(
     {
       Account_id: user.Account_id,
