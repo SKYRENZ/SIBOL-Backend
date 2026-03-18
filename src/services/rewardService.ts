@@ -1,10 +1,15 @@
 import {pool} from "../config/db"; // keep default import so tests that mock the module work
 import crypto from "crypto";
 import type { Reward, RewardTransaction } from "../models/types";
+import { sendPushToAccount, sendPushToRoleAndBarangay } from "./pushNotificationService";
 
 /* CREATE */
-export const createReward = async (reward: Reward): Promise<number> => {
-  const sql = `INSERT INTO rewards_tbl (Item, Description, Points_cost, Quantity) VALUES (?, ?, ?, ?)`;
+export const createReward = async (
+  reward: Reward,
+  actorBarangayId: number,
+  actor: RewardActorInfo = {}
+): Promise<number> => {
+  const sql = "INSERT INTO rewards_tbl (Item, Description, Points_cost, Quantity) VALUES (?, ?, ?, ?)";
   const [result]: any = await pool.query(sql, [
     reward.Item,
     reward.Description || null,
@@ -13,28 +18,53 @@ export const createReward = async (reward: Reward): Promise<number> => {
   ]);
   const insertId = (result as any).insertId;
 
-  // NEW: create a system notification targeting household users
   try {
     const eventType = "REWARD_NEW";
-    // insert only the columns we need and match params exactly
     await pool.query(
-      `INSERT INTO system_notifications_tbl
-         (Event_type, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at)
-       SELECT ?, 4, b.Barangay_id, ?, ?, ?, NOW()
-       FROM barangay_tbl b`,
-      [eventType, reward.Item ?? null, Number(reward.Quantity ?? null), Number(reward.Points_cost ?? null)]
+      "INSERT INTO system_notifications_tbl " +
+      "(Event_type, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at) " +
+      "VALUES (?, 4, ?, ?, ?, ?, NOW())",
+      [
+        eventType,
+        actorBarangayId,
+        reward.Item ?? null,
+        Number(reward.Quantity ?? 0),
+        Number(reward.Points_cost ?? 0),
+      ]
     );
   } catch (e) {
     console.warn("createReward: failed to insert system notification", e);
+  }
+
+  try {
+    await sendPushToRoleAndBarangay(4, actorBarangayId, {
+      title: "New Reward Available",
+      body: `${reward.Item ?? "A reward"} is now available in your barangay.`,
+      data: {
+        type: "reward",
+        eventType: "REWARD_NEW",
+        rewardId: insertId,
+      },
+      sound: "default",
+    });
+  } catch (e) {
+    console.warn("createReward: push send failed", e);
   }
 
   return insertId;
 };
 
 /* UPDATE (partial) */
-export const updateReward = async (rewardId: number, fields: Partial<Reward>): Promise<void> => {
-  // fetch existing to detect changes (quantity/restock/price/item changes)
-  const [existingRows]: any = await pool.query(`SELECT * FROM rewards_tbl WHERE Reward_id = ? LIMIT 1`, [rewardId]);
+export const updateReward = async (
+  rewardId: number,
+  fields: Partial<Reward>,
+  actorBarangayId: number,
+  actor: RewardActorInfo = {}
+): Promise<void> => {
+  const [existingRows]: any = await pool.query(
+    "SELECT * FROM rewards_tbl WHERE Reward_id = ? LIMIT 1",
+    [rewardId]
+  );
   const existing = (existingRows as any[])[0] || null;
   if (!existing) throw new Error("Reward not found");
 
@@ -45,54 +75,52 @@ export const updateReward = async (rewardId: number, fields: Partial<Reward>): P
   if (fields.Points_cost !== undefined) { sets.push("Points_cost = ?"); params.push(fields.Points_cost); }
   if (fields.Quantity !== undefined) { sets.push("Quantity = ?"); params.push(fields.Quantity); }
   if (fields.IsArchived !== undefined) { sets.push("IsArchived = ?"); params.push(fields.IsArchived); }
-
-  // ✅ new fields
   if (fields.Image_url !== undefined) { sets.push("Image_url = ?"); params.push(fields.Image_url); }
   if (fields.Image_public_id !== undefined) { sets.push("Image_public_id = ?"); params.push(fields.Image_public_id); }
 
   if (sets.length === 0) return;
 
-  const sql = `UPDATE rewards_tbl SET ${sets.join(", ")} WHERE Reward_id = ?`;
+  const updateSql = "UPDATE rewards_tbl SET " + sets.join(", ") + " WHERE Reward_id = ?";
   params.push(rewardId);
-  await pool.query(sql, params);
+  await pool.query(updateSql, params);
 
-  // NEW: determine event and create system notification for households
   try {
     const oldQty = Number(existing.Quantity ?? 0);
     const newQty = Number(fields.Quantity !== undefined ? fields.Quantity : existing.Quantity ?? 0);
     const itemName = (fields.Item ?? existing.Item) as string;
-    const pointsCost = (fields.Points_cost !== undefined ? fields.Points_cost : existing.Points_cost) as any;
+    const pointsCost = Number(fields.Points_cost !== undefined ? fields.Points_cost : existing.Points_cost ?? 0);
 
     let eventType = "";
     if (fields.Quantity !== undefined && newQty > oldQty) {
       eventType = "REWARD_RESTOCKED";
     } else {
-      // any other change considered update
       eventType = "REWARD_UPDATED";
     }
 
-    // Skip creating UPDATED/RESTOCKED notification if the reward was just created
-    // (prevents the New Reward notification from being immediately followed by an Update)
     try {
       const createdRaw = existing.Created_at ?? existing.CreatedAt ?? existing.created_at ?? null;
       if (createdRaw && (eventType === "REWARD_UPDATED" || eventType === "REWARD_RESTOCKED")) {
         const createdAt = new Date(createdRaw);
         if (!isNaN(createdAt.getTime()) && (Date.now() - createdAt.getTime()) < 10000) {
-          console.log('[rewardService] skipping REWARD_UPDATED/RESTOCKED notification because reward was just created');
           return;
         }
       }
-    } catch (e) {
-      // fall through and continue if detection fails
-    }
+    } catch (_e) {}
 
-    // Insert into explicit reward columns; leave unrelated fields NULL
     await pool.query(
-      `INSERT INTO system_notifications_tbl
-         (Event_type, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at)
-       SELECT ?, 4, b.Barangay_id, ?, ?, ?, NOW()
-       FROM barangay_tbl b`,
-      [eventType, itemName ?? null, Number(isNaN(newQty) ? null : newQty), Number(isNaN(Number(pointsCost)) ? null : Number(pointsCost))]
+      "INSERT INTO system_notifications_tbl " +
+      "(Event_type, Username, FirstName, LastName, Email, Role_id, Barangay_id, Reward_item, Reward_quantity, Reward_points, Created_at) " +
+      "VALUES (?, NULL, ?, ?, ?, 4, ?, ?, ?, ?, NOW())",
+      [
+        eventType,
+        actor.firstName ?? null,
+        actor.lastName ?? null,
+        actor.email ?? null,
+        actorBarangayId,
+        itemName ?? null,
+        Number(isNaN(newQty) ? 0 : newQty),
+        Number(isNaN(pointsCost) ? 0 : pointsCost),
+      ]
     );
   } catch (e) {
     console.warn("updateReward: failed to insert system notification", e);
@@ -420,4 +448,11 @@ export const notifyEligibleRewardsOnPointsIncrease = async (accountId: number, o
 
   console.log('[rewardService] inserted REWARD_ELIGIBLE notifications count=', inserted);
   return inserted;
+};
+
+type RewardActorInfo = {
+  username?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
 };

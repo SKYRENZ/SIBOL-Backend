@@ -1,23 +1,47 @@
-import { pool } from '../config/db';
+import { pool } from "../config/db";
 
-export async function getLeaderboard(limit = 100): Promise<any[]> {
+export async function getLeaderboard(limit = 100, barangayId?: number): Promise<any[]> {
   const l = Number(limit) || 100;
+  const hasBarangay = typeof barangayId === "number" && !Number.isNaN(barangayId);
 
-  // 1) find latest snapshot time (if none, previous ranks are null)
-  const [maxRows]: any = await pool.query(`SELECT MAX(snapshot_at) AS max_snapshot FROM leaderboard_snapshots_tbl`);
+  let maxSnapshotSql =
+    "SELECT MAX(ls.snapshot_at) AS max_snapshot " +
+    "FROM leaderboard_snapshots_tbl ls ";
+  const maxParams: any[] = [];
+
+  if (hasBarangay) {
+    maxSnapshotSql +=
+      "JOIN profile_tbl p ON p.Account_id = ls.Account_id " +
+      "WHERE p.Barangay_id = ?";
+    maxParams.push(barangayId);
+  }
+
+  const [maxRows]: any = await pool.query(maxSnapshotSql, maxParams);
   const max_snapshot = (Array.isArray(maxRows) && maxRows[0]?.max_snapshot) ? maxRows[0].max_snapshot : null;
 
-  // 2) if snapshot exists, build previous rank mapping using window function
   let prevRanksMap: Record<number, number> = {};
   if (max_snapshot) {
-    const prevSql = `
-      SELECT Account_id, previous_rank FROM (
-        SELECT Account_id, RANK() OVER (ORDER BY Total_kg DESC) AS previous_rank
-        FROM leaderboard_snapshots_tbl
-        WHERE snapshot_at = ?
-      ) t
-    `;
-    const [prevRows]: any = await pool.query(prevSql, [max_snapshot]);
+    let prevSql =
+      "SELECT Account_id, previous_rank FROM (" +
+      " SELECT ls.Account_id, RANK() OVER (ORDER BY ls.Total_kg DESC) AS previous_rank " +
+      " FROM leaderboard_snapshots_tbl ls ";
+
+    const prevParams: any[] = [];
+    if (hasBarangay) {
+      prevSql += "JOIN profile_tbl p ON p.Account_id = ls.Account_id ";
+    }
+
+    prevSql += "WHERE ls.snapshot_at = ?";
+    prevParams.push(max_snapshot);
+
+    if (hasBarangay) {
+      prevSql += " AND p.Barangay_id = ?";
+      prevParams.push(barangayId);
+    }
+
+    prevSql += ") t";
+
+    const [prevRows]: any = await pool.query(prevSql, prevParams);
     if (Array.isArray(prevRows)) {
       prevRows.forEach((r: any) => {
         prevRanksMap[Number(r.Account_id)] = Number(r.previous_rank);
@@ -25,24 +49,29 @@ export async function getLeaderboard(limit = 100): Promise<any[]> {
     }
   }
 
-  // 3) current leaderboard
-  const sql = `
-    SELECT
-      t.Account_id,
-      COALESCE(a.Username, '') AS Username,
-      t.Total_kg,
-      COALESCE(a.Points, 0) AS Points
-    FROM account_waste_totals_tbl t
-    LEFT JOIN accounts_tbl a ON a.Account_id = t.Account_id
-    ORDER BY t.Total_kg DESC
-    LIMIT ?
-  `;
-  const [rows]: any = await pool.query(sql, [l]);
-  const result = Array.isArray(rows) ? rows.map((r: any, i: number) => ({
-    ...r,
-    rank: i + 1,
-    previous_rank: prevRanksMap[Number(r.Account_id)] as number | undefined
-  })) : [];
+  let sql =
+    "SELECT t.Account_id, COALESCE(a.Username, '') AS Username, t.Total_kg, COALESCE(a.Points, 0) AS Points " +
+    "FROM account_waste_totals_tbl t " +
+    "LEFT JOIN accounts_tbl a ON a.Account_id = t.Account_id " +
+    "LEFT JOIN profile_tbl p ON p.Account_id = t.Account_id ";
+
+  const params: any[] = [];
+  if (hasBarangay) {
+    sql += "WHERE p.Barangay_id = ? ";
+    params.push(barangayId);
+  }
+
+  sql += "ORDER BY t.Total_kg DESC LIMIT ?";
+  params.push(l);
+
+  const [rows]: any = await pool.query(sql, params);
+  const result = Array.isArray(rows)
+    ? rows.map((r: any, i: number) => ({
+        ...r,
+        rank: i + 1,
+        previous_rank: prevRanksMap[Number(r.Account_id)] as number | undefined
+      }))
+    : [];
 
   return result;
 }

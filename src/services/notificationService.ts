@@ -113,6 +113,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
             )
           )
         )
+        ${viewerBarangayId != null ? "AND creator_profile.Barangay_id = ?" : ""}
     `
     : (viewerBarangayId != null ? `WHERE creator_profile.Barangay_id = ?` : "");
 
@@ -289,7 +290,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   if (effectiveType === "maintenance") {
     sql = maintenanceSelect;
     params.push(accountId);
-    if (!isOperator && viewerBarangayId != null) params.push(viewerBarangayId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   } else if (effectiveType === "waste-input") {
     sql = wasteInputSelect;
     params.push(accountId);
@@ -525,6 +526,7 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         SELECT ?, 'maintenance', e.Event_Id, NOW()
         FROM maintenance_events_tbl e
         JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
+        LEFT JOIN profile_tbl creator_profile ON creator_profile.Account_id = mt.Created_by
         LEFT JOIN notification_reads_tbl nr
           ON nr.Notification_id = e.Event_Id
           AND nr.Notification_type = 'maintenance'
