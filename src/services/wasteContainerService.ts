@@ -136,3 +136,41 @@ export async function listContainers() {
 
   return rows;
 }
+
+export async function updateContainerLocation(
+  container_id: number,
+  latitude: number,
+  longitude: number,
+  address?: string
+) {
+  if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
+    throw new Error("Invalid latitude or longitude.");
+  }
+
+  // Get the area_id for this container
+  const [containerRows]: any = await pool.query(
+    "SELECT area_id FROM waste_containers_tbl WHERE container_id = ? LIMIT 1",
+    [container_id]
+  );
+
+  if (!containerRows || containerRows.length === 0) {
+    throw new Error("Container not found.");
+  }
+
+  const areaId = containerRows[0].area_id;
+
+  // Build update query
+  if (address && address.trim()) {
+    await pool.query(
+      "UPDATE area_tbl SET Latitude = ?, Longitude = ?, Full_Address = ? WHERE Area_id = ?",
+      [latitude, longitude, address.trim(), areaId]
+    );
+  } else {
+    await pool.query(
+      "UPDATE area_tbl SET Latitude = ?, Longitude = ? WHERE Area_id = ?",
+      [latitude, longitude, areaId]
+    );
+  }
+
+  return { container_id, latitude, longitude, address: address || undefined };
+}

@@ -6,6 +6,11 @@ import {
   getContainersWithinBBox,
 } from '../services/mapService';
 
+const NOMINATIM_HEADERS = {
+  'Accept-Language': 'en',
+  'User-Agent': 'SIBOL-App/1.0',
+};
+
 type BBox = { minLat: number; maxLat: number; minLon: number; maxLon: number } | null;
 
 function parseBBox(raw?: unknown): BBox {
@@ -88,4 +93,73 @@ export function tileProxy(req: Request, res: Response) {
     console.error('tileProxy error', e);
     res.status(502).end();
   });
+}
+
+export async function geocodeSearch(req: Request, res: Response) {
+  const query = String(req.query.query ?? req.query.q ?? '').trim();
+  const limitRaw = Number(req.query.limit ?? 1);
+  const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(5, Math.floor(limitRaw))) : 1;
+
+  if (!query) {
+    return res.status(400).json({ error: 'missing_query' });
+  }
+
+  const params = new URLSearchParams({
+    format: 'geojson',
+    polygon_geojson: '1',
+    limit: String(limit),
+    q: query,
+  });
+
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: NOMINATIM_HEADERS,
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(payload);
+    }
+
+    return res.json(payload);
+  } catch (err: any) {
+    console.error('geocodeSearch error:', err && err.stack ? err.stack : err);
+    return res.status(502).json({ error: 'geocode_upstream_unavailable', message: String(err?.message ?? err) });
+  }
+}
+
+export async function geocodeReverse(req: Request, res: Response) {
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon);
+  const zoomRaw = Number(req.query.zoom ?? 18);
+  const zoom = Number.isFinite(zoomRaw) ? Math.max(1, Math.min(18, Math.floor(zoomRaw))) : 18;
+  const addressDetails = String(req.query.addressdetails ?? '1');
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return res.status(400).json({ error: 'invalid_coordinates' });
+  }
+
+  const params = new URLSearchParams({
+    format: 'json',
+    lat: String(lat),
+    lon: String(lon),
+    zoom: String(zoom),
+    addressdetails: addressDetails === '0' ? '0' : '1',
+  });
+
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params.toString()}`, {
+      headers: NOMINATIM_HEADERS,
+    });
+
+    const payload = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json(payload);
+    }
+
+    return res.json(payload);
+  } catch (err: any) {
+    console.error('geocodeReverse error:', err && err.stack ? err.stack : err);
+    return res.status(502).json({ error: 'reverse_geocode_upstream_unavailable', message: String(err?.message ?? err) });
+  }
 }
