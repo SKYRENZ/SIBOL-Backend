@@ -66,10 +66,10 @@ export async function getLeaderboard(limit = 100, barangayId?: number): Promise<
   }
 
   let sql =
-    "SELECT t.Account_id, COALESCE(a.Username, '') AS Username, t.Total_kg, COALESCE(a.Points, 0) AS Points " +
-    "FROM account_waste_totals_tbl t " +
-    "LEFT JOIN accounts_tbl a ON a.Account_id = t.Account_id " +
-    "LEFT JOIN profile_tbl p ON p.Account_id = t.Account_id ";
+    "SELECT p.Account_id, COALESCE(a.Username, '') AS Username, COALESCE(t.Total_kg, 0) AS Total_kg, COALESCE(a.Points, 0) AS Points " +
+    "FROM profile_tbl p " +
+    "LEFT JOIN accounts_tbl a ON a.Account_id = p.Account_id " +
+    "LEFT JOIN account_waste_totals_tbl t ON t.Account_id = p.Account_id ";
 
   const params: any[] = [];
 
@@ -78,7 +78,7 @@ export async function getLeaderboard(limit = 100, barangayId?: number): Promise<
     params.push(barangayId);
   }
 
-  sql += "ORDER BY t.Total_kg DESC LIMIT ?";
+  sql += "ORDER BY COALESCE(t.Total_kg, 0) DESC LIMIT ?";
   params.push(l);
 
   const [rows]: any = await pool.query(sql, params);
