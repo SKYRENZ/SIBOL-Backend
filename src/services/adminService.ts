@@ -91,7 +91,7 @@ export async function getPendingAccounts(barangayId?: number) {
     const params: any[] = [];
     let where = 'WHERE p.IsEmailVerified = 1 AND p.IsAdminVerified = 0';
     if (barangayId) {
-      where += ' AND p.Area_id = ?';
+      where += ' AND p.Barangay_id = ?';
       params.push(barangayId);
     }
 
@@ -102,19 +102,22 @@ export async function getPendingAccounts(barangayId?: number) {
         p.FirstName,
         p.LastName,
         p.Email,
-        p.Area_id,
+        p.Barangay_id,
+        p.Barangay_id AS Area_id,
         p.Roles,
         p.IsEmailVerified,
         p.IsAdminVerified,
         p.Created_at,
-        a.Area_name,
+        b.Barangay_Name,
+        b.Barangay_Name AS Area_name,
+        b.Barangay_Name AS Area_Name,
         r.Roles as RoleName,
         pa.File_path AS AttachmentUrl,
         pa.Public_id AS AttachmentPublicId,
         pa.File_name AS AttachmentFileName,
         pa.File_type AS AttachmentFileType
       FROM pending_accounts_tbl p
-      LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
+      LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
       LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
       ${where}
@@ -133,12 +136,21 @@ export async function getPendingAccounts(barangayId?: number) {
 }
 
 // ✅ UPDATED: Get pending account details by ID (removed Contact field)
-export async function getPendingAccountById(pendingId: number) {
+export async function getPendingAccountById(pendingId: number, barangayId?: number) {
   try {
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND p.Barangay_id = ?';
+      params.push(barangayId);
+    }
+
     const [rows]: any = await pool.execute(`
       SELECT 
         p.*,
-        a.Area_name,
+        b.Barangay_Name,
+        b.Barangay_Name AS Area_name,
+        b.Barangay_Name AS Area_Name,
         r.Roles as RoleName,
         pa.File_path AS AttachmentUrl,
         pa.Public_id AS AttachmentPublicId,
@@ -147,12 +159,12 @@ export async function getPendingAccountById(pendingId: number) {
         pa.File_size AS AttachmentFileSize,
         pa.Uploaded_at AS AttachmentUploadedAt
       FROM pending_accounts_tbl p
-      LEFT JOIN area_tbl a ON p.Area_id = a.Area_id
+      LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
       LEFT JOIN user_roles_tbl r ON p.Roles = r.Roles_id
       LEFT JOIN pending_account_attachments_tbl pa ON pa.Pending_id = p.Pending_id
-      WHERE p.Pending_id = ? AND p.IsEmailVerified = 1
+      WHERE p.Pending_id = ? AND p.IsEmailVerified = 1${barangayFilter}
       LIMIT 1
-    `, [pendingId]);
+    `, params);
 
     if (rows.length === 0) {
       throw new Error("Pending account not found or email not verified");
@@ -170,15 +182,22 @@ export async function getPendingAccountById(pendingId: number) {
 }
 
 // ✅ UPDATED: Admin approve account (removed contact field from transfer)
-export async function approveAccount(pendingId: number) {
+export async function approveAccount(pendingId: number, barangayId?: number) {
   const conn = await (pool as any).getConnection();
 
   try {
     await conn.beginTransaction();
 
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND p.Barangay_id = ?';
+      params.push(barangayId);
+    }
+
     const [pendingRows]: any = await conn.execute(
-      "SELECT * FROM pending_accounts_tbl WHERE Pending_id = ? AND IsEmailVerified = 1 AND IsAdminVerified = 0",
-      [pendingId]
+      `SELECT * FROM pending_accounts_tbl p WHERE p.Pending_id = ? AND p.IsEmailVerified = 1 AND p.IsAdminVerified = 0${barangayFilter}`,
+      params
     );
 
     if (pendingRows.length === 0) {
@@ -204,8 +223,8 @@ export async function approveAccount(pendingId: number) {
     const newAccountId = accountResult.insertId;
 
     await conn.execute(
-      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Area_id, Email) VALUES (?, ?, ?, ?, ?)",
-      [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Area_id, pendingAccount.Email]
+      "INSERT INTO profile_tbl (Account_id, FirstName, LastName, Barangay_id, Email) VALUES (?, ?, ?, ?, ?)",
+      [newAccountId, pendingAccount.FirstName, pendingAccount.LastName, pendingAccount.Barangay_id, pendingAccount.Email]
     );
 
     // ✅ log system notification for approval (best-effort)
@@ -697,9 +716,16 @@ export async function setAccountActive(accountId: number, isActive: number) {
 }
 
 // Reject pending account
-export async function rejectAccount(pendingId: number, reason?: string) {
+export async function rejectAccount(pendingId: number, reason?: string, barangayId?: number) {
   try {
-    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?`, [pendingId]);
+    const params: any[] = [pendingId];
+    let barangayFilter = '';
+    if (barangayId) {
+      barangayFilter = ' AND Barangay_id = ?';
+      params.push(barangayId);
+    }
+
+    const [rows]: any = await pool.execute(`SELECT * FROM pending_accounts_tbl WHERE Pending_id = ?${barangayFilter}`, params);
     if (!rows || rows.length === 0) throw new Error('Pending account not found');
     const pending = rows[0];
 
