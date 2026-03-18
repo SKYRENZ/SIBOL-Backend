@@ -14,6 +14,7 @@ import leaderboardRoutes from './Routes/leaderboardRoutes';
 import aiRoutes from "./Routes/ai";
 import waterRoutes from './Routes/waterRoutes';
 import notificationRoutes from './Routes/notificationRoutes';
+import pushNotificationRoutes from "./Routes/pushNotificationRoutes";
 
 import { pool, testDbConnection } from "./config/db.js";
 import { authenticate } from './middleware/authenticate.js';
@@ -162,8 +163,11 @@ app.use('/api/chat', authenticate, chatRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/notifications', notificationRoutes);
-// mount admin routes with required middleware (single mount with auth+authorize)
+app.use("/api/push", pushNotificationRoutes);
+
+// mount admin routes...
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
+
 // mount superadmin routes with auth (isSuperAdmin applied per-route inside router)
 app.use('/api/superadmin', authenticate, superAdminRoutes);
 

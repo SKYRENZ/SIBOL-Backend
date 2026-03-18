@@ -6,6 +6,10 @@ declare global {
       Account_id: number;
       Username: string;
       Roles: number;
+      Barangay_id?: number | null;
+      FirstName?: string | null;
+      LastName?: string | null;
+      Profile_Email?: string | null;
       IsFirstLogin?: number;
     }
 

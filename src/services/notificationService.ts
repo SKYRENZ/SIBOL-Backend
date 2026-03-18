@@ -24,19 +24,21 @@ type ListOptions = {
 };
 
 const EVENT_TITLES: Record<string, string> = {
-  REQUESTED: "Maintenance requested",
-  ACCEPTED: "Maintenance accepted",
-  REASSIGNED: "Maintenance reassigned",
-  ONGOING: "Maintenance started",
-  FOR_VERIFICATION: "Maintenance for verification",
-  COMPLETED: "Maintenance completed",
-  CANCEL_REQUESTED: "Maintenance cancel requested",
-  CANCELLED: "Maintenance cancelled",
-  DELETED: "Maintenance deleted",
+  REQUESTED: "Maintenance Requested",
+  ACCEPTED: "Maintenance Accepted",
+  REASSIGNED: "Maintenance Assigned",
+  ONGOING: "Maintenance Started",
+  FOR_VERIFICATION: "Maintenance For Verification",
+  COMPLETED: "Maintenance Completed",
+  CANCEL_REQUESTED: "Maintenance Cancel Requested",
+  CANCELLED: "Maintenance Cancelled",
+  DELETED: "Maintenance Deleted",
+  MESSAGE: "Maintenance Message",
 };
 
 function buildMaintenanceTitle(eventType?: string, requestId?: number | null) {
-  const base = EVENT_TITLES[eventType ?? ""] ?? "Maintenance update";
+  const evt = String(eventType ?? "").toUpperCase();
+  const base = EVENT_TITLES[evt] ?? "Maintenance Update";
   return requestId ? `${base}: Request #${requestId}` : base;
 }
 
@@ -45,10 +47,24 @@ function buildMaintenanceMessage(args: {
   actorName?: string | null;
   title?: string | null;
 }) {
-  const actor = args.actorName ? `${args.actorName}` : "Someone";
-  const title = args.title ? ` in ${args.title}` : "";
-  const type = args.eventType ?? "update";
-  return `${actor} sent a ${type.toLowerCase()}${title}.`;
+  const evt = String(args.eventType ?? "").toUpperCase();
+  const actor = args.actorName?.trim() || "Someone";
+  const ticketTitle = args.title?.trim() || "this ticket";
+
+  switch (evt) {
+    case "ACCEPTED":
+      return `${actor} has accepted your request of ${ticketTitle}.`;
+    case "CANCELLED":
+      return `${actor} has cancelled your request of ${ticketTitle}.`;
+    case "REASSIGNED":
+      return `${actor} has assigned you to ${ticketTitle}.`;
+    case "COMPLETED":
+      return `${actor} has marked your ticket as completed.`;
+    case "MESSAGE":
+      return `${actor} has a message to ${ticketTitle}.`;
+    default:
+      return `${actor} has updated your maintenance ticket of ${ticketTitle}.`;
+  }
 }
 
 export async function listNotifications(accountId: number, opts: ListOptions = {}) {
@@ -62,32 +78,44 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   }
 
   const [accRows]: any = await pool.query(
-    "SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1",
+    `
+      SELECT
+        a.Roles,
+        a.Username,
+        COALESCE(p.Barangay_id, p.Area_id) AS scope_barangay_id
+      FROM accounts_tbl a
+      LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+      WHERE a.Account_id = ?
+      LIMIT 1
+    `,
     [accountId]
   );
+
   const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
   const accountUsername: string | null = accRows?.[0]?.Username ?? null;
+  const viewerBarangayId: number | null = accRows?.[0]?.scope_barangay_id ?? null;
 
   const isOperator = Number(accountRoleId) === 3;
   const effectiveType: NotificationType | "all" = isOperator ? "maintenance" : type;
 
   const operatorMaintenanceWhere = isOperator
     ? `
-    WHERE
-      e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
-      AND (
-        mt.Created_by = ${Number(accountId)}
-        OR mt.Assigned_to = ${Number(accountId)}
-        OR (
-          e.Event_type = 'REASSIGNED'
-          AND (
-            (JSON_VALID(e.Notes) AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.Notes, '$.to_account_id')) AS UNSIGNED) = ${Number(accountId)})
-            OR (NOT JSON_VALID(e.Notes) AND e.Notes REGEXP 'operator[[:space:]]+${Number(accountId)}([^0-9]|$)')
+      WHERE
+        e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED', 'MESSAGE')
+        AND (
+          mt.Created_by = ${Number(accountId)}
+          OR mt.Assigned_to = ${Number(accountId)}
+          OR (
+            e.Event_type = 'REASSIGNED'
+            AND (
+              (JSON_VALID(e.Notes) AND CAST(JSON_UNQUOTE(JSON_EXTRACT(e.Notes, '$.to_account_id')) AS UNSIGNED) = ${Number(accountId)})
+              OR (NOT JSON_VALID(e.Notes) AND e.Notes REGEXP 'operator[[:space:]]+${Number(accountId)}([^0-9]|$)')
+            )
           )
         )
-      )
-  `
-    : "";
+        ${viewerBarangayId != null ? "AND creator_profile.Barangay_id = ?" : ""}
+    `
+    : (viewerBarangayId != null ? `WHERE creator_profile.Barangay_id = ?` : "");
 
   const maintenanceSelect = `
     SELECT
@@ -115,6 +143,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       CASE WHEN nr.Notification_id IS NULL THEN 0 ELSE 1 END AS read_flag
     FROM maintenance_events_tbl e
     JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
+    LEFT JOIN profile_tbl creator_profile ON creator_profile.Account_id = mt.Created_by
     LEFT JOIN maintenance_status_tbl ms ON mt.Main_stat_id = ms.Main_stat_id
     LEFT JOIN maintenance_priority_tbl mp ON mt.Priority_Id = mp.Priority_id
     LEFT JOIN accounts_tbl acc ON e.Actor_Account_Id = acc.Account_id
@@ -126,6 +155,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     ${operatorMaintenanceWhere}
   `;
 
+  const wasteInputWhere = viewerBarangayId != null ? `WHERE actor_profile.Barangay_id = ?` : "";
   const wasteInputSelect = `
     SELECT
       wi.Input_id AS id,
@@ -154,12 +184,15 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     JOIN machine_tbl m ON wi.Machine_id = m.Machine_id
     LEFT JOIN accounts_tbl acc ON wi.Account_id = acc.Account_id
     LEFT JOIN profile_tbl p ON acc.Account_id = p.Account_id
+    LEFT JOIN profile_tbl actor_profile ON actor_profile.Account_id = wi.Account_id
     LEFT JOIN notification_reads_tbl nr
       ON nr.Notification_id = wi.Input_id
       AND nr.Notification_type = 'waste-input'
       AND nr.Account_id = ?
+    ${wasteInputWhere}
   `;
 
+  const collectionWhere = viewerBarangayId != null ? `WHERE operator_profile.Barangay_id = ?` : "";
   const collectionSelect = `
     SELECT
       wc.collection_id AS id,
@@ -195,11 +228,21 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     ) c ON wc.area_id = c.area_id
     LEFT JOIN accounts_tbl acc ON wc.operator_id = acc.Account_id
     LEFT JOIN profile_tbl p ON acc.Account_id = p.Account_id
+    LEFT JOIN profile_tbl operator_profile ON operator_profile.Account_id = wc.operator_id
     LEFT JOIN notification_reads_tbl nr
       ON nr.Notification_id = wc.collection_id
       AND nr.Notification_type = 'collection'
       AND nr.Account_id = ?
+    ${collectionWhere}
   `;
+
+  const roleScope = accountRoleId !== null
+    ? `(sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})`
+    : `sn.Role_id IS NULL`;
+
+  const systemBarangayFilter = viewerBarangayId != null
+    ? `AND (sn.Username IS NOT NULL OR sn.Barangay_id = ?)`
+    : "";
 
   const systemSelect = `
     SELECT
@@ -235,9 +278,10 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       (sn.Username IS NOT NULL AND sn.Username = ?)
       OR (
         sn.Username IS NULL
-        AND (${accountRoleId !== null ? `(sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})` : `sn.Role_id IS NULL`})
+        AND (${roleScope})
       )
     )
+    ${systemBarangayFilter}
   `;
 
   let sql = "";
@@ -246,15 +290,19 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   if (effectiveType === "maintenance") {
     sql = maintenanceSelect;
     params.push(accountId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   } else if (effectiveType === "waste-input") {
     sql = wasteInputSelect;
     params.push(accountId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   } else if (effectiveType === "collection") {
     sql = collectionSelect;
     params.push(accountId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   } else if (effectiveType === "system") {
     sql = systemSelect;
     params.push(accountId, accountUsername);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   } else {
     sql = `
       SELECT * FROM (
@@ -267,7 +315,17 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
         ${systemSelect}
       ) AS notif
     `;
-    params.push(accountId, accountId, accountId, accountId, accountUsername);
+    params.push(accountId);
+    if (!isOperator && viewerBarangayId != null) params.push(viewerBarangayId);
+
+    params.push(accountId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
+
+    params.push(accountId);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
+
+    params.push(accountId, accountUsername);
+    if (viewerBarangayId != null) params.push(viewerBarangayId);
   }
 
   if (unreadOnly) {
@@ -347,21 +405,17 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
       } else if (eventType === "CONTAINER_FULL") {
         title = `Container full: ${containerLabel}`;
         message = `${containerLabel} in ${areaLabel} reached 20 kg and is now full.`;
-      }
-
-      // Leaderboard-specific system notifications
-      else if (eventType.startsWith("LEADERBOARD_")) {
-        const uname = nameLabel || row.actor_username || 'User';
-        const rankInfo = String(row.container_names ?? row.Container_name ?? '').trim();
-        if (eventType === 'LEADERBOARD_ENTERED') {
+      } else if (eventType.startsWith("LEADERBOARD_")) {
+        const uname = nameLabel || row.actor_username || "User";
+        const rankInfo = String(row.container_names ?? "").trim();
+        if (eventType === "LEADERBOARD_ENTERED") {
           title = `Leaderboard: ${uname} entered (#${rankInfo})`;
           message = `${uname} has entered the leaderboard at #${rankInfo}.`;
-        } else if (eventType === 'LEADERBOARD_EXITED') {
+        } else if (eventType === "LEADERBOARD_EXITED") {
           title = `Leaderboard: ${uname} left (#${rankInfo})`;
           message = `${uname} has dropped out of the leaderboard (was #${rankInfo}).`;
-        } else { // LEADERBOARD_MOVED or others
-          // expect rankInfo like '5->3'
-          const parts = rankInfo.split('->').map((s) => s.trim());
+        } else {
+          const parts = rankInfo.split("->").map((s: string) => s.trim());
           if (parts.length === 2) {
             title = `Leaderboard: ${uname} moved up to #${parts[1]}`;
             message = `${uname} moved from #${parts[0]} to #${parts[1]}.`;
@@ -370,32 +424,24 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
             message = `${uname} has a leaderboard update.`;
           }
         }
-      }
-
-      // Reward-specific system notifications
-      else if (eventType.startsWith("REWARD_")) {
+      } else if (eventType.startsWith("REWARD_")) {
         const itemLabel = row.Reward_item || row.first_name || row.actor_username || "Reward";
-        const qtyLabel = (row.Reward_quantity != null && row.Reward_quantity !== '') ? `${row.Reward_quantity}` : (row.container_names ? `${row.container_names}` : null);
-        const costLabel = (row.Reward_points != null && row.Reward_points !== '') ? `${row.Reward_points}` : (row.area_name ? `${row.area_name}` : null);
+        const qtyLabel = (row.Reward_quantity != null && row.Reward_quantity !== "") ? `${row.Reward_quantity}` : (row.container_names ? `${row.container_names}` : null);
+        const costLabel = (row.Reward_points != null && row.Reward_points !== "") ? `${row.Reward_points}` : (row.area_name ? `${row.area_name}` : null);
 
         if (eventType === "REWARD_NEW") {
           title = `New Reward: ${itemLabel}`;
-          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
-          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
-          message = [
-            `${itemLabel} reward has been added.`,
-            priceLine,
-            stockLine
-          ].filter(Boolean).join('\n');
+          const priceLine = costLabel ? `Price: ${costLabel} points` : "";
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : "";
+          message = [`${itemLabel} reward has been added.`, priceLine, stockLine].filter(Boolean).join("\n");
         } else if (eventType === "REWARD_RESTOCKED") {
           title = `Reward Restocked: ${itemLabel}`;
           message = `${itemLabel} has been restocked.`;
         } else if (eventType === "REWARD_UPDATED") {
           title = `Reward Updated: ${itemLabel}`;
-          // format as multiple lines per spec
-          const priceLine = costLabel ? `Price: ${costLabel} points` : '';
-          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : '';
-          message = [ `${itemLabel} reward were updated`, priceLine, stockLine ].filter(Boolean).join('\n');
+          const priceLine = costLabel ? `Price: ${costLabel} points` : "";
+          const stockLine = qtyLabel ? `Stock: ${qtyLabel}` : "";
+          message = [`${itemLabel} reward were updated`, priceLine, stockLine].filter(Boolean).join("\n");
         } else if (eventType === "REWARD_UNCLAIMED") {
           title = `Reward Redeemed: ${itemLabel}`;
           message = `${itemLabel} was redeemed. Please claim it at your Barangay.`;
@@ -453,10 +499,23 @@ export async function markNotificationRead(accountId: number, type: Notification
 }
 
 export async function markAllNotificationsRead(accountId: number, type: NotificationType) {
-  // Fetch account role + username so we only mark system notifications intended for this role OR specifically targeted to this username
-  const [accRows]: any = await pool.query("SELECT Roles, Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1", [accountId]);
+  const [accRows]: any = await pool.query(
+    `
+      SELECT
+        a.Roles,
+        a.Username,
+        COALESCE(p.Barangay_id, p.Area_id) AS scope_barangay_id
+      FROM accounts_tbl a
+      LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
+      WHERE a.Account_id = ?
+      LIMIT 1
+    `,
+    [accountId]
+  );
+
   const accountRoleId: number | null = accRows?.[0]?.Roles ?? null;
   const accountUsername: string | null = accRows?.[0]?.Username ?? null;
+  const viewerBarangayId: number | null = accRows?.[0]?.scope_barangay_id ?? null;
 
   if (type === "maintenance") {
     const isOperator = Number(accountRoleId) === 3;
@@ -467,12 +526,13 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         SELECT ?, 'maintenance', e.Event_Id, NOW()
         FROM maintenance_events_tbl e
         JOIN maintenance_tbl mt ON e.Request_Id = mt.Request_Id
+        LEFT JOIN profile_tbl creator_profile ON creator_profile.Account_id = mt.Created_by
         LEFT JOIN notification_reads_tbl nr
           ON nr.Notification_id = e.Event_Id
           AND nr.Notification_type = 'maintenance'
           AND nr.Account_id = ?
         WHERE nr.Notification_id IS NULL
-          AND e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED')
+          AND e.Event_type IN ('ACCEPTED', 'REASSIGNED', 'CANCELLED', 'COMPLETED', 'MESSAGE')
           AND (
             mt.Created_by = ${Number(accountId)}
             OR mt.Assigned_to = ${Number(accountId)}
@@ -493,13 +553,17 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'maintenance', e.Event_Id, NOW()
       FROM maintenance_events_tbl e
+      JOIN maintenance_tbl mt ON mt.Request_Id = e.Request_Id
+      LEFT JOIN profile_tbl creator_profile ON creator_profile.Account_id = mt.Created_by
       LEFT JOIN notification_reads_tbl nr
         ON nr.Notification_id = e.Event_Id
         AND nr.Notification_type = 'maintenance'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
+      ${viewerBarangayId != null ? "AND creator_profile.Barangay_id = ?" : ""}
     `;
-    await pool.query(sql, [accountId, accountId]);
+    const params = viewerBarangayId != null ? [accountId, accountId, viewerBarangayId] : [accountId, accountId];
+    await pool.query(sql, params);
     return { success: true };
   }
 
@@ -508,20 +572,20 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'waste-input', wi.Input_id, NOW()
       FROM machine_waste_input_tbl wi
+      LEFT JOIN profile_tbl actor_profile ON actor_profile.Account_id = wi.Account_id
       LEFT JOIN notification_reads_tbl nr
         ON nr.Notification_id = wi.Input_id
         AND nr.Notification_type = 'waste-input'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
+      ${viewerBarangayId != null ? "AND actor_profile.Barangay_id = ?" : ""}
     `;
-    await pool.query(sql, [accountId, accountId]);
+    const params = viewerBarangayId != null ? [accountId, accountId, viewerBarangayId] : [accountId, accountId];
+    await pool.query(sql, params);
     return { success: true };
   }
 
   if (type === "system") {
-    // Only mark system notifications that are either:
-    // - targeted specifically to this username, OR
-    // - global/role-targeted (sn.Username IS NULL and Role_id matches or is NULL)
     const roleCondition = accountRoleId !== null
       ? `(sn.Username = ? OR (sn.Username IS NULL AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})))`
       : `(sn.Username = ? OR (sn.Username IS NULL AND sn.Role_id IS NULL))`;
@@ -535,23 +599,29 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Notification_type = 'system'
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
-      AND ${roleCondition}
+        AND ${roleCondition}
+        ${viewerBarangayId != null ? "AND (sn.Username IS NOT NULL OR sn.Barangay_id = ?)" : ""}
     `;
-    await pool.query(sql, [accountId, accountId, accountUsername]);
+    const params = viewerBarangayId != null
+      ? [accountId, accountId, accountUsername, viewerBarangayId]
+      : [accountId, accountId, accountUsername];
+    await pool.query(sql, params);
     return { success: true };
   }
 
-  // fallback for collection
   const sql = `
     INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
     SELECT ?, 'collection', wc.collection_id, NOW()
     FROM waste_collection_tbl wc
+    LEFT JOIN profile_tbl operator_profile ON operator_profile.Account_id = wc.operator_id
     LEFT JOIN notification_reads_tbl nr
       ON nr.Notification_id = wc.collection_id
       AND nr.Notification_type = 'collection'
       AND nr.Account_id = ?
     WHERE nr.Notification_id IS NULL
+    ${viewerBarangayId != null ? "AND operator_profile.Barangay_id = ?" : ""}
   `;
-  await pool.query(sql, [accountId, accountId]);
+  const params = viewerBarangayId != null ? [accountId, accountId, viewerBarangayId] : [accountId, accountId];
+  await pool.query(sql, params);
   return { success: true };
 }

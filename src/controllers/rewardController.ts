@@ -2,11 +2,48 @@ import type { Request, Response } from "express";
 import * as rewardService from "../services/rewardService";
 import cloudinary from "../config/cloudinary"; // ✅ needed for attachment deletion
 
+type RewardActorInfo = {
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+};
+
+function getRewardActorInfo(req: Request): { barangayId: number; actor: RewardActorInfo } | null {
+  const actor: any = (req as any).user;
+  const barangayId = Number(actor?.Barangay_id);
+
+  if (!barangayId || Number.isNaN(barangayId)) return null;
+
+  return {
+    barangayId,
+    actor: {
+      username: actor?.Username ? String(actor.Username) : null,
+      firstName: actor?.FirstName ? String(actor.FirstName) : null,
+      lastName: actor?.LastName ? String(actor.LastName) : null,
+      email: actor?.Profile_Email ? String(actor.Profile_Email) : (actor?.Email ? String(actor.Email) : null),
+    },
+  };
+}
+
 export const createReward = async (req: Request, res: Response) => {
   try {
     const { Item, Description, Points_cost, Quantity } = req.body;
-    if (!Item || Points_cost == null || Quantity == null) return res.status(400).json({ message: "Missing required fields" });
-    const id = await rewardService.createReward({ Item, Description, Points_cost, Quantity });
+    if (!Item || Points_cost == null || Quantity == null) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
+
+    const actorCtx = getRewardActorInfo(req);
+    if (!actorCtx) {
+      return res.status(400).json({ message: "Actor barangay is required" });
+    }
+
+    const id = await rewardService.createReward(
+      { Item, Description, Points_cost, Quantity },
+      actorCtx.barangayId,
+      actorCtx.actor
+    );
+
     return res.status(201).json({ message: "Reward created", Reward_id: id });
   } catch (err: any) {
     return res.status(500).json({ message: err.message || "Server error" });
@@ -16,7 +53,16 @@ export const createReward = async (req: Request, res: Response) => {
 export const updateReward = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    await rewardService.updateReward(id, req.body);
+    if (!id || Number.isNaN(id)) {
+      return res.status(400).json({ message: "Invalid reward id" });
+    }
+
+    const actorCtx = getRewardActorInfo(req);
+    if (!actorCtx) {
+      return res.status(400).json({ message: "Actor barangay is required" });
+    }
+
+    await rewardService.updateReward(id, req.body, actorCtx.barangayId, actorCtx.actor);
     return res.json({ message: "Reward updated" });
   } catch (err: any) {
     return res.status(500).json({ message: err.message || "Server error" });

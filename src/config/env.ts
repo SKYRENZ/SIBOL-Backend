@@ -62,6 +62,11 @@ export const config = {
   CLOUDINARY_CLOUD_NAME: getOptionalEnv('CLOUDINARY_CLOUD_NAME', ''),
   CLOUDINARY_API_KEY: getOptionalEnv('CLOUDINARY_API_KEY', ''),
   CLOUDINARY_API_SECRET: getOptionalEnv('CLOUDINARY_API_SECRET', ''),
+
+  // Push Notifications (Expo)
+  EXPO_ACCESS_TOKEN: getOptionalEnv("EXPO_ACCESS_TOKEN", ""),
+  EXPO_PUSH_API_URL: getOptionalEnv("EXPO_PUSH_API_URL", "https://exp.host/--/api/v2/push/send"),
+  PUSH_NOTIFICATIONS_ENABLED: getOptionalEnv("PUSH_NOTIFICATIONS_ENABLED", "true") === "true",
 };
 
 // derived helper to use in server
