@@ -2,23 +2,34 @@ import { pool } from '../config/db';
 
 // CREATE - Function to add new machine
 export async function createMachine(
-  deviceId: string,
   areaId: number,
-  macAddress: string,
-  certFingerprint?: string,
-  certificatePEM?: string,
-  status?: number
+  status?: number,
+  barangayId?: number
 ) {
   // Validation
-  if (!deviceId || !areaId || !macAddress) {
-    throw new Error("Device ID, Area ID, and MAC address are required");
+  if (!areaId) {
+    throw new Error("Area ID is required");
   }
 
   try {
+    if (barangayId) {
+      const [areaRows]: any = await pool.execute(
+        `SELECT a.Area_id
+         FROM area_tbl a
+         WHERE a.Area_id = ? AND a.Barangay_id = ?
+         LIMIT 1`,
+        [areaId, barangayId]
+      );
+
+      if (!Array.isArray(areaRows) || areaRows.length === 0) {
+        throw new Error("Selected area is not under your barangay");
+      }
+    }
+
     // First insert with a temporary name to get the actual auto-increment ID
     const [result]: any = await pool.execute(
-      `INSERT INTO machine_tbl (Device_id, Name, Area_id, Status, Mac_address, Cert_fingerprint, Certificate_PEM) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [deviceId, "TEMP_NAME", areaId, status || null, macAddress, certFingerprint || null, certificatePEM || null]
+      `INSERT INTO machine_tbl (Name, Area_id, Status, Barangay_id) VALUES (?, ?, ?, ?)`,
+      ["TEMP_NAME", areaId, status || null, barangayId || null]
     );
 
     // Get the actual inserted ID
@@ -39,15 +50,12 @@ export async function createMachine(
       message: "Machine created successfully",
       machineId: actualId,
       machine: {
-        name: machineName,
-        deviceId,
-        areaId,
-        macAddress,
-        certFingerprint,
-        certificatePEM,
-        status,
-        createdDate: currentDate,
-        actualId: actualId
+        machine_id: actualId,
+        Name: machineName,
+        Area_id: areaId,
+        Status: status || null,
+        Barangay_id: barangayId ?? null,
+        createdDate: currentDate
       }
     };
   } catch (error) {
@@ -191,13 +199,25 @@ export async function getMachineStatuses() {
 }
 
 // Function to get all areas
-export async function getAreas() {
+export async function getAreas(barangayId?: number) {
   try {
-    const [areas] = await pool.execute(`
-      SELECT Area_id, Area_Name 
-      FROM area_tbl 
-      ORDER BY Area_Name
-    `);
+    const [areas] = barangayId
+      ? await pool.execute(
+          `
+            SELECT a.Area_id, a.Area_Name, b.Barangay_Name, b.Barangay_id
+            FROM area_tbl a
+            LEFT JOIN barangay_tbl b ON a.Barangay_id = b.Barangay_id
+            WHERE a.Area_id = ?
+            ORDER BY a.Area_Name
+          `,
+          [barangayId]
+        )
+      : await pool.execute(`
+          SELECT a.Area_id, a.Area_Name, b.Barangay_Name, b.Barangay_id
+          FROM area_tbl a
+          LEFT JOIN barangay_tbl b ON a.Barangay_id = b.Barangay_id
+          ORDER BY a.Area_Name
+        `);
 
     return {
       success: true,
