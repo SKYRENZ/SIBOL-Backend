@@ -732,39 +732,67 @@ export async function checkSSOEligibility(email: string) {
 // NEW: Get queue position for pending account
 export async function getQueuePosition(email: string) {
   try {
-    const [pendingAccounts]: any = await pool.execute(
-      `SELECT Pending_id, Email, Username, Created_at
-       FROM pending_accounts_tbl
-       WHERE IsEmailVerified = 1 AND IsAdminVerified = 0
-       ORDER BY Created_at ASC`
-    );
-
-    const list = Array.isArray(pendingAccounts) ? pendingAccounts : [];
     const lowerEmail = String(email ?? '').toLowerCase();
 
-    if (list.length === 0) {
+    const [targetRows]: any = await pool.execute(
+      `SELECT Pending_id, Email, Username, Barangay_id, Created_at
+       FROM pending_accounts_tbl
+       WHERE LOWER(Email) = ?
+         AND IsEmailVerified = 1
+         AND IsAdminVerified = 0
+       LIMIT 1`,
+      [lowerEmail]
+    );
+
+    const target = Array.isArray(targetRows) && targetRows.length > 0 ? targetRows[0] : null;
+    if (!target) {
       return {
         position: null,
         totalPending: 0,
+        barangayId: null,
         estimatedWaitTime: null,
       };
     }
 
-    const idx = list.findIndex((acc: any) => String(acc.Email ?? '').toLowerCase() === lowerEmail);
-
-    if (idx === -1) {
-      // do NOT throw — return null so callers can handle gracefully
+    const barangayId = Number(target.Barangay_id ?? 0);
+    if (!Number.isFinite(barangayId) || barangayId <= 0) {
       return {
         position: null,
-        totalPending: list.length,
+        totalPending: 0,
+        barangayId: null,
         estimatedWaitTime: null,
       };
     }
 
-    const position = idx + 1;
+    const [countRows]: any = await pool.execute(
+      `SELECT COUNT(*) AS totalPending
+       FROM pending_accounts_tbl
+       WHERE Barangay_id = ?
+         AND IsEmailVerified = 1
+         AND IsAdminVerified = 0`,
+      [barangayId]
+    );
+
+    const totalPending = Number(countRows?.[0]?.totalPending ?? 0);
+
+    const [positionRows]: any = await pool.execute(
+      `SELECT COUNT(*) AS position
+       FROM pending_accounts_tbl
+       WHERE Barangay_id = ?
+         AND IsEmailVerified = 1
+         AND IsAdminVerified = 0
+         AND (
+           Created_at < ?
+           OR (Created_at = ? AND Pending_id <= ?)
+         )`,
+      [barangayId, target.Created_at, target.Created_at, target.Pending_id]
+    );
+
+    const position = Number(positionRows?.[0]?.position ?? 0) || 1;
     return {
       position,
-      totalPending: list.length,
+      totalPending,
+      barangayId,
       estimatedWaitTime: calculateEstimatedWaitTime(position),
     };
   } catch (error) {

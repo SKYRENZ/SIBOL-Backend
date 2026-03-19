@@ -95,6 +95,8 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   const accountUsername: string | null = accRows?.[0]?.Username ?? null;
   const viewerBarangayId: number | null = accRows?.[0]?.scope_barangay_id ?? null;
 
+  console.log(`[NotifService] Account ${accountId}: role=${accountRoleId}, username='${accountUsername}', barangay=${viewerBarangayId}`);
+
   const isOperator = Number(accountRoleId) === 3;
   const effectiveType: NotificationType | "all" = isOperator ? "maintenance" : type;
 
@@ -155,7 +157,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     ${operatorMaintenanceWhere}
   `;
 
-  const wasteInputWhere = viewerBarangayId != null ? `WHERE actor_profile.Barangay_id = ?` : "";
+  const wasteInputWhere = viewerBarangayId != null ? `WHERE m.Barangay_id = ?` : "";
   const wasteInputSelect = `
     SELECT
       wi.Input_id AS id,
@@ -192,7 +194,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     ${wasteInputWhere}
   `;
 
-  const collectionWhere = viewerBarangayId != null ? `WHERE operator_profile.Barangay_id = ?` : "";
+  const collectionWhere = viewerBarangayId != null ? `WHERE a.Barangay_id = ?` : "";
   const collectionSelect = `
     SELECT
       wc.collection_id AS id,
@@ -241,7 +243,7 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
     : `sn.Role_id IS NULL`;
 
   const systemBarangayFilter = viewerBarangayId != null
-    ? `AND sn.Username IS NOT NULL`
+    ? "AND (sn.Barangay_id IS NULL OR sn.Barangay_id = ?)"
     : "";
 
   const systemSelect = `
@@ -340,7 +342,20 @@ export async function listNotifications(accountId: number, opts: ListOptions = {
   sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
   params.push(limit, offset);
 
+  if (effectiveType === "system") {
+    console.log(`[NotifService] System query for account ${accountId}:`);
+    console.log(`  - accountUsername: '${accountUsername}'`);
+    console.log(`  - accountRoleId: ${accountRoleId}`);
+    console.log(`  - roleScope: (Role_id IS NULL OR Role_id = ${accountRoleId})`);
+    console.log(`  - params: [${params.slice(0, -2).join(', ')}] (excluding LIMIT/OFFSET)`);
+    console.log(`[NotifService] SQL excerpt (FROM/WHERE):\n${sql.substring(sql.indexOf('FROM'), sql.indexOf('ORDER BY'))}`);
+  }
+
   const [rows] = await pool.query<Row[]>(sql, params);
+
+  if (effectiveType === "system") {
+    console.log(`[NotifService] System query returned ${rows?.length ?? 0} rows`);
+  }
 
   return (rows || []).map((row) => {
     const actorName = row.actor_name || row.actor_username || null;
@@ -590,6 +605,10 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
       ? `(sn.Username = ? OR (sn.Username IS NULL AND (sn.Role_id IS NULL OR sn.Role_id = ${Number(accountRoleId)})))`
       : `(sn.Username = ? OR (sn.Username IS NULL AND sn.Role_id IS NULL))`;
 
+    const systemBarangayCondition = viewerBarangayId != null
+      ? "AND (sn.Barangay_id IS NULL OR sn.Barangay_id = ?)"
+      : "";
+
     const sql = `
       INSERT INTO notification_reads_tbl (Account_id, Notification_type, Notification_id, Read_at)
       SELECT ?, 'system', sn.Notification_id, NOW()
@@ -600,10 +619,10 @@ export async function markAllNotificationsRead(accountId: number, type: Notifica
         AND nr.Account_id = ?
       WHERE nr.Notification_id IS NULL
         AND ${roleCondition}
-        ${viewerBarangayId != null ? `AND sn.Username IS NOT NULL` : ""}
+        ${systemBarangayCondition}
     `;
     const params = viewerBarangayId != null
-      ? [accountId, accountId, accountUsername]
+      ? [accountId, accountId, accountUsername, viewerBarangayId]
       : [accountId, accountId, accountUsername];
     await pool.query(sql, params);
     return { success: true };
