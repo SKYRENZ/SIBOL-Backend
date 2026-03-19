@@ -41,6 +41,7 @@ import wasteContainerRoutes from './Routes/wasteContainerRoutes';
 import wasteCollectionRoutes from './Routes/wasteCollectionRoutes';
 import additivesRoutes from './Routes/additivesRoutes';
 import userRoutes from "./Routes/userRoutes"; // 1. Import user routes
+import conversionRoutes from './Routes/conversionRoutes';
 // I.O.T Stages imports:
 import S1_esp32Routes from './Routes/S1_esp32Routes';
 import S3_sensorsRoutes from './Routes/S3_sensorsRoutes';
@@ -156,6 +157,7 @@ app.use('/api/waste-containers', wasteContainerRoutes);
 app.use('/api/waste-collections', wasteCollectionRoutes);
 app.use("/api/users", userRoutes); // 2. Register user routes
 app.use('/api/additives', additivesRoutes);
+app.use('/api/conversion', conversionRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);
 app.use('/api/chat', authenticate, chatRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
