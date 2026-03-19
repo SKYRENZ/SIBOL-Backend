@@ -145,6 +145,23 @@ export const markRedeemed = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ message: "Invalid transaction id" });
 
+    // auth: allow staff (roles 1,2,5) OR the transaction owner (household role)
+    const authUser: any = (req as any).user;
+    if (!authUser) return res.status(401).json({ message: "Authentication required" });
+
+    const role = Number(authUser?.Roles);
+
+    // fetch transaction for ownership check and to ensure it exists
+    const tx = await rewardService.getTransactionById(id);
+    if (!tx) return res.status(404).json({ message: "Transaction not found" });
+
+    const isStaff = [1, 2, 5].includes(Number(role));
+    const isOwner = Number(tx.Account_id) === Number(authUser?.Account_id);
+
+    if (!isStaff && !isOwner) {
+      return res.status(403).json({ message: "Insufficient privileges" });
+    }
+
     // ensure attachment exists (if enforced)
     const has = await rewardService.hasAttachments(id);
     if (!has) {

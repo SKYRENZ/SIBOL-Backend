@@ -410,6 +410,19 @@ export const getTransactionByCode = async (
   return (rows as any[])[0] || null;
 };
 
+export const getTransactionById = async (
+  id: number
+): Promise<(RewardTransaction & { Item?: string; Points_cost?: number }) | null> => {
+  const [rows] = await pool.query(
+    `SELECT rt.*, r.Item, r.Points_cost
+     FROM reward_transactions_tbl rt
+     LEFT JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+     WHERE rt.Reward_transaction_id = ?`,
+    [id]
+  );
+  return (rows as any[])[0] || null;
+};
+
 /* list transactions */
 export const listTransactions = async (opts: { status?: string; accountId?: number } = {}) => {
   const params: any[] = [];
