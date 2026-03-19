@@ -12,6 +12,8 @@ export async function listNotifications(req: Request, res: Response) {
     const offset = Number(req.query.offset ?? 0);
     const unreadOnly = String(req.query.unreadOnly ?? "false") === "true";
 
+    console.log(`[Notification] Fetching ${type} for account ${accountId}, barangay=${user?.Barangay_id}, role=${user?.Roles}`);
+
     const rows = await notificationService.listNotifications(accountId, {
       type,
       limit,
@@ -19,9 +21,15 @@ export async function listNotifications(req: Request, res: Response) {
       unreadOnly,
     });
 
+    console.log(`[Notification] Found ${rows.length} notifications for account ${accountId}, types: ${rows.map(r => r.type).join(', ')}`);
+    if (rows.length === 0) {
+      console.log(`[Notification] DEBUG: Expected system notifications with Role_id or Username for account ${accountId}`);
+    }
+
     return res.json({ data: rows });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch notifications";
+    console.error(`[Notification] Error for account ${(req as any).user?.Account_id}:`, message);
     if (message.toLowerCase().includes("notification_reads_tbl")) {
       return res.json({ data: [] });
     }
