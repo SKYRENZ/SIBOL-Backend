@@ -10,10 +10,41 @@ function isAuditSchemaError(err: unknown): boolean {
 }
 
 async function ensureConversionTables(executor: DbExecutor) {
+  try {
+    // Check if conversion_rate_tbl exists
+    const [tables]: any = await executor.execute(
+      `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'conversion_rate_tbl'`
+    );
+    
+    if (Array.isArray(tables) && tables.length > 0) {
+      // Table exists, check if it has the correct structure
+      try {
+        // Try to check if it has an 'id' column (incorrect schema)
+        const [cols]: any = await executor.execute(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'conversion_rate_tbl' AND COLUMN_NAME = 'id'`
+        );
+        
+        if (Array.isArray(cols) && cols.length > 0) {
+          // Table has incorrect 'id' column, drop and recreate
+          console.log('Dropping conversion_rate_tbl due to incorrect schema...');
+          await executor.execute('DROP TABLE IF EXISTS conversion_audit_tbl');
+          await executor.execute('DROP TABLE IF EXISTS conversion_rate_tbl');
+        }
+      } catch (err) {
+        console.warn('Could not check table schema:', err);
+      }
+    }
+  } catch (err) {
+    console.warn('Could not check existing tables:', err);
+  }
+
+  // Create or recreate tables with correct schema
   await executor.execute(
     `CREATE TABLE IF NOT EXISTS conversion_rate_tbl (
       Barangay_id INT PRIMARY KEY,
-      points_per_kg DECIMAL(10,2) NOT NULL
+      points_per_kg DECIMAL(10,2) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )`
   );
 
