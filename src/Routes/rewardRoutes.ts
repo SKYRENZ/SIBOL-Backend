@@ -23,7 +23,8 @@ router.post("/", canManageRewards, rewardController.createReward);
 router.put("/:id", canManageRewards, rewardController.updateReward);
 router.patch("/:id/archive", canManageRewards, rewardController.archiveReward);
 router.patch("/:id/restore", canManageRewards, rewardController.restoreReward);
-router.patch("/transaction/:id/redeemed", canManageRewards, rewardController.markRedeemed);
+// allow controller to decide if actor can mark (owner OR staff)
+router.patch("/transaction/:id/redeemed", rewardController.markRedeemed);
 
 // attachments
 router.get("/transaction/:transactionId/attachments", rewardController.listRewardAttachments);
