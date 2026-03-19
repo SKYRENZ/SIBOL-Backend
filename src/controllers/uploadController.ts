@@ -195,6 +195,17 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
     const exists = await rewardService.transactionExists(txId);
     if (!exists) return res.status(404).json({ message: "Reward transaction not found" });
 
+    // authorize: allow staff/admin (roles 1,2,5) OR the transaction owner
+    const tx = await rewardService.getTransactionById(txId);
+    const authUser: any = (req as any).user;
+    const role = Number(authUser?.Roles ?? authUser?.role ?? null);
+    const isStaff = [1, 2, 5].includes(Number(role));
+    const isOwner = tx && Number(tx.Account_id) === Number(authUser?.Account_id);
+
+    if (!isStaff && !isOwner) {
+      return res.status(403).json({ message: "Insufficient privileges to upload attachment for this transaction" });
+    }
+
     const base64Data = file.buffer.toString("base64");
     const dataURI = `data:${file.mimetype};base64,${base64Data}`;
     const folder = `reward_attachments/tx_${txId}`;
@@ -204,8 +215,8 @@ export async function uploadClaimedRewardAttachment(req: Request, res: Response)
       resource_type: "image",
     });
 
-    const authUser: any = (req as any).user;
-    const accountId = Number(authUser?.Account_id ?? req.body.account_id ?? null) || null;
+    // use authenticated account id when available, otherwise use provided account_id
+    const accountId = Number((req as any).user?.Account_id ?? req.body.account_id ?? null) || null;
 
     const attachment = await rewardService.insertRewardAttachment({
       Reward_transaction_id: txId,
