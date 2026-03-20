@@ -95,6 +95,15 @@ export const listRewards = async (req: Request, res: Response) => {
     let options: any = {};
     if (archived === "true") options.archived = true;
     else if (archived === "false") options.archived = false;
+
+    // Get user's barangay to filter rewards
+    const authUser: any = (req as any).user;
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+
+    if (userBarangayId !== undefined) {
+      options.barangayId = userBarangayId;
+    }
+
     const rows = await rewardService.listRewards(options);
     return res.json(rows);
   } catch (err: any) {
@@ -105,7 +114,12 @@ export const listRewards = async (req: Request, res: Response) => {
 export const getReward = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const reward = await rewardService.getRewardById(id);
+
+    // Get user's barangay to check access
+    const authUser: any = (req as any).user;
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+
+    const reward = await rewardService.getRewardById(id, userBarangayId);
     if (!reward) return res.status(404).json({ message: "Reward not found" });
     return res.json(reward);
   } catch (err: any) {
