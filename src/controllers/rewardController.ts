@@ -146,7 +146,12 @@ export const validateRedemptionCode = async (req: Request, res: Response) => {
   try {
     const code = req.params.code;
     if (!code) return res.status(400).json({ message: "Missing code parameter" });
-    const tx = await rewardService.getTransactionByCode(code);
+
+    // Get user's barangay to check access
+    const authUser: any = (req as any).user;
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+
+    const tx = await rewardService.getTransactionByCode(code, userBarangayId);
     if (!tx) return res.status(404).json({ message: "Code not found" });
     return res.json(tx);
   } catch (err: any) {
@@ -164,9 +169,10 @@ export const markRedeemed = async (req: Request, res: Response) => {
     if (!authUser) return res.status(401).json({ message: "Authentication required" });
 
     const role = Number(authUser?.Roles);
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
 
     // fetch transaction for ownership check and to ensure it exists
-    const tx = await rewardService.getTransactionById(id);
+    const tx = await rewardService.getTransactionById(id, userBarangayId);
     if (!tx) return res.status(404).json({ message: "Transaction not found" });
 
     const isStaff = [1, 2, 5].includes(Number(role));
@@ -197,16 +203,28 @@ export const listTransactions = async (req: Request, res: Response) => {
     // If household user, restrict to their own transactions
     const authUser: any = (req as any).user;
     let accountFilter: number | undefined = undefined;
+    let barangayFilter: number | undefined = undefined;
 
     if (authUser && Number(authUser?.Roles) === 4) {
+      // Household user - show only their own transactions
       accountFilter = Number(authUser?.Account_id);
-    } else if (req.query.account_id) {
-      accountFilter = Number(req.query.account_id);
+    } else {
+      // Staff user - filter by barangay
+      const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+      if (userBarangayId !== undefined) {
+        barangayFilter = userBarangayId;
+      }
+
+      // Allow filtering by specific account if provided
+      if (req.query.account_id) {
+        accountFilter = Number(req.query.account_id);
+      }
     }
 
-    const opts: { status?: string; accountId?: number } = {};
+    const opts: { status?: string; accountId?: number; barangayId?: number } = {};
     if (status !== undefined) opts.status = status;
     if (accountFilter !== undefined) opts.accountId = accountFilter;
+    if (barangayFilter !== undefined) opts.barangayId = barangayFilter;
 
     const rows = await rewardService.listTransactions(opts);
     return res.json(rows);
@@ -219,6 +237,13 @@ export const listRewardAttachments = async (req: Request, res: Response) => {
   try {
     const txId = Number(req.params.transactionId ?? req.query.transactionId);
     if (!txId) return res.status(400).json({ message: "Missing transaction id" });
+
+    // Verify user has access to this transaction
+    const authUser: any = (req as any).user;
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+
+    const tx = await rewardService.getTransactionById(txId, userBarangayId);
+    if (!tx) return res.status(404).json({ message: "Transaction not found" });
 
     const rows = await rewardService.listRewardAttachmentsByTransaction(txId);
     return res.json(rows);
@@ -235,6 +260,13 @@ export const deleteRewardAttachment = async (req: Request, res: Response) => {
 
     const row = await rewardService.getAttachmentById(attachId);
     if (!row) return res.status(404).json({ message: "Attachment not found" });
+
+    // Verify user has access to the transaction this attachment belongs to
+    const authUser: any = (req as any).user;
+    const userBarangayId = authUser?.Barangay_id ? Number(authUser.Barangay_id) : undefined;
+
+    const tx = await rewardService.getTransactionById(row.Reward_transaction_id, userBarangayId);
+    if (!tx) return res.status(404).json({ message: "Transaction not found" });
 
     if (row.Public_id) {
       try {

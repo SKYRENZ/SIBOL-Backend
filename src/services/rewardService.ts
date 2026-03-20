@@ -425,33 +425,55 @@ export const markTransactionRedeemed = async (transactionId: number) => {
 
 /* get transaction by code */
 export const getTransactionByCode = async (
-  code: string
-): Promise<(RewardTransaction & { Item?: string; Points_cost?: number }) | null> => {
+  code: string,
+  userBarangayId?: number
+): Promise<(RewardTransaction & { Item?: string; Points_cost?: number; Barangay_id?: number }) | null> => {
   const [rows] = await pool.query(
-    `SELECT rt.*, r.Item, r.Points_cost
+    `SELECT rt.*, r.Item, r.Points_cost, p.Barangay_id
      FROM reward_transactions_tbl rt
      JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+     LEFT JOIN profile_tbl p ON rt.Account_id = p.Account_id
      WHERE Redemption_code = ?`,
     [code]
   );
-  return (rows as any[])[0] || null;
+  const transaction = (rows as any[])[0] || null;
+
+  // Check barangay access if userBarangayId is provided
+  if (transaction && userBarangayId !== undefined && transaction.Barangay_id !== null) {
+    if (Number(transaction.Barangay_id) !== Number(userBarangayId)) {
+      return null; // User doesn't have access to this transaction
+    }
+  }
+
+  return transaction;
 };
 
 export const getTransactionById = async (
-  id: number
-): Promise<(RewardTransaction & { Item?: string; Points_cost?: number }) | null> => {
+  id: number,
+  userBarangayId?: number
+): Promise<(RewardTransaction & { Item?: string; Points_cost?: number; Barangay_id?: number }) | null> => {
   const [rows] = await pool.query(
-    `SELECT rt.*, r.Item, r.Points_cost
+    `SELECT rt.*, r.Item, r.Points_cost, p.Barangay_id
      FROM reward_transactions_tbl rt
      LEFT JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+     LEFT JOIN profile_tbl p ON rt.Account_id = p.Account_id
      WHERE rt.Reward_transaction_id = ?`,
     [id]
   );
-  return (rows as any[])[0] || null;
+  const transaction = (rows as any[])[0] || null;
+
+  // Check barangay access if userBarangayId is provided
+  if (transaction && userBarangayId !== undefined && transaction.Barangay_id !== null) {
+    if (Number(transaction.Barangay_id) !== Number(userBarangayId)) {
+      return null; // User doesn't have access to this transaction
+    }
+  }
+
+  return transaction;
 };
 
 /* list transactions */
-export const listTransactions = async (opts: { status?: string; accountId?: number } = {}) => {
+export const listTransactions = async (opts: { status?: string; accountId?: number; barangayId?: number } = {}) => {
   const params: any[] = [];
   const where: string[] = [];
 
@@ -467,6 +489,12 @@ export const listTransactions = async (opts: { status?: string; accountId?: numb
     params.push(opts.accountId);
   }
 
+  // Filter by barangay - only show transactions from users in the same barangay
+  if (opts.barangayId !== undefined && opts.barangayId !== null) {
+    where.push("p.Barangay_id = ?");
+    params.push(opts.barangayId);
+  }
+
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const sql = `
@@ -477,6 +505,7 @@ export const listTransactions = async (opts: { status?: string; accountId?: numb
       r.Item,
       COALESCE(CONCAT(COALESCE(p.FirstName, ''), ' ', COALESCE(p.LastName, '')), a.Username, '') AS Fullname,
       COALESCE(p.Email, '') AS Email,
+      p.Barangay_id AS Barangay_id,
       rt.Quantity AS Quantity,
       rt.Total_points,
       rt.Redemption_code,
