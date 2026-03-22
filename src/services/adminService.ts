@@ -353,7 +353,7 @@ export async function getAllUsers(roleId?: number, isActive?: boolean, barangayI
     }
 
     const sql = `
-      SELECT a.*, p.FirstName, p.LastName, p.Email, p.Barangay_id, b.Barangay_name
+      SELECT a.*, p.FirstName, p.LastName, p.Email, p.Barangay_id, p.Profile_image_path, b.Barangay_name
       FROM accounts_tbl a
       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
       LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
@@ -378,11 +378,11 @@ export async function getAllUsers(roleId?: number, isActive?: boolean, barangayI
 export async function getUserById(userId: number) {
   try {
     const [rows]: any = await pool.execute(`
-      SELECT 
-        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created,
-        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id
-      FROM accounts_tbl a 
-      JOIN profile_tbl p ON a.Account_id = p.Account_id 
+      SELECT
+        a.Account_id, a.Username, a.Roles, a.IsActive, a.Account_created, a.credit_score,
+        p.FirstName, p.LastName, p.Email, p.Contact, p.Area_id, p.Profile_image_path
+      FROM accounts_tbl a
+      JOIN profile_tbl p ON a.Account_id = p.Account_id
       WHERE a.Account_id = ?
     `, [userId]);
 
