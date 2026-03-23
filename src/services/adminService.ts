@@ -39,7 +39,7 @@ export async function createUserAsAdmin(
 
     // Insert account
     const [accountResult]: any = await conn.execute(
-      'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive) VALUES (?, ?, ?, 1)',
+      'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive, credit_score) VALUES (?, ?, ?, 1, 100)',
       [username, hashedPassword, roleId]
     );
     const newAccountId = accountResult.insertId;
