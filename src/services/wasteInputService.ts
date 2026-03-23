@@ -40,6 +40,19 @@ export async function createWasteInput(machineId: number, weight: number, accoun
       [machineId, accountId || null, weight]
     );
 
+    // Update the operator's last_input_date if accountId is provided
+    if (accountId) {
+      try {
+        await pool.execute(
+          "UPDATE accounts_tbl SET last_input_date = NOW() WHERE Account_id = ?",
+          [accountId]
+        );
+      } catch (err) {
+        console.error('Error updating last_input_date:', err);
+        // Don't fail the input creation if last_input_date update fails
+      }
+    }
+
     // Trigger credit score update if accountId is provided
     if (accountId) {
       try {
