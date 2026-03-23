@@ -48,22 +48,34 @@ async function getRoleIdByName(roleName: string): Promise<number | null> {
 /**
  * Fetches active users by their role ID, joining with profile to get names.
  * @param roleId - The numeric ID of the role.
+ * @param barangayId - Optional barangay ID to filter users by barangay.
  */
-export async function getUsersByRoleId(roleId: number): Promise<any[]> {
-  const sql = `
+export async function getUsersByRoleId(roleId: number, barangayId?: number): Promise<any[]> {
+  let sql = `
     SELECT
       a.Account_id AS Account_id,
       a.Username AS Username,
       p.Account_id IS NOT NULL AS HasProfile,
       p.FirstName AS FirstName,
       p.LastName AS LastName,
-      a.Roles AS RoleId
+      a.Roles AS RoleId,
+      p.Barangay_id AS Barangay_id
     FROM accounts_tbl a
     LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
     WHERE a.Roles = ? AND a.IsActive = 1
-    ORDER BY COALESCE(p.LastName, a.Username), COALESCE(p.FirstName, a.Username);
   `;
-  const [rows] = await pool.query<Row[]>(sql, [roleId]);
+
+  const params: any[] = [roleId];
+
+  // Filter by barangay if provided
+  if (barangayId !== undefined && barangayId !== null) {
+    sql += ' AND p.Barangay_id = ?';
+    params.push(barangayId);
+  }
+
+  sql += ' ORDER BY COALESCE(p.LastName, a.Username), COALESCE(p.FirstName, a.Username)';
+
+  const [rows] = await pool.query<Row[]>(sql, params);
   return rows;
 }
 
@@ -71,14 +83,15 @@ export async function getUsersByRoleId(roleId: number): Promise<any[]> {
  * Fetches active users by their role name (e.g., 'Operator', 'Admin').
  * This is the new scalable function.
  * @param roleName - The name of the role to fetch users for.
+ * @param barangayId - Optional barangay ID to filter users by barangay.
  */
-export async function getUsersByRoleName(roleName: string): Promise<any[]> {
+export async function getUsersByRoleName(roleName: string, barangayId?: number): Promise<any[]> {
   const roleId = await getRoleIdByName(roleName);
   if (roleId === null) {
     console.warn(`Role '${roleName}' not found.`);
     return []; // Return empty array if role doesn't exist to prevent errors
   }
-  return getUsersByRoleId(roleId);
+  return getUsersByRoleId(roleId, barangayId);
 }
 
 /**

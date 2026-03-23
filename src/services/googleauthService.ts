@@ -25,7 +25,7 @@ passport.deserializeUser(async (id: any, done) => {
     const [rows]: any = await pool.query(
       `SELECT a.*, p.FirstName, p.LastName, p.Email AS profileEmail
        FROM accounts_tbl a
-       LEFT JOIN profile_tbl p ON p.Account_id = p.Account_id
+       LEFT JOIN profile_tbl p ON p.Account_id = a.Account_id
        WHERE a.Account_id = ? LIMIT 1`,
       [Number(id)]
     );

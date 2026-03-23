@@ -65,7 +65,7 @@ export const config = {
 
   // Push Notifications (Expo)
   EXPO_ACCESS_TOKEN: getOptionalEnv("EXPO_ACCESS_TOKEN", ""),
-  EXPO_PUSH_API_URL: getOptionalEnv("EXPO_PUSH_API_URL", "https://exp.host/--/api/v2/push/send"),
+  EXPO_PUSH_API_URL: getOptionalEnv("EXPO_PUSH_API_URL"),
   PUSH_NOTIFICATIONS_ENABLED: getOptionalEnv("PUSH_NOTIFICATIONS_ENABLED", "true") === "true",
 };
 

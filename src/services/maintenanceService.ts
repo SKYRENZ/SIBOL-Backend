@@ -693,13 +693,14 @@ export async function getTicketById(requestId: number, userRole?: number, userBa
 
 export async function listTickets(filters: { status?: string; assigned_to?: number; created_by?: number; created_by_barangay_id?: number } = {}): Promise<any[]> {
   let sql = `
-    SELECT 
-      m.*, 
-      p.Priority, 
+    SELECT
+      m.*,
+      p.Priority,
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
+      creator_profile.Barangay_id AS CreatorBarangayId,
       COUNT(ma.Attachment_id) AS AttachmentCount,
 
       CONCAT(cr_profile.FirstName, ' ', cr_profile.LastName) AS CancelRequestedByName,
@@ -791,6 +792,7 @@ export async function listTickets(filters: { status?: string; assigned_to?: numb
     op_profile.LastName,
     creator_profile.FirstName,
     creator_profile.LastName,
+    creator_profile.Barangay_id,
     creator_account.Roles,
     cr_profile.FirstName,
     cr_profile.LastName,
@@ -1047,13 +1049,14 @@ export async function listOperatorCancelledHistory(operatorAccountId: number): P
 
 export async function listDeletedTickets(): Promise<any[]> {
   const sql = `
-    SELECT 
-      m.*, 
-      p.Priority, 
+    SELECT
+      m.*,
+      p.Priority,
       s.Status,
       CONCAT(op_profile.FirstName, ' ', op_profile.LastName) AS AssignedOperatorName,
       CONCAT(creator_profile.FirstName, ' ', creator_profile.LastName) AS CreatedByName,
       creator_account.Roles AS CreatorRole,
+      creator_profile.Barangay_id AS CreatorBarangayId,
       COUNT(ma.Attachment_id) AS AttachmentCount
     FROM maintenance_tbl m
     LEFT JOIN maintenance_priority_tbl p ON m.Priority_id = p.Priority_id
@@ -1063,7 +1066,7 @@ export async function listDeletedTickets(): Promise<any[]> {
     LEFT JOIN accounts_tbl creator_account ON m.Created_by = creator_account.Account_id
     LEFT JOIN maintenance_attachments_tbl ma ON m.Request_id = ma.Request_id
     WHERE m.IsDeleted = 1
-    GROUP BY m.Request_id
+    GROUP BY m.Request_id, creator_profile.Barangay_id
     ORDER BY m.Request_date DESC
   `;
   const [rows] = await pool.query<Row[]>(sql);
