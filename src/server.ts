@@ -50,6 +50,7 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
 import superAdminRoutes from './Routes/superAdminRoutes.js';
+import creditScoreRoutes from './Routes/creditScoreRoutes';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -156,6 +157,7 @@ app.use('/api/qr', qrRoutes);
 app.use('/api/waste-containers', wasteContainerRoutes);
 app.use('/api/waste-collections', wasteCollectionRoutes);
 app.use("/api/users", userRoutes); // 2. Register user routes
+app.use('/api/credit-score', authenticate, creditScoreRoutes);
 app.use('/api/additives', additivesRoutes);
 app.use('/api/conversion', conversionRoutes);
 app.use("/api/waste-inputs", wasteInputRoutes);

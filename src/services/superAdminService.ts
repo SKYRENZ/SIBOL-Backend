@@ -39,7 +39,7 @@ export async function createAdmin(
 
         // Insert account with Admin role
         const [accountResult]: any = await conn.execute(
-            'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive, IsFirstLogin) VALUES (?, ?, ?, 1, 0)',
+            'INSERT INTO accounts_tbl (Username, Password, Roles, IsActive, IsFirstLogin, credit_score) VALUES (?, ?, ?, 1, 0, 100)',
             [username, hashedPassword, ADMIN_ROLE_ID]
         );
         const newAccountId = accountResult.insertId;

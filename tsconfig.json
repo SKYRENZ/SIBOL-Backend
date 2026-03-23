@@ -9,7 +9,7 @@
     // See also https://aka.ms/tsconfig/module
     "module": "CommonJS",
     "target": "ES2022",
-    "moduleResolution": "Bundler",
+    "moduleResolution": "Node",
     // "types": ["jest"], // This line is removed
     // For nodejs:
     // "lib": ["esnext"],
