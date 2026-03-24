@@ -138,19 +138,32 @@ export async function getAllBarangays() {
 
 /**
  * Get all available barangays (1-1000) that haven't been activated yet.
- * Returns IDs not yet in the database.
+ * Returns IDs not yet in the database, excluding both actual IDs and numbers from names.
  */
 export async function getAvailableBarangays() {
     try {
-        const [existingIds]: any = await pool.execute(
-            'SELECT Barangay_id FROM barangay_tbl'
+        const [existingBarangays]: any = await pool.execute(
+            'SELECT Barangay_id, Barangay_Name FROM barangay_tbl'
         );
 
-        const existingSet = new Set(existingIds.map((row: any) => row.Barangay_id));
+        const excludedNumbers = new Set<number>();
+
+        // Exclude both the actual IDs and the numbers extracted from names
+        existingBarangays.forEach((row: any) => {
+            // Add the actual ID
+            excludedNumbers.add(row.Barangay_id);
+
+            // Extract number from name (e.g., "Barangay 176" -> 176)
+            const match = row.Barangay_Name?.match(/\d+/);
+            if (match) {
+                excludedNumbers.add(parseInt(match[0], 10));
+            }
+        });
+
         const available = [];
 
         for (let i = 1; i <= 1000; i++) {
-            if (!existingSet.has(i)) {
+            if (!excludedNumbers.has(i)) {
                 available.push({
                     barangayId: i,
                     barangayName: `Barangay ${i}`
