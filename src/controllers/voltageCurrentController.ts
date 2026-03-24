@@ -7,7 +7,31 @@ interface VoltageCurrentData {
   voltage: number;
   current: number;
   deviceId: string;
-  timestamp?: string;
+  timestamp?: string | number;
+}
+
+function normalizeMeasurementTimestamp(input: unknown): Date {
+  if (input === undefined || input === null || input === '') {
+    return new Date();
+  }
+
+  // Handle numeric payloads safely (ESP32 may send uptime millis instead of epoch time).
+  const asNumber = Number(input);
+  if (Number.isFinite(asNumber)) {
+    // Likely unix milliseconds.
+    if (asNumber > 946684800000 && asNumber < 4102444800000) {
+      return new Date(asNumber);
+    }
+    // Likely unix seconds.
+    if (asNumber > 946684800 && asNumber < 4102444800) {
+      return new Date(asNumber * 1000);
+    }
+    // Fallback for device uptime counters and other non-epoch values.
+    return new Date();
+  }
+
+  const parsed = new Date(String(input));
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 export class VoltageCurrentController {
@@ -38,21 +62,26 @@ export class VoltageCurrentController {
 
       // Calculate power
       const power = voltageNum * currentNum;
+      const measurementTimestamp = normalizeMeasurementTimestamp(timestamp);
 
       // Insert into database
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp) 
-         VALUES (?, ?, ?, ?)`,
-        [deviceId, voltageNum, currentNum, timestamp || new Date()]
+        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, power, timestamp) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [deviceId, voltageNum, currentNum, power, measurementTimestamp]
       );
 
-      // Update device last seen
-      await pool.execute<ResultSetHeader>(
-        `INSERT INTO esp32_devices_tbl (device_id, last_seen) 
-         VALUES (?, NOW()) 
-         ON DUPLICATE KEY UPDATE last_seen = NOW()`,
-        [deviceId]
-      );
+      // Update device last seen (non-critical path; do not fail ingestion on metadata issues).
+      try {
+        await pool.execute<ResultSetHeader>(
+          `INSERT INTO esp32_devices_tbl (device_id, last_seen) 
+           VALUES (?, NOW()) 
+           ON DUPLICATE KEY UPDATE last_seen = NOW()`,
+          [deviceId]
+        );
+      } catch (deviceError) {
+        console.warn('Warning: failed to update esp32_devices_tbl for', deviceId, deviceError);
+      }
 
       const sensorData = {
         id: result.insertId,
@@ -60,7 +89,7 @@ export class VoltageCurrentController {
         voltage: voltageNum,
         current: currentNum,
         power,
-        timestamp: timestamp || new Date().toISOString()
+        timestamp: measurementTimestamp.toISOString()
       };
 
       console.log('⚡ Received voltage/current data:', sensorData);
@@ -71,8 +100,13 @@ export class VoltageCurrentController {
         data: sensorData
       });
 
-    } catch (error) {
-      console.error('Error processing voltage/current data:', error);
+    } catch (error: any) {
+      console.error('Error processing voltage/current data:', {
+        message: error?.message,
+        code: error?.code,
+        sqlMessage: error?.sqlMessage,
+        sqlState: error?.sqlState
+      });
       res.status(500).json({ error: 'Failed to process sensor data' });
     }
   }
@@ -134,7 +168,7 @@ export class VoltageCurrentController {
         [deviceId, hours]
       );
 
-      const stats = rows[0];
+      const stats = rows[0] ?? ({} as RowDataPacket);
 
       res.json({
         deviceId,
@@ -155,7 +189,7 @@ export class VoltageCurrentController {
             current: Number(stats.minCurrent) || 0,
             power: Number(stats.minPower) || 0
           },
-          readingCount: stats.readingCount
+          readingCount: Number(stats.readingCount) || 0
         }
       });
 
