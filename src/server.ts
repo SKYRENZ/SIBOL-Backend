@@ -50,6 +50,12 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
 import superAdminRoutes from './Routes/superAdminRoutes.js';
+<<<<<<< Updated upstream
+=======
+import collectionLogRoutes from './Routes/collectionLogRoutes';
+import creditScoreRoutes from './Routes/creditScoreRoutes';
+import voltageCurrentRoutes from './Routes/voltageCurrentRoutes';
+>>>>>>> Stashed changes
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -179,6 +185,7 @@ app.use('/api/machine-auth', machineAuthRoutes);
 // mount esp32 stages
 app.use('/api/s1-esp32', S1_esp32Routes);
 app.use('/api/s3-sensors', S3_sensorsRoutes);
+app.use('/api/voltage-current', voltageCurrentRoutes);
 
 // Express error handler (last middleware) - ensure JSON for API paths
 app.use((err: any, req: any, res: any, next: any) => {
