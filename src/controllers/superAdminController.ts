@@ -86,7 +86,7 @@ export async function getBarangays(req: Request, res: Response) {
 export async function listAdmins(req: Request, res: Response) {
     try {
         const raw = await superAdminService.getAdminAccounts();
-        const accounts: any[] = raw?.users ?? raw?.rows ?? raw ?? [];
+        const accounts: any[] = raw?.users ?? [];
 
         const modules: any[] = await fetchAllModules();
         const moduleMap = new Map<number, string>();
@@ -192,5 +192,107 @@ export async function getModules(req: Request, res: Response) {
     } catch (error: any) {
         console.error('Get modules error:', error);
         return res.status(500).json({ success: false, error: error.message || 'Failed to fetch modules' });
+    }
+}
+
+/**
+ * GET /api/superadmin/barangays/available
+ * Get all available barangay IDs (1-1000) that haven't been activated yet.
+ */
+export async function getAvailableBarangays(req: Request, res: Response) {
+    try {
+        const result = await superAdminService.getAvailableBarangays();
+        return res.status(200).json(result);
+    } catch (error: any) {
+        console.error('Get available barangays error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to fetch available barangays',
+        });
+    }
+}
+
+/**
+ * GET /api/superadmin/barangays/inactive
+ * Get all inactive barangays.
+ */
+export async function getInactiveBarangays(req: Request, res: Response) {
+    try {
+        const result = await superAdminService.getInactiveBarangays();
+        return res.status(200).json(result);
+    } catch (error: any) {
+        console.error('Get inactive barangays error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to fetch inactive barangays',
+        });
+    }
+}
+
+/**
+ * POST /api/superadmin/barangays/:barangayId/activate
+ * Activate a barangay by adding it to the database.
+ */
+export async function activateBarangay(req: Request, res: Response) {
+    try {
+        const barangayId = Number(req.params.barangayId);
+
+        if (!Number.isInteger(barangayId) || barangayId < 1 || barangayId > 1000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Barangay ID must be an integer between 1 and 1000',
+            });
+        }
+
+        const result = await superAdminService.activateBarangay(barangayId);
+        return res.status(201).json(result);
+    } catch (error: any) {
+        console.error('Activate barangay error:', error);
+
+        if (error.message.includes('already exists')) {
+            return res.status(409).json({
+                success: false,
+                error: error.message,
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to activate barangay',
+        });
+    }
+}
+
+/**
+ * PATCH /api/superadmin/barangays/:barangayId/deactivate
+ * Deactivate a barangay and cascade deactivate all assigned admins.
+ */
+export async function deactivateBarangay(req: Request, res: Response) {
+    try {
+        const barangayId = Number(req.params.barangayId);
+
+        if (!Number.isInteger(barangayId) || barangayId < 1 || barangayId > 1000) {
+            return res.status(400).json({
+                success: false,
+                error: 'Barangay ID must be an integer between 1 and 1000',
+            });
+        }
+
+        const result = await superAdminService.deactivateBarangay(barangayId);
+        return res.status(200).json(result);
+    } catch (error: any) {
+        console.error('Deactivate barangay error:', error);
+
+        if (error.message.includes('not found')) {
+            return res.status(404).json({
+                success: false,
+                error: error.message,
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to deactivate barangay',
+        });
     }
 }

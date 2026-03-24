@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { awardPointsForAccount } from '../services/qrService';
+import { getPointsByAccountId } from '../services/profileService';
 
 // POST /qr/scan
 export async function scanQr(req: Request, res: Response) {
@@ -32,10 +33,15 @@ export async function scanQr(req: Request, res: Response) {
 
         console.log(`[scanQr] Success! Awarded: ${awarded}, Total: ${totalPoints}`);
 
+        // ✅ Fetch updated account data including total contributions
+        const accountData = await getPointsByAccountId(accountId);
+        const totalContributions = Number(accountData?.total_contributions ?? accountData?.Total_kg ?? 0);
+
         return res.status(200).json({
             message: 'Scan processed',
             awarded,
             totalPoints,
+            totalContributions,
             accountId,
         });
     } catch (err: any) {

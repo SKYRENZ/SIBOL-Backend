@@ -23,12 +23,13 @@ export const createReward = async (
   actorBarangayId: number,
   actor: RewardActorInfo = {}
 ): Promise<number> => {
-  const sql = "INSERT INTO rewards_tbl (Item, Description, Points_cost, Quantity) VALUES (?, ?, ?, ?)";
+  const sql = "INSERT INTO rewards_tbl (Item, Description, Points_cost, Quantity, Barangay_id) VALUES (?, ?, ?, ?, ?)";
   const [result]: any = await pool.query(sql, [
     reward.Item,
     reward.Description || null,
     reward.Points_cost,
     reward.Quantity,
+    actorBarangayId,
   ]);
   const insertId = Number((result as any).insertId);
 
@@ -186,21 +187,40 @@ export const restoreReward = async (rewardId: number): Promise<void> => {
 };
 
 /* READ */
-export const getRewardById = async (id: number): Promise<Reward | null> => {
+export const getRewardById = async (id: number, userBarangayId?: number): Promise<Reward | null> => {
   const [rows]: any = await pool.query(`SELECT * FROM rewards_tbl WHERE Reward_id = ?`, [id]);
-  return (rows as any[])[0] || null;
+  const reward = (rows as any[])[0] || null;
+
+  // Check barangay access if userBarangayId is provided
+  if (reward && userBarangayId !== undefined && reward.Barangay_id !== null) {
+    if (Number(reward.Barangay_id) !== Number(userBarangayId)) {
+      return null; // User doesn't have access to this reward
+    }
+  }
+
+  return reward;
 };
 
-export const listRewards = async (opts: { archived?: boolean } = {}): Promise<Reward[]> => {
+export const listRewards = async (opts: { archived?: boolean; barangayId?: number } = {}): Promise<Reward[]> => {
+  let sql = `SELECT * FROM rewards_tbl WHERE 1=1`;
+  const params: any[] = [];
+
+  // Filter by archived status
   if (opts.archived === true) {
-    const [rows]: any = await pool.query(`SELECT * FROM rewards_tbl WHERE IsArchived = 1 ORDER BY Item ASC`);
-    return rows;
+    sql += ` AND IsArchived = 1`;
+  } else if (opts.archived === false) {
+    sql += ` AND IsArchived = 0`;
   }
-  if (opts.archived === false) {
-    const [rows]: any = await pool.query(`SELECT * FROM rewards_tbl WHERE IsArchived = 0 ORDER BY Item ASC`);
-    return rows;
+
+  // Filter by barangay
+  if (opts.barangayId !== undefined) {
+    sql += ` AND Barangay_id = ?`;
+    params.push(opts.barangayId);
   }
-  const [rows]: any = await pool.query(`SELECT * FROM rewards_tbl ORDER BY Item ASC`);
+
+  sql += ` ORDER BY Item ASC`;
+
+  const [rows]: any = await pool.query(sql, params);
   return rows;
 };
 
@@ -245,12 +265,19 @@ export const redeemReward = async (
         : null;
 
     const [rewardRows]: any = await conn.query(
-      `SELECT Points_cost, Quantity, IsArchived, Item FROM rewards_tbl WHERE Reward_id = ? FOR UPDATE`,
+      `SELECT Points_cost, Quantity, IsArchived, Item, Barangay_id FROM rewards_tbl WHERE Reward_id = ? FOR UPDATE`,
       [rewardId]
     );
     if (!rewardRows || rewardRows.length === 0) throw new Error("Reward not found");
     const reward = rewardRows[0];
     rewardItem = reward.Item ?? null;
+
+    // Check if reward belongs to user's barangay
+    if (reward.Barangay_id !== null && accountBarangayId !== null) {
+      if (Number(reward.Barangay_id) !== Number(accountBarangayId)) {
+        throw new Error("This reward is not available in your barangay");
+      }
+    }
 
     if (Number(reward.IsArchived) === 1) throw new Error("Reward is archived");
     if (Number(reward.Quantity ?? 0) < quantity) throw new Error("Insufficient reward stock");
@@ -398,33 +425,55 @@ export const markTransactionRedeemed = async (transactionId: number) => {
 
 /* get transaction by code */
 export const getTransactionByCode = async (
-  code: string
-): Promise<(RewardTransaction & { Item?: string; Points_cost?: number }) | null> => {
+  code: string,
+  userBarangayId?: number
+): Promise<(RewardTransaction & { Item?: string; Points_cost?: number; Barangay_id?: number }) | null> => {
   const [rows] = await pool.query(
-    `SELECT rt.*, r.Item, r.Points_cost
+    `SELECT rt.*, r.Item, r.Points_cost, p.Barangay_id
      FROM reward_transactions_tbl rt
      JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+     LEFT JOIN profile_tbl p ON rt.Account_id = p.Account_id
      WHERE Redemption_code = ?`,
     [code]
   );
-  return (rows as any[])[0] || null;
+  const transaction = (rows as any[])[0] || null;
+
+  // Check barangay access if userBarangayId is provided
+  if (transaction && userBarangayId !== undefined && transaction.Barangay_id !== null) {
+    if (Number(transaction.Barangay_id) !== Number(userBarangayId)) {
+      return null; // User doesn't have access to this transaction
+    }
+  }
+
+  return transaction;
 };
 
 export const getTransactionById = async (
-  id: number
-): Promise<(RewardTransaction & { Item?: string; Points_cost?: number }) | null> => {
+  id: number,
+  userBarangayId?: number
+): Promise<(RewardTransaction & { Item?: string; Points_cost?: number; Barangay_id?: number }) | null> => {
   const [rows] = await pool.query(
-    `SELECT rt.*, r.Item, r.Points_cost
+    `SELECT rt.*, r.Item, r.Points_cost, p.Barangay_id
      FROM reward_transactions_tbl rt
      LEFT JOIN rewards_tbl r ON rt.Reward_id = r.Reward_id
+     LEFT JOIN profile_tbl p ON rt.Account_id = p.Account_id
      WHERE rt.Reward_transaction_id = ?`,
     [id]
   );
-  return (rows as any[])[0] || null;
+  const transaction = (rows as any[])[0] || null;
+
+  // Check barangay access if userBarangayId is provided
+  if (transaction && userBarangayId !== undefined && transaction.Barangay_id !== null) {
+    if (Number(transaction.Barangay_id) !== Number(userBarangayId)) {
+      return null; // User doesn't have access to this transaction
+    }
+  }
+
+  return transaction;
 };
 
 /* list transactions */
-export const listTransactions = async (opts: { status?: string; accountId?: number } = {}) => {
+export const listTransactions = async (opts: { status?: string; accountId?: number; barangayId?: number } = {}) => {
   const params: any[] = [];
   const where: string[] = [];
 
@@ -440,6 +489,12 @@ export const listTransactions = async (opts: { status?: string; accountId?: numb
     params.push(opts.accountId);
   }
 
+  // Filter by barangay - only show transactions from users in the same barangay
+  if (opts.barangayId !== undefined && opts.barangayId !== null) {
+    where.push("p.Barangay_id = ?");
+    params.push(opts.barangayId);
+  }
+
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const sql = `
@@ -450,6 +505,7 @@ export const listTransactions = async (opts: { status?: string; accountId?: numb
       r.Item,
       COALESCE(CONCAT(COALESCE(p.FirstName, ''), ' ', COALESCE(p.LastName, '')), a.Username, '') AS Fullname,
       COALESCE(p.Email, '') AS Email,
+      p.Barangay_id AS Barangay_id,
       rt.Quantity AS Quantity,
       rt.Total_points,
       rt.Redemption_code,
@@ -594,20 +650,34 @@ export const notifyPointsEnough = async (accountId: number, rewardId: number) =>
 export const notifyEligibleRewardsOnPointsIncrease = async (accountId: number, oldPoints: number, newPoints: number) => {
   if (Number(newPoints) <= Number(oldPoints)) return 0;
 
-  const [accRows]: any = await pool.query(`SELECT Username FROM accounts_tbl WHERE Account_id = ? LIMIT 1`, [accountId]);
+  const [accRows]: any = await pool.query(
+    `SELECT a.Username, p.Barangay_id FROM accounts_tbl a
+     LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+     WHERE a.Account_id = ? LIMIT 1`,
+    [accountId]
+  );
   const acct = (accRows as any[])[0] ?? null;
   const username = acct?.Username ?? null;
+  const barangayId = acct?.Barangay_id ?? null;
 
-  const [rows]: any = await pool.query(
-    `SELECT Reward_id, Item, Points_cost, Quantity
+  let sql = `SELECT Reward_id, Item, Points_cost, Quantity
      FROM rewards_tbl
      WHERE IsArchived = 0
        AND Quantity > 0
        AND CAST(Points_cost AS DECIMAL(10,2)) > ?
-       AND CAST(Points_cost AS DECIMAL(10,2)) <= ?
-     ORDER BY CAST(Points_cost AS DECIMAL(10,2)) ASC`,
-    [Number(oldPoints), Number(newPoints)]
-  );
+       AND CAST(Points_cost AS DECIMAL(10,2)) <= ?`;
+
+  const params: any[] = [Number(oldPoints), Number(newPoints)];
+
+  // Only show rewards from user's barangay
+  if (barangayId !== null) {
+    sql += ` AND Barangay_id = ?`;
+    params.push(barangayId);
+  }
+
+  sql += ` ORDER BY CAST(Points_cost AS DECIMAL(10,2)) ASC`;
+
+  const [rows]: any = await pool.query(sql, params);
 
   if (!Array.isArray(rows) || rows.length === 0) return 0;
 

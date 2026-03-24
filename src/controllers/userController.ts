@@ -35,6 +35,7 @@ async function resolveAccountsCreatedColumn(): Promise<string | null> {
 
 /**
  * A scalable controller to get users by any role name.
+ * Supports optional barangay filtering via query parameter: ?barangayId=123
  */
 export async function getUsersByRole(req: Request, res: Response) {
   try {
@@ -46,8 +47,11 @@ export async function getUsersByRole(req: Request, res: Response) {
     // Capitalize the first letter to match database format (e.g., "operator" -> "Operator")
     const formattedRoleName = roleName.charAt(0).toUpperCase() + roleName.slice(1);
 
-    const users = await userService.getUsersByRoleName(formattedRoleName);
-    
+    // Extract optional barangayId from query parameters
+    const barangayId = req.query.barangayId ? Number(req.query.barangayId) : undefined;
+
+    const users = await userService.getUsersByRoleName(formattedRoleName, barangayId);
+
     // Format the response to be easily consumable by frontend dropdowns
     const formattedUsers = users.map(user => ({
         value: user.Account_id,

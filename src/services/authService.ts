@@ -605,10 +605,12 @@ export async function loginUser(identifier: string, password: string, clientType
     if (isEmailIdentifier(id)) {
       // login by email
       const [rows]: any = await pool.execute(
-        `SELECT a.Account_id, a.Username, a.Password, a.Roles, a.IsFirstLogin
+      `SELECT a.Account_id, a.Username, a.Password, a.Roles, a.IsFirstLogin,
+              p.FirstName, p.LastName, p.Profile_image_path, p.Barangay_id,
+              b.Barangay_Name as Barangay_Name
          FROM accounts_tbl a
-         JOIN profile_tbl p ON a.Account_id = p.Account_id
-         WHERE LOWER(p.Email) = LOWER(?) AND a.IsActive = 1
+         LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+         LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
          LIMIT 1`,
         [id]
       );
@@ -635,9 +637,13 @@ export async function loginUser(identifier: string, password: string, clientType
     } else {
       // login by username (existing behavior)
       const [rows]: any = await pool.execute(
-        `SELECT Account_id, Username, Password, Roles, IsFirstLogin
-         FROM accounts_tbl
-         WHERE Username = ? AND IsActive = 1
+        `SELECT a.Account_id, a.Username, a.Password, a.Roles, a.IsFirstLogin,
+                p.FirstName, p.LastName, p.Profile_image_path, p.Barangay_id,
+                b.Barangay_Name as Barangay_Name
+         FROM accounts_tbl a
+         LEFT JOIN profile_tbl p ON a.Account_id = p.Account_id
+         LEFT JOIN barangay_tbl b ON p.Barangay_id = b.Barangay_id
+         WHERE a.Username = ? AND a.IsActive = 1
          LIMIT 1`,
         [id]
       );
@@ -667,7 +673,7 @@ export async function loginUser(identifier: string, password: string, clientType
 
     const roleNum = typeof user.Roles === 'string' ? Number(user.Roles) : user.Roles;
 
-    const WEB_ALLOWED = new Set([1, 2, 5]);  // Admin, Barangay, SuperAdmin
+    const WEB_ALLOWED = new Set([1, 2, 3, 5]);  // Admin, Barangay, Operator, SuperAdmin
     const MOBILE_ALLOWED = new Set([3, 4]);
 
     const allowed = clientType === 'web' ? WEB_ALLOWED.has(roleNum) : MOBILE_ALLOWED.has(roleNum);

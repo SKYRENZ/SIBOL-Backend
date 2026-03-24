@@ -50,12 +50,9 @@ import machineAuthRoutes from './Routes/machineAuthRoutes';
 import wasteInputRoutes from "./Routes/wasteInputRoutes";
 import mapRoutes from './Routes/mapRoutes';
 import superAdminRoutes from './Routes/superAdminRoutes.js';
-<<<<<<< Updated upstream
-=======
 import collectionLogRoutes from './Routes/collectionLogRoutes';
 import creditScoreRoutes from './Routes/creditScoreRoutes';
 import voltageCurrentRoutes from './Routes/voltageCurrentRoutes';
->>>>>>> Stashed changes
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;

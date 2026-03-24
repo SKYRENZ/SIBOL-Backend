@@ -1,4 +1,5 @@
 import { pool } from '../config/db';
+import * as creditScoreService from './creditScoreService';
 
 export async function areaHasContainerWeightData(areaId: number): Promise<boolean> {
   const conn = await pool.getConnection();
@@ -28,6 +29,15 @@ export async function createWasteCollection(areaId: number, operatorId: number, 
     try {
         const [result] = await conn.query(sql, params) as any;
         const insertId = result.insertId;
+
+        // Trigger credit score update for the operator
+        try {
+            await creditScoreService.updateOperatorCreditScore(operatorId);
+        } catch (err) {
+            console.error('Error updating credit score after waste collection:', err);
+            // Don't fail the collection creation if score update fails
+        }
+
         return {
             collection_id: insertId,
             area_id: areaId,
