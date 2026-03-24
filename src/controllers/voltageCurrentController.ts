@@ -66,9 +66,9 @@ export class VoltageCurrentController {
 
       // Insert into database
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, power, timestamp) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [deviceId, voltageNum, currentNum, power, measurementTimestamp]
+        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp) 
+         VALUES (?, ?, ?, ?)`,
+        [deviceId, voltageNum, currentNum, measurementTimestamp]
       );
 
       // Update device last seen (non-critical path; do not fail ingestion on metadata issues).
