@@ -137,6 +137,24 @@ export async function getAllBarangays() {
 }
 
 /**
+ * Get all inactive barangays.
+ */
+export async function getInactiveBarangays() {
+    try {
+        const [rows]: any = await pool.execute(
+            'SELECT Barangay_id, Barangay_Name, IsActive FROM barangay_tbl WHERE IsActive = 0 ORDER BY Barangay_id'
+        );
+        return {
+            success: true,
+            barangays: rows,
+        };
+    } catch (error) {
+        console.error('❌ Error fetching inactive barangays:', error);
+        throw new Error('Failed to fetch inactive barangays');
+    }
+}
+
+/**
  * Get all available barangays (1-1000) that haven't been activated yet.
  * Returns IDs not yet in the database, excluding both actual IDs and numbers from names.
  */
@@ -183,13 +201,16 @@ export async function getAvailableBarangays() {
 }
 
 /**
- * Activate a barangay by adding it to the database.
+ * Activate a barangay by adding it to the database or reactivating an inactive one.
+ * When reactivating, also reactivates all associated admin accounts.
  * Input: barangayId (1-1000)
  * Automatically generates barangayName as "Barangay {id}"
  */
 export async function activateBarangay(barangayId: number) {
     const conn = await (pool as any).getConnection();
     try {
+        await conn.beginTransaction();
+
         // Validate barangayId range
         if (!Number.isInteger(barangayId) || barangayId < 1 || barangayId > 1000) {
             throw new Error('Barangay ID must be an integer between 1 and 1000');
@@ -197,11 +218,49 @@ export async function activateBarangay(barangayId: number) {
 
         // Check if already exists
         const [existing]: any = await conn.execute(
-            'SELECT Barangay_id FROM barangay_tbl WHERE Barangay_id = ?',
+            'SELECT Barangay_id, Barangay_Name, IsActive FROM barangay_tbl WHERE Barangay_id = ?',
             [barangayId]
         );
+
         if (existing.length > 0) {
-            throw new Error('Barangay already exists in the system');
+            // Barangay exists
+            if (existing[0].IsActive === 1) {
+                throw new Error('Barangay is already active');
+            }
+
+            // Reactivate inactive barangay
+            await conn.execute(
+                'UPDATE barangay_tbl SET IsActive = 1 WHERE Barangay_id = ?',
+                [barangayId]
+            );
+
+            // Get admins assigned to this barangay
+            const [admins]: any = await conn.execute(
+                'SELECT Account_id FROM profile_tbl WHERE Barangay_id = ?',
+                [barangayId]
+            );
+
+            // Cascade reactivate admins
+            if (admins.length > 0) {
+                const adminIds = admins.map((row: any) => row.Account_id);
+                const placeholders = adminIds.map(() => '?').join(',');
+                await conn.execute(
+                    `UPDATE accounts_tbl SET IsActive = 1 WHERE Account_id IN (${placeholders})`,
+                    adminIds
+                );
+            }
+
+            await conn.commit();
+
+            return {
+                success: true,
+                barangay: {
+                    Barangay_id: barangayId,
+                    Barangay_Name: existing[0].Barangay_Name,
+                    IsActive: 1
+                },
+                reactivatedAdminCount: admins.length
+            };
         }
 
         const barangayName = `Barangay ${barangayId}`;
@@ -212,6 +271,8 @@ export async function activateBarangay(barangayId: number) {
             [barangayId, barangayName]
         );
 
+        await conn.commit();
+
         return {
             success: true,
             barangay: {
@@ -221,6 +282,7 @@ export async function activateBarangay(barangayId: number) {
             }
         };
     } catch (error) {
+        await conn.rollback();
         console.error('❌ Error activating barangay:', error);
         throw new Error(`Failed to activate barangay: ${String(error)}`);
     } finally {

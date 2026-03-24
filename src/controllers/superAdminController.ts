@@ -213,6 +213,23 @@ export async function getAvailableBarangays(req: Request, res: Response) {
 }
 
 /**
+ * GET /api/superadmin/barangays/inactive
+ * Get all inactive barangays.
+ */
+export async function getInactiveBarangays(req: Request, res: Response) {
+    try {
+        const result = await superAdminService.getInactiveBarangays();
+        return res.status(200).json(result);
+    } catch (error: any) {
+        console.error('Get inactive barangays error:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to fetch inactive barangays',
+        });
+    }
+}
+
+/**
  * POST /api/superadmin/barangays/:barangayId/activate
  * Activate a barangay by adding it to the database.
  */

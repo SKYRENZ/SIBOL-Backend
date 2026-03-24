@@ -10,6 +10,7 @@ import {
     getRoles,
     getModules,
     getAvailableBarangays,
+    getInactiveBarangays,
     activateBarangay,
     deactivateBarangay,
 } from '../controllers/superAdminController';
@@ -35,6 +36,7 @@ router.get('/users-by-barangay', isSuperAdmin, getUsersByBarangay);
 
 // Barangay activation/deactivation
 router.get('/barangays/available', isSuperAdmin, getAvailableBarangays);
+router.get('/barangays/inactive', isSuperAdmin, getInactiveBarangays);
 router.post('/barangays/:barangayId/activate', isSuperAdmin, activateBarangay);
 router.patch('/barangays/:barangayId/deactivate', isSuperAdmin, deactivateBarangay);
 
