@@ -119,12 +119,12 @@ export async function getUsersByBarangay(barangayId: number) {
 }
 
 /**
- * Get all barangays for dropdown selection.
+ * Get all active barangays for dropdown selection.
  */
 export async function getAllBarangays() {
     try {
         const [rows]: any = await pool.execute(
-            'SELECT Barangay_id, Barangay_Name FROM barangay_tbl ORDER BY Barangay_id'
+            'SELECT Barangay_id, Barangay_Name, IsActive FROM barangay_tbl WHERE IsActive = 1 ORDER BY Barangay_id'
         );
         return {
             success: true,
@@ -133,6 +133,140 @@ export async function getAllBarangays() {
     } catch (error) {
         console.error('❌ Error fetching barangays:', error);
         throw new Error('Failed to fetch barangays');
+    }
+}
+
+/**
+ * Get all available barangays (1-1000) that haven't been activated yet.
+ * Returns IDs not yet in the database.
+ */
+export async function getAvailableBarangays() {
+    try {
+        const [existingIds]: any = await pool.execute(
+            'SELECT Barangay_id FROM barangay_tbl'
+        );
+
+        const existingSet = new Set(existingIds.map((row: any) => row.Barangay_id));
+        const available = [];
+
+        for (let i = 1; i <= 1000; i++) {
+            if (!existingSet.has(i)) {
+                available.push({
+                    barangayId: i,
+                    barangayName: `Barangay ${i}`
+                });
+            }
+        }
+
+        return {
+            success: true,
+            available,
+            count: available.length
+        };
+    } catch (error) {
+        console.error('❌ Error fetching available barangays:', error);
+        throw new Error('Failed to fetch available barangays');
+    }
+}
+
+/**
+ * Activate a barangay by adding it to the database.
+ * Input: barangayId (1-1000)
+ * Automatically generates barangayName as "Barangay {id}"
+ */
+export async function activateBarangay(barangayId: number) {
+    const conn = await (pool as any).getConnection();
+    try {
+        // Validate barangayId range
+        if (!Number.isInteger(barangayId) || barangayId < 1 || barangayId > 1000) {
+            throw new Error('Barangay ID must be an integer between 1 and 1000');
+        }
+
+        // Check if already exists
+        const [existing]: any = await conn.execute(
+            'SELECT Barangay_id FROM barangay_tbl WHERE Barangay_id = ?',
+            [barangayId]
+        );
+        if (existing.length > 0) {
+            throw new Error('Barangay already exists in the system');
+        }
+
+        const barangayName = `Barangay ${barangayId}`;
+
+        // Insert new active barangay
+        await conn.execute(
+            'INSERT INTO barangay_tbl (Barangay_id, Barangay_Name, IsActive) VALUES (?, ?, 1)',
+            [barangayId, barangayName]
+        );
+
+        return {
+            success: true,
+            barangay: {
+                Barangay_id: barangayId,
+                Barangay_Name: barangayName,
+                IsActive: 1
+            }
+        };
+    } catch (error) {
+        console.error('❌ Error activating barangay:', error);
+        throw new Error(`Failed to activate barangay: ${String(error)}`);
+    } finally {
+        conn.release();
+    }
+}
+
+/**
+ * Deactivate a barangay and cascade deactivate all assigned admins.
+ * Soft delete with IsActive = 0
+ */
+export async function deactivateBarangay(barangayId: number) {
+    const conn = await (pool as any).getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // Check if barangay exists
+        const [existing]: any = await conn.execute(
+            'SELECT Barangay_id FROM barangay_tbl WHERE Barangay_id = ?',
+            [barangayId]
+        );
+        if (existing.length === 0) {
+            throw new Error('Barangay not found');
+        }
+
+        // Mark barangay as inactive
+        await conn.execute(
+            'UPDATE barangay_tbl SET IsActive = 0 WHERE Barangay_id = ?',
+            [barangayId]
+        );
+
+        // Get admins assigned to this barangay before deactivating
+        const [admins]: any = await conn.execute(
+            'SELECT Account_id FROM profile_tbl WHERE Barangay_id = ?',
+            [barangayId]
+        );
+
+        // Cascade deactivate admins
+        if (admins.length > 0) {
+            const adminIds = admins.map((row: any) => row.Account_id);
+            const placeholders = adminIds.map(() => '?').join(',');
+            await conn.execute(
+                `UPDATE accounts_tbl SET IsActive = 0 WHERE Account_id IN (${placeholders})`,
+                adminIds
+            );
+        }
+
+        await conn.commit();
+
+        return {
+            success: true,
+            deactivatedAdminCount: admins.length
+        };
+    } catch (error) {
+        await conn.rollback();
+        console.error('❌ Error deactivating barangay:', error);
+        throw new Error(`Failed to deactivate barangay: ${String(error)}`);
+    } finally {
+        conn.release();
     }
 }
 

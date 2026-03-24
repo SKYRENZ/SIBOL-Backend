@@ -9,6 +9,9 @@ import {
     toggleAdminActive,
     getRoles,
     getModules,
+    getAvailableBarangays,
+    activateBarangay,
+    deactivateBarangay,
 } from '../controllers/superAdminController';
 
 const router = Router();
@@ -29,6 +32,11 @@ router.get('/modules', isSuperAdmin, getModules);
 
 // Get all users in a specific barangay
 router.get('/users-by-barangay', isSuperAdmin, getUsersByBarangay);
+
+// Barangay activation/deactivation
+router.get('/barangays/available', isSuperAdmin, getAvailableBarangays);
+router.post('/barangays/:barangayId/activate', isSuperAdmin, activateBarangay);
+router.patch('/barangays/:barangayId/deactivate', isSuperAdmin, deactivateBarangay);
 
 // Get all barangays (for dropdown)
 router.get('/barangays', isSuperAdmin, getBarangays);
