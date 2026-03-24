@@ -52,13 +52,13 @@ export async function getMachineById(req: Request, res: Response) {
 
 export async function updateMachine(req: Request, res: Response) {
   const { id } = req.params;
-  const { name, areaId, status } = req.body;
+  const { name, areaId, status, operatorId } = req.body;
 
   if (!id || isNaN(parseInt(id))) return res.status(400).json({ message: "Valid Machine ID is required" });
   if (!name || !areaId) return res.status(400).json({ message: "Name and Area ID are required" });
 
   try {
-    const result = await machineService.updateMachine(parseInt(id), name, areaId, status);
+    const result = await machineService.updateMachine(parseInt(id), name, parseInt(areaId), status ? parseInt(status) : undefined, operatorId ? parseInt(operatorId) : null);
     return res.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update machine";

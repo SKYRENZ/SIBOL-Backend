@@ -1,4 +1,5 @@
 import { pool } from '../config/db';
+import * as creditScoreService from './creditScoreService';
 
 // CREATE - Function to add waste input to machine with operator tracking
 export async function createWasteInput(machineId: number, weight: number, accountId?: number) {
@@ -38,6 +39,29 @@ export async function createWasteInput(machineId: number, weight: number, accoun
       "INSERT INTO machine_waste_input_tbl (Machine_id, Account_id, Weight, Input_datetime) VALUES (?, ?, ?, NOW())",
       [machineId, accountId || null, weight]
     );
+
+    // Update the operator's last_input_date if accountId is provided
+    if (accountId) {
+      try {
+        await pool.execute(
+          "UPDATE accounts_tbl SET last_input_date = NOW() WHERE Account_id = ?",
+          [accountId]
+        );
+      } catch (err) {
+        console.error('Error updating last_input_date:', err);
+        // Don't fail the input creation if last_input_date update fails
+      }
+    }
+
+    // Trigger credit score update if accountId is provided
+    if (accountId) {
+      try {
+        await creditScoreService.updateOperatorCreditScore(accountId);
+      } catch (err) {
+        console.error('Error updating credit score after waste input:', err);
+        // Don't fail the input creation if score update fails
+      }
+    }
 
     return {
       success: true,

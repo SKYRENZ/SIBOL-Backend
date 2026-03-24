@@ -74,10 +74,22 @@ export async function getAllMachines() {
         m.Area_id,
         a.Area_Name,
         m.Status as status_id,
-        ms.Status as status_name
+        ms.Status as status_name,
+        m.operator_id,
+        acc.Username as operator_username,
+        acc.Account_id as operator_account_id,
+        p.Profile_image_path as operator_profile_picture,
+        CONCAT(
+          IFNULL(p.FirstName, ''), 
+          IF(p.FirstName != '' AND p.LastName != '', ' ', ''), 
+          IFNULL(p.LastName, ''),
+          IF(p.FirstName IS NULL AND p.LastName IS NULL, acc.Username, '')
+        ) as operator_name
       FROM machine_tbl m
       LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
       LEFT JOIN machine_status_tbl ms ON m.Status = ms.Mach_status_id
+      LEFT JOIN accounts_tbl acc ON m.operator_id = acc.Account_id
+      LEFT JOIN profile_tbl p ON m.operator_id = p.Account_id
       ORDER BY m.Machine_id
     `);
 
@@ -106,10 +118,22 @@ export async function getMachineById(id: number) {
         m.Area_id,
         a.Area_Name,
         m.Status as status_id,
-        ms.Status as status_name
+        ms.Status as status_name,
+        m.operator_id,
+        acc.Username as operator_username,
+        acc.Account_id as operator_account_id,
+        p.Profile_image_path as operator_profile_picture,
+        CONCAT(
+          IFNULL(p.FirstName, ''), 
+          IF(p.FirstName != '' AND p.LastName != '', ' ', ''), 
+          IFNULL(p.LastName, ''),
+          IF(p.FirstName IS NULL AND p.LastName IS NULL, acc.Username, '')
+        ) as operator_name
       FROM machine_tbl m
       LEFT JOIN area_tbl a ON m.Area_id = a.Area_id
       LEFT JOIN machine_status_tbl ms ON m.Status = ms.Mach_status_id
+      LEFT JOIN accounts_tbl acc ON m.operator_id = acc.Account_id
+      LEFT JOIN profile_tbl p ON m.operator_id = p.Account_id
       WHERE m.Machine_id = ?
     `, [id]);
 
@@ -129,7 +153,7 @@ export async function getMachineById(id: number) {
 }
 
 // UPDATE - Function to update machine
-export async function updateMachine(id: number, name: string, areaId: number, status?: number) {
+export async function updateMachine(id: number, name: string, areaId: number, status?: number, operatorId?: number | null) {
   // Validation
   if (!name || !areaId) {
     throw new Error("Name and Area ID are required");
@@ -137,8 +161,8 @@ export async function updateMachine(id: number, name: string, areaId: number, st
 
   try {
     const [result]: any = await pool.execute(
-      "UPDATE machine_tbl SET Name = ?, Area_id = ?, Status = ? WHERE Machine_id = ?",
-      [name, areaId, status || null, id]
+      "UPDATE machine_tbl SET Name = ?, Area_id = ?, Status = ?, operator_id = ? WHERE Machine_id = ?",
+      [name, areaId, status || null, operatorId || null, id]
     );
 
     if (result.affectedRows === 0) {
@@ -149,7 +173,7 @@ export async function updateMachine(id: number, name: string, areaId: number, st
       success: true,
       message: "Machine updated successfully",
       machineId: id,
-      machine: { name, areaId, status }
+      machine: { name, areaId, status, operatorId }
     };
   } catch (error) {
     // console.error("❌ Update machine error:", error); // Remove or comment this line
