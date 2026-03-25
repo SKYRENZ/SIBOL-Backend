@@ -53,6 +53,7 @@ import superAdminRoutes from './Routes/superAdminRoutes.js';
 import collectionLogRoutes from './Routes/collectionLogRoutes';
 import creditScoreRoutes from './Routes/creditScoreRoutes';
 import voltageCurrentRoutes from './Routes/voltageCurrentRoutes';
+import shareRoutes from './Routes/shareRoutes';
 
 // Build allowlist from env (FRONT_END_ORIGINS)
 const allowedOrigins = FRONTEND_ORIGINS_ARRAY;
@@ -167,6 +168,7 @@ app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/map', mapRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use("/api/push", pushNotificationRoutes);
+app.use('/api/share', shareRoutes);
 
 // mount admin routes...
 app.use('/api/admin', authenticate, authorizeByModulePath('/admin'), adminRoutes);
