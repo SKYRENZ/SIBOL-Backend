@@ -8,6 +8,8 @@ interface VoltageCurrentData {
   current: number;
   deviceId: string;
   timestamp?: string | number;
+  cumulativeKwh?: number;
+  intervalKwh?: number;
 }
 
 function normalizeMeasurementTimestamp(input: unknown): Date {
@@ -38,7 +40,7 @@ export class VoltageCurrentController {
   // Receive voltage and current data from ESP32
   static async receiveSensorData(req: Request, res: Response): Promise<void> {
     try {
-      const { voltage, current, deviceId = 'esp32-default', timestamp } = req.body;
+      const { voltage, current, deviceId = 'esp32-default', timestamp, cumulativeKwh = 0, intervalKwh = 0 } = req.body;
 
       // Validate data
       if (voltage === undefined || current === undefined) {
@@ -57,6 +59,10 @@ export class VoltageCurrentController {
       // Validate reasonable ranges
       if (voltageNum < 0 || voltageNum > 500 || currentNum < 0 || currentNum > 100) {
         res.status(400).json({ error: 'Values out of reasonable range (Voltage: 0-500V, Current: 0-100A)' });
+          // Extract and validate energy values
+          const cumulativeKwhNum = Number(cumulativeKwh) || 0;
+          const intervalKwhNum = Number(intervalKwh) || 0;
+
         return;
       }
 
@@ -66,9 +72,9 @@ export class VoltageCurrentController {
 
       // Insert into database
       const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp) 
-         VALUES (?, ?, ?, ?)`,
-        [deviceId, voltageNum, currentNum, measurementTimestamp]
+        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp, cumulative_kwh, interval_kwh) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [deviceId, voltageNum, currentNum, measurementTimestamp, cumulativeKwhNum, intervalKwhNum]
       );
 
       // Update device last seen (non-critical path; do not fail ingestion on metadata issues).
