@@ -12,6 +12,14 @@ interface VoltageCurrentData {
   intervalKwh?: number;
 }
 
+function isMissingColumnError(error: any): boolean {
+  return (
+    error?.code === 'ER_BAD_FIELD_ERROR' ||
+    error?.sqlState === '42S22' ||
+    String(error?.message || '').toLowerCase().includes('unknown column')
+  );
+}
+
 function normalizeMeasurementTimestamp(input: unknown): Date {
   if (input === undefined || input === null || input === '') {
     return new Date();
@@ -74,12 +82,27 @@ export class VoltageCurrentController {
       const power = voltageNum * currentNum;
       const measurementTimestamp = normalizeMeasurementTimestamp(timestamp);
 
-      // Insert into database
-      const [result] = await pool.execute<ResultSetHeader>(
-        `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp, cumulative_kwh, interval_kwh) 
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [deviceId, voltageNum, currentNum, measurementTimestamp, cumulativeKwhNum, intervalKwhNum]
-      );
+      // Insert into database. Prefer energy columns; gracefully fallback for older schemas.
+      let result: ResultSetHeader;
+      try {
+        const [insertWithEnergy] = await pool.execute<ResultSetHeader>(
+          `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp, cumulative_kwh, interval_kwh) 
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [deviceId, voltageNum, currentNum, measurementTimestamp, cumulativeKwhNum, intervalKwhNum]
+        );
+        result = insertWithEnergy;
+      } catch (insertError: any) {
+        if (!isMissingColumnError(insertError)) {
+          throw insertError;
+        }
+
+        const [insertLegacy] = await pool.execute<ResultSetHeader>(
+          `INSERT INTO voltage_current_sensor_tbl (device_id, voltage, current, timestamp) 
+           VALUES (?, ?, ?, ?)`,
+          [deviceId, voltageNum, currentNum, measurementTimestamp]
+        );
+        result = insertLegacy;
+      }
 
       // Update device last seen (non-critical path; do not fail ingestion on metadata issues).
       try {
@@ -128,8 +151,10 @@ export class VoltageCurrentController {
       const deviceId = req.query.deviceId as string;
 
       let query = `
-        SELECT id, device_id as deviceId, voltage, current, power, 
-               timestamp, created_at as createdAt
+         SELECT id, device_id as deviceId, voltage, current,
+           (voltage * current) as power,
+               timestamp, created_at as createdAt,
+               cumulative_kwh as cumulativeKwh, interval_kwh as intervalKwh
         FROM voltage_current_sensor_tbl
       `;
       const params: any[] = [];
@@ -142,7 +167,35 @@ export class VoltageCurrentController {
       query += ' ORDER BY timestamp DESC LIMIT ?';
       params.push(limit);
 
-      const [rows] = await pool.execute<RowDataPacket[]>(query, params);
+      let rows: RowDataPacket[];
+      try {
+        const [resultRows] = await pool.execute<RowDataPacket[]>(query, params);
+        rows = resultRows;
+      } catch (selectError: any) {
+        if (!isMissingColumnError(selectError)) {
+          throw selectError;
+        }
+
+        let fallbackQuery = `
+           SELECT id, device_id as deviceId, voltage, current,
+             (voltage * current) as power,
+                 timestamp, created_at as createdAt,
+                 0 as cumulativeKwh, 0 as intervalKwh
+          FROM voltage_current_sensor_tbl
+        `;
+        const fallbackParams: any[] = [];
+
+        if (deviceId) {
+          fallbackQuery += ' WHERE device_id = ?';
+          fallbackParams.push(deviceId);
+        }
+
+        fallbackQuery += ' ORDER BY timestamp DESC LIMIT ?';
+        fallbackParams.push(limit);
+
+        const [fallbackRows] = await pool.execute<RowDataPacket[]>(fallbackQuery, fallbackParams);
+        rows = fallbackRows;
+      }
 
       res.json({
         count: rows.length,
@@ -165,12 +218,13 @@ export class VoltageCurrentController {
         `SELECT 
           AVG(voltage) as avgVoltage,
           AVG(current) as avgCurrent,
-          AVG(power) as avgPower,
+          AVG(voltage * current) as avgPower,
           MAX(voltage) as maxVoltage,
           MAX(current) as maxCurrent,
-          MAX(power) as maxPower,
+          MAX(voltage * current) as maxPower,
           MIN(voltage) as minVoltage,
           MIN(current) as minCurrent,
+          MIN(voltage * current) as minPower,
           COUNT(*) as readingCount
         FROM voltage_current_sensor_tbl 
         WHERE device_id = ? 
