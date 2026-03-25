@@ -56,13 +56,17 @@ export class VoltageCurrentController {
         return;
       }
 
+      const cumulativeKwhNum = Number(cumulativeKwh);
+      const intervalKwhNum = Number(intervalKwh);
+
+      if (!Number.isFinite(cumulativeKwhNum) || !Number.isFinite(intervalKwhNum)) {
+        res.status(400).json({ error: 'cumulativeKwh and intervalKwh must be valid numbers' });
+        return;
+      }
+
       // Validate reasonable ranges
       if (voltageNum < 0 || voltageNum > 500 || currentNum < 0 || currentNum > 100) {
         res.status(400).json({ error: 'Values out of reasonable range (Voltage: 0-500V, Current: 0-100A)' });
-          // Extract and validate energy values
-          const cumulativeKwhNum = Number(cumulativeKwh) || 0;
-          const intervalKwhNum = Number(intervalKwh) || 0;
-
         return;
       }
 
