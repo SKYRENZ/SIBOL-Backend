@@ -6,6 +6,7 @@ import type { Request, Response } from 'express';
  */
 export const getShareBridge = (req: Request, res: Response) => {
   const { image, score, game } = req.query;
+  const userAgent = String(req.headers['user-agent'] || '').toLowerCase();
 
   const escapeHtml = (value: string) =>
     value
@@ -31,6 +32,23 @@ export const getShareBridge = (req: Request, res: Response) => {
   const safeImage = escapeHtml(image);
   const safeOgUrl = escapeHtml(`${process.env.BACKEND_URL || ''}${req.originalUrl}`);
   const safeFrontendUrl = escapeHtml(frontendUrl);
+  const isCrawler = /(facebookexternalhit|facebot|twitterbot|linkedinbot|slackbot|discordbot|whatsapp|telegrambot)/i.test(userAgent);
+
+  const redirectBlock = isCrawler
+    ? ''
+    : `
+    <!-- Redirect to Frontend -->
+    <meta http-equiv="refresh" content="0;url=${safeFrontendUrl}" />`;
+
+  const scriptRedirect = isCrawler
+    ? ''
+    : `
+    <script>
+        // Backup JavaScript redirect for human visitors
+        setTimeout(function() {
+          window.location.href = "${safeFrontendUrl}";
+        }, 100);
+    </script>`;
 
   // Simple HTML bridge with OG tags
   const html = `
@@ -45,6 +63,10 @@ export const getShareBridge = (req: Request, res: Response) => {
     <meta property="og:title" content="${safeGameName} - SIBOL" />
     <meta property="og:description" content="${safeScoreText} Join me in learning about sustainable waste management with SIBOL!" />
     <meta property="og:image" content="${safeImage}" />
+    <meta property="og:image:secure_url" content="${safeImage}" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="${safeGameName} score card" />
     <meta property="og:url" content="${safeOgUrl}" />
     
     <!-- Twitter Metadata -->
@@ -53,8 +75,7 @@ export const getShareBridge = (req: Request, res: Response) => {
     <meta name="twitter:description" content="${safeScoreText}">
     <meta name="twitter:image" content="${safeImage}">
 
-    <!-- Redirect to Frontend -->
-    <meta http-equiv="refresh" content="0;url=${safeFrontendUrl}" />
+    ${redirectBlock}
     
     <title>SIBOL Game Share</title>
     <style>
@@ -69,12 +90,7 @@ export const getShareBridge = (req: Request, res: Response) => {
         <div class="spinner"></div>
         <p>Redirecting to SIBOL...</p>
     </div>
-    <script>
-        // Backup JavaScript redirect
-        setTimeout(function() {
-          window.location.href = "${safeFrontendUrl}";
-        }, 100);
-    </script>
+    ${scriptRedirect}
 </body>
 </html>`;
 
