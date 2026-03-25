@@ -147,7 +147,10 @@ export class VoltageCurrentController {
   // Get latest sensor readings
   static async getLatestData(req: Request, res: Response): Promise<void> {
     try {
-      const limit = parseInt(req.query.limit as string) || 10;
+      const parsedLimit = Number.parseInt(String(req.query.limit ?? ''), 10);
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(parsedLimit, 1), 500)
+        : 10;
       const deviceId = req.query.deviceId as string;
 
       let query = `
@@ -164,8 +167,8 @@ export class VoltageCurrentController {
         params.push(deviceId);
       }
 
-      query += ' ORDER BY timestamp DESC LIMIT ?';
-      params.push(limit);
+      // NOTE: Some MySQL environments reject prepared placeholders in LIMIT.
+      query += ` ORDER BY timestamp DESC LIMIT ${limit}`;
 
       let rows: RowDataPacket[];
       try {
@@ -190,8 +193,7 @@ export class VoltageCurrentController {
           fallbackParams.push(deviceId);
         }
 
-        fallbackQuery += ' ORDER BY timestamp DESC LIMIT ?';
-        fallbackParams.push(limit);
+        fallbackQuery += ` ORDER BY timestamp DESC LIMIT ${limit}`;
 
         const [fallbackRows] = await pool.execute<RowDataPacket[]>(fallbackQuery, fallbackParams);
         rows = fallbackRows;
